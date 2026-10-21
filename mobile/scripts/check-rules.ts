@@ -1,0 +1,113 @@
+// Tries to break the demo server's rules, as Build_Plan.md phase 5 asks:
+// record for someone absent, backdate before the event, record yourself,
+// confirm someone else's hours. Every cheat must be refused.
+// Run: npm run check:rules
+
+import type { Db } from '../src/data/types';
+import { buildSeed } from '../src/demo/seed';
+import * as server from '../src/demo/server';
+
+const NOW = new Date('2026-10-21T12:00:00').getTime();
+let failed = 0;
+
+function expectError(name: string, code: server.ApiErrorCode, fn: () => unknown) {
+  try {
+    fn();
+    console.log(`✗ ${name}: was allowed, expected ${code}`);
+    failed++;
+  } catch (e) {
+    if (e instanceof server.ApiError && e.code === code) console.log(`✓ ${name} → ${code}`);
+    else {
+      console.log(`✗ ${name}: got ${e instanceof server.ApiError ? e.code : e}, expected ${code}`);
+      failed++;
+    }
+  }
+}
+
+function expectEqual(name: string, actual: unknown, expected: unknown) {
+  if (JSON.stringify(actual) === JSON.stringify(expected)) console.log(`✓ ${name} = ${JSON.stringify(actual)}`);
+  else {
+    console.log(`✗ ${name}: got ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)}`);
+    failed++;
+  }
+}
+
+function joinFully(db: Db, userId: string, eventId: string, now: number) {
+  let d = server.startJoin(db, userId, eventId, now);
+  for (const term of server.eventTerms(d, eventId)) d = server.acceptTerm(d, userId, eventId, term.id, now);
+  return server.completeJoin(d, userId, eventId, now);
+}
+
+const db = buildSeed(NOW);
+const running = server.getEvent(db, 'e01');
+const start = new Date(running.starts_at).getTime();
+
+console.log('\n— joining');
+expectError('6th person joins a full event (capacity 5)', 'event_full', () => joinFully(db, 'u_ahmad', 'e12', NOW));
+expectError('join without accepting the terms', 'terms_incomplete', () =>
+  server.completeJoin(server.startJoin(db, 'u_ahmad', 'e02', NOW), 'u_ahmad', 'e02', NOW),
+);
+expectError('accept the last term first', 'term_out_of_order', () => {
+  const d = server.startJoin(db, 'u_ahmad', 'e02', NOW);
+  const terms = server.eventTerms(d, 'e02');
+  return server.acceptTerm(d, 'u_ahmad', 'e02', terms[terms.length - 1].id, NOW);
+});
+expectError('man joins a women-only event', 'gender_not_allowed', () => server.startJoin(db, 'u_ahmad', 'e04', NOW));
+expectError('join a finished event', 'event_closed', () => server.startJoin(db, 'u_ahmad', 'e13', NOW));
+const afterJoin = joinFully(db, 'u_ahmad', 'e02', NOW);
+expectEqual('terms locked after first acceptance', !!server.getEvent(afterJoin, 'e02').terms_locked_at, true);
+
+console.log('\n— recording attendance');
+expectError('participant records someone else', 'not_organizer', () =>
+  server.recordStart(db, 'u_ahmad', { eventId: 'e01', userId: 'u_mariam' }, NOW),
+);
+expectError('supervisor of ANOTHER event records here', 'not_organizer', () =>
+  server.recordStart(db, 'u_fatima', { eventId: 'e01', userId: 'u_ahmad' }, NOW),
+);
+expectError('supervisor records himself', 'cannot_record_self', () =>
+  server.recordStart(db, 'u_khaled', { eventId: 'e01', userId: 'u_khaled' }, NOW),
+);
+expectError('record someone who never joined', 'not_joined', () =>
+  server.recordStart(db, 'u_khaled', { eventId: 'e01', userId: 'u_f5' }, NOW),
+);
+expectError('backdate before the event started', 'start_before_event', () =>
+  server.recordStart(db, 'u_khaled', { eventId: 'e01', userId: 'u_ahmad', startedAt: start - 60_000 }, NOW),
+);
+expectError('start time in the future', 'time_in_future', () =>
+  server.recordStart(db, 'u_khaled', { eventId: 'e01', userId: 'u_ahmad', startedAt: NOW + 60_000 }, NOW),
+);
+expectError('record start before the event begins', 'event_not_started', () =>
+  server.recordStart(db, 'u_khaled', { eventId: 'e02', userId: 'u_f3' }, NOW),
+);
+expectError('record start twice', 'already_started', () =>
+  server.recordStart(db, 'u_khaled', { eventId: 'e01', userId: 'u_f1' }, NOW),
+);
+expectError('finish before start', 'end_before_start', () =>
+  server.recordEnd(db, 'u_khaled', { eventId: 'e01', userId: 'u_f1', endedAt: NOW - 60 * 60_000 }, NOW),
+);
+
+// The honest path: backdated start 30 min ago, finish now → 0.5 h.
+let d = server.recordStart(db, 'u_khaled', { eventId: 'e01', userId: 'u_ahmad', startedAt: NOW - 30 * 60_000 }, NOW);
+d = server.recordEnd(d, 'u_khaled', { eventId: 'e01', userId: 'u_ahmad' }, NOW);
+const a = server.attendanceOf(d, 'e01', 'u_ahmad')!;
+expectEqual('hours computed on the server', a.hours, 0.5);
+expectEqual('start marked backdated', a.start_source, 'backdated');
+expectEqual('recorded_by kept', a.recorded_by, 'u_khaled');
+
+console.log('\n— confirming hours and points');
+expectError("confirm someone else's hours", 'not_your_attendance', () => server.confirmAttendance(d, 'u_mariam', a.id, NOW));
+const before = server.totalPoints(d, 'u_ahmad');
+const confirmed = server.confirmAttendance(d, 'u_ahmad', a.id, NOW);
+// Placeholder formula: base 30 × (0.5 h / 4 h event) = 3.75, all physical.
+expectEqual('fractional points credited', Math.round((server.totalPoints(confirmed, 'u_ahmad') - before) * 100) / 100, 3.75);
+expectError('confirm twice', 'already_acted', () => server.confirmAttendance(confirmed, 'u_ahmad', a.id, NOW));
+const disputed = server.disputeAttendance(d, 'u_ahmad', a.id, NOW);
+expectEqual('disputed hours earn nothing', server.totalPoints(disputed, 'u_ahmad'), before);
+
+console.log('\n— scheduled auto-close');
+const later = server.tick(db, new Date(running.ends_at).getTime() + 1000);
+const closed = server.attendanceOf(later, 'e01', 'u_f1')!;
+expectEqual('open attendance closed at event end', [closed.end_source, closed.ended_at], ['auto_closed', running.ends_at]);
+
+console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');
+process.exit(failed ? 1 : 0);
