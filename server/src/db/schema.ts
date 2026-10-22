@@ -6,6 +6,7 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   check,
+  customType,
   doublePrecision,
   index,
   integer,
@@ -23,7 +24,7 @@ export const pillar = pgEnum('pillar', ['spiritual', 'mental', 'physical']);
 export const gender = pgEnum('gender', ['male', 'female']);
 export const genderCategory = pgEnum('gender_category', ['male', 'female', 'mixed']);
 export const role = pgEnum('role', ['member', 'supervisor', 'admin']);
-export const eventStatus = pgEnum('event_status', ['draft', 'published', 'running', 'finished', 'cancelled']);
+export const eventStatus = pgEnum('event_status', ['draft', 'published', 'running', 'finished', 'cancelled', 'rejected']);
 export const registrationStatus = pgEnum('registration_status', ['pending_terms', 'joined', 'cancelled']);
 export const startSource = pgEnum('start_source', ['live', 'backdated']);
 export const endSource = pgEnum('end_source', ['live', 'backdated', 'auto_closed']);
@@ -36,10 +37,17 @@ export const adminAction = pgEnum('admin_action', [
   'publish_event',
   'cancel_event',
   'resolve_dispute',
+  'reject_event',
+  'remove_photo',
 ]);
 
 const at = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 const points = (name: string) => numeric(name, { precision: 10, scale: 2, mode: 'number' });
+// node-postgres sends a Buffer as bytea (PGlite takes either); both read back a Uint8Array subclass.
+const bytea = customType<{ data: Uint8Array; driverData: Uint8Array }>({
+  dataType: () => 'bytea',
+  toDriver: (v) => Buffer.from(v.buffer, v.byteOffset, v.byteLength),
+});
 
 export const users = pgTable(
   'users',
@@ -209,6 +217,15 @@ export const levels = pgTable('levels', {
   min_points: integer('min_points').notNull(),
   can_create_events: boolean('can_create_events').notNull(),
   can_report: boolean('can_report').notNull(),
+});
+
+// Not in Data_Model.md yet: profile photos, kept in the database so the server
+// needs no file storage. users.avatar_url points at GET /api/users/:id/photo.
+export const user_photos = pgTable('user_photos', {
+  user_id: text('user_id').primaryKey().references(() => users.id),
+  /** A small JPEG with its metadata removed (src/photo.ts). */
+  jpeg: bytea('jpeg').notNull(),
+  updated_at: at('updated_at').notNull(),
 });
 
 // One-time sign-in codes. Only a hash of the code is stored.

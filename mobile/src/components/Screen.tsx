@@ -12,6 +12,8 @@ interface Props {
   title?: string;
   back?: boolean;
   scroll?: boolean;
+  /** false pauses scrolling, e.g. while a finger moves a map inside the page. */
+  scrollEnabled?: boolean;
   background?: string;
   footer?: ReactNode;
   children: ReactNode;
@@ -19,7 +21,7 @@ interface Props {
 
 // Our own header instead of the native one: Expo Go keeps native headers LTR,
 // so the back arrow and title would sit on the wrong side in Arabic.
-export function Screen({ title, back, scroll = true, background = colors.surface, footer, children }: Props) {
+export function Screen({ title, back, scroll = true, scrollEnabled, background = colors.surface, footer, children }: Props) {
   const insets = useSafeAreaInsets();
   const { isRTL, s } = useApp();
   const Body = scroll ? ScrollView : View;
@@ -46,6 +48,7 @@ export function Screen({ title, back, scroll = true, background = colors.surface
       )}
       <Body
         style={styles.body}
+        {...(scroll ? { scrollEnabled } : null)}
         contentContainerStyle={scroll ? { padding: space.md, paddingBottom: space.xl, gap: space.md } : undefined}>
         {children}
       </Body>

@@ -29,6 +29,7 @@ function useBackendQuery<T>(key: unknown[], fetch: (b: NonNullable<ReturnType<ty
 
 export const useEvents = () => useBackendQuery(['events'], (b) => b.listEvents());
 export const useEvent = (id: string) => useBackendQuery(['event', id], (b) => b.event(id));
+export const useEventForm = () => useBackendQuery(['eventForm'], (b) => b.eventForm());
 export const useRoster = (eventId: string) => useBackendQuery(['roster', eventId], (b) => b.roster(eventId));
 export const useMyAttendance = () => useBackendQuery(['myAttendance'], (b) => b.myAttendance());
 export const useAttendance = (id: string) => useBackendQuery(['attendance', id], (b) => b.attendance(id));

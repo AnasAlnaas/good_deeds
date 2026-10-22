@@ -3,6 +3,7 @@
 // confirm someone else's hours. Every cheat must be refused.
 // Run: npm run check:rules
 
+import type { EventProposal } from '../src/data/api';
 import type { Db } from '../src/data/types';
 import { buildSeed } from '../src/demo/seed';
 import * as server from '../src/demo/server';
@@ -108,6 +109,37 @@ console.log('\n— scheduled auto-close');
 const later = server.tick(db, new Date(running.ends_at).getTime() + 1000);
 const closed = server.attendanceOf(later, 'e01', 'u_f1')!;
 expectEqual('open attendance closed at event end', [closed.end_source, closed.ended_at], ['auto_closed', running.ends_at]);
+
+console.log('\n— proposing an event');
+const HOUR = 3_600_000;
+const proposal = (over: Partial<EventProposal> = {}): EventProposal => ({
+  title: 'تنظيف حديقة الحي',
+  description: 'جمع المخلفات من الحديقة.',
+  subtype: 'street_cleanup',
+  address_text: 'حديقة الحي، طرابلس',
+  lat: 32.88,
+  lng: 13.19,
+  starts_at: new Date(NOW + 72 * HOUR).toISOString(),
+  ends_at: new Date(NOW + 75 * HOUR).toISOString(),
+  capacity: 15,
+  gender_category: 'mixed',
+  branch_ids: ['b01'],
+  terms: ['أحضر قفازيك.'],
+  ...over,
+});
+expectError('a member below level 5 proposes', 'cannot_create_events', () => server.proposeEvent(db, 'u_ahmad', proposal(), NOW));
+expectError('a man proposes a women-only event', 'category_not_allowed', () =>
+  server.proposeEvent(db, 'u_khaled', proposal({ gender_category: 'female' }), NOW),
+);
+expectError('an event that has already started', 'starts_in_past', () =>
+  server.proposeEvent(db, 'u_khaled', proposal({ starts_at: new Date(NOW - HOUR).toISOString() }), NOW),
+);
+const { db: withDraft, event: draft } = server.proposeEvent(db, 'u_khaled', proposal(), NOW);
+expectEqual('it waits for an admin, with its creator as supervisor', [draft.status, server.isOrganizer(withDraft, draft.id, 'u_khaled')], ['draft', true]);
+expectError('nobody joins it', 'not_found', () => server.startJoin(withDraft, 'u_ahmad', draft.id, NOW));
+let three = withDraft;
+for (let i = 0; i < 2; i++) three = server.proposeEvent(three, 'u_khaled', proposal(), NOW).db;
+expectError('a fourth while three wait', 'too_many_proposals', () => server.proposeEvent(three, 'u_khaled', proposal(), NOW));
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');
 process.exit(failed ? 1 : 0);

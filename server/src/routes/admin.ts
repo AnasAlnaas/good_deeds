@@ -2,7 +2,7 @@
 // in a transaction with its audit row, so a decision and its record of who
 // made it land together or not at all.
 
-import { and, asc, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, lt, or } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, lt, ne, or } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { z } from 'zod';
@@ -24,11 +24,12 @@ import * as rules from '../../../shared/rules';
 import { type AppEvent, type Attendance, PILLARS, type Pillar } from '../../../shared/types';
 import { requireUser } from '../auth';
 import type { Database } from '../db/client';
-import { creditPoints, joinedCounts, newId, pillarWeights, publicUser } from '../db/queries';
+import { activeBranches, creditPoints, joinedCounts, newId, pillarWeights, publicUser } from '../db/queries';
 import { iso } from '../db/rows';
 import * as s from '../db/schema';
 import { type AppEnv, HttpError, readBody } from '../http';
-import { notifyDisputeSettled, notifyEventCancelled, notifyEventChanged } from '../notify';
+import { notifyDisputeSettled, notifyEventCancelled, notifyEventChanged, notifyPhotoRemoved, notifyProposalDecided } from '../notify';
+import { assertIdsExist, eventInput, isoTime, writeLinks, writeTerms } from './event-input';
 
 const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
   if (c.var.user.role !== 'admin') throw new AdminError('forbidden');
@@ -37,30 +38,9 @@ const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
 
 // ---------- request bodies ----------
 
-const subtypes = Object.keys(BASE_POINTS_BY_SUBTYPE) as [string, ...string[]];
-const isoTime = z.iso.datetime({ offset: true });
-
-const eventInput = z
-  .object({
-    title: z.string().trim().min(3).max(120),
-    description: z.string().trim().min(1).max(4000),
-    subtype: z.enum(subtypes),
-    address_text: z.string().trim().min(1).max(200),
-    lat: z.number().min(-90).max(90),
-    lng: z.number().min(-180).max(180),
-    starts_at: isoTime,
-    ends_at: isoTime,
-    capacity: z.number().int().min(1).max(10_000),
-    gender_category: z.enum(['male', 'female', 'mixed']),
-    branch_ids: z.array(z.string()).min(1).max(20),
-    organizer_ids: z.array(z.string()).max(20),
-    terms: z.array(z.string().trim().min(1).max(1000)).max(30),
-  })
-  .refine((v) => Date.parse(v.ends_at) > Date.parse(v.starts_at));
-type EventInput = z.infer<typeof eventInput>;
-
 const createEventBody = eventInput.and(z.object({ publish: z.boolean() }));
 const roleBody = z.object({ role: z.enum(['member', 'supervisor', 'admin']) });
+const statusBody = z.object({ note: z.string().trim().max(500).optional() });
 const resolveBody = z.object({
   decision: z.enum(['accept', 'correct', 'reject']),
   hours: z.number().optional(),
@@ -109,6 +89,15 @@ const toPublic = (r: { id: string; full_name: string; avatar_url: string | null;
   gender: r.gender,
 });
 
+/** Who made each event: an admin in the panel, or someone else in the app. */
+async function creatorsOf(q: Database, events: Pick<AppEvent, 'created_by'>[]) {
+  const ids = [...new Set(events.map((e) => e.created_by))];
+  const rows = ids.length
+    ? await q.select({ ...publicUser, role: s.users.role, level: s.users.level }).from(s.users).where(inArray(s.users.id, ids))
+    : [];
+  return new Map(rows.map((r) => [r.id, { ...toPublic(r), role: r.role, level: r.level }]));
+}
+
 async function hasAttendance(q: Database, eventId: string) {
   const [row] = await q.select({ n: count() }).from(s.attendance).where(eq(s.attendance.event_id, eventId));
   return row.n > 0;
@@ -117,34 +106,6 @@ async function hasAttendance(q: Database, eventId: string) {
 async function termTexts(q: Database, eventId: string) {
   const rows = await q.select().from(s.event_terms).where(eq(s.event_terms.event_id, eventId)).orderBy(asc(s.event_terms.order_index));
   return rows.map((r) => r.text ?? '');
-}
-
-/** Every id must name an existing branch / an active person, or the request is invalid. */
-async function assertIdsExist(q: Database, input: Pick<EventInput, 'branch_ids' | 'organizer_ids'>) {
-  const branchIds = [...new Set(input.branch_ids)];
-  const organizerIds = [...new Set(input.organizer_ids)];
-  const branches = await q.select({ id: s.branches.id }).from(s.branches).where(inArray(s.branches.id, branchIds));
-  const people = organizerIds.length
-    ? await q.select({ id: s.users.id }).from(s.users).where(and(inArray(s.users.id, organizerIds), isNull(s.users.deleted_at)))
-    : [];
-  if (branches.length !== branchIds.length || people.length !== organizerIds.length) throw new HttpError(400, 'invalid_request');
-  return { branchIds, organizerIds };
-}
-
-async function writeLinks(q: Database, eventId: string, branchIds: string[], organizerIds: string[]) {
-  await q.delete(s.event_branches).where(eq(s.event_branches.event_id, eventId));
-  await q.delete(s.event_organizers).where(eq(s.event_organizers.event_id, eventId));
-  await q.insert(s.event_branches).values(branchIds.map((branch_id) => ({ event_id: eventId, branch_id })));
-  if (organizerIds.length) await q.insert(s.event_organizers).values(organizerIds.map((user_id) => ({ event_id: eventId, user_id })));
-}
-
-async function writeTerms(q: Database, eventId: string, terms: string[], at: Date) {
-  await q.delete(s.event_terms).where(eq(s.event_terms.event_id, eventId));
-  if (terms.length) {
-    await q.insert(s.event_terms).values(
-      terms.map((text, i) => ({ id: newId(), event_id: eventId, order_index: i + 1, text, created_at: at })),
-    );
-  }
 }
 
 const escapeLike = (text: string) => text.replace(/[\\%_]/g, (ch) => `\\${ch}`);
@@ -165,6 +126,11 @@ export const adminRoutes = new Hono<AppEnv>()
       .from(s.attendance)
       .where(and(eq(s.attendance.participant_status, 'pending'), isNotNull(s.attendance.ended_at)));
     const [disputes] = await db.select({ n: count() }).from(s.attendance).where(eq(s.attendance.participant_status, 'disputed'));
+    const [proposals] = await db
+      .select({ n: count() })
+      .from(s.events)
+      .innerJoin(s.users, eq(s.users.id, s.events.created_by))
+      .where(and(eq(s.events.status, 'draft'), ne(s.users.role, 'admin')));
     return c.json<AdminOverview>({
       users: users.n,
       upcoming_events: statuses.filter((x) => x === 'published').length,
@@ -172,20 +138,19 @@ export const adminRoutes = new Hono<AppEnv>()
       draft_events: statuses.filter((x) => x === 'draft').length,
       awaiting_confirmation: awaiting.n,
       open_disputes: disputes.n,
+      proposals_waiting: proposals.n,
     });
   })
 
   .get('/meta', async (c) => {
     const { db } = c.var.deps;
-    const branches = await db.select().from(s.branches).where(eq(s.branches.is_active, true)).orderBy(asc(s.branches.id));
-    const links = await db.select().from(s.branch_pillars);
     const people = await db
       .select({ ...publicUser, role: s.users.role, phone: s.users.phone })
       .from(s.users)
       .where(isNull(s.users.deleted_at))
       .orderBy(asc(s.users.full_name));
     return c.json<AdminMeta>({
-      branches: branches.map((b) => ({ ...b, pillars: PILLARS.filter((p) => links.some((l) => l.branch_id === b.id && l.pillar === p)) })),
+      branches: await activeBranches(db),
       subtypes: Object.entries(BASE_POINTS_BY_SUBTYPE).map(([id, base_points]) => ({ id, base_points })),
       people,
     });
@@ -217,6 +182,7 @@ export const adminRoutes = new Hono<AppEnv>()
         phone: u.phone,
         gender: u.gender,
         city: u.city,
+        avatar_url: u.avatar_url,
         role: u.role,
         level: u.level,
         total_points: u.total_points,
@@ -243,6 +209,22 @@ export const adminRoutes = new Hono<AppEnv>()
     return c.body(null, 204);
   })
 
+  // An unsuitable profile photo. The member may add another; they are told why it went.
+  .delete('/users/:id/photo', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    await db.transaction(async (tx) => {
+      const [target] = await tx.select().from(s.users).where(eq(s.users.id, id)).for('update');
+      if (!target || target.deleted_at || !target.avatar_url) throw new ApiError('not_found');
+      await tx.delete(s.user_photos).where(eq(s.user_photos.user_id, id));
+      await tx.update(s.users).set({ avatar_url: null }).where(eq(s.users.id, id));
+      await audit(tx, { actorId: me.id, action: 'remove_photo', targetId: id, details: { name: target.full_name }, at: new Date(now()) });
+    });
+    notifyPhotoRemoved(c.var.deps, id);
+    return c.body(null, 204);
+  })
+
   // ---------- events ----------
 
   .get('/events', async (c) => {
@@ -252,12 +234,14 @@ export const adminRoutes = new Hono<AppEnv>()
     const ids = events.map((e) => e.id);
     const counts = await joinedCounts(db, ids);
     const organizers = await organizersOf(db, ids);
+    const creators = await creatorsOf(db, events);
     return c.json<AdminEventRow[]>(
       events.map((event) => ({
         event,
         effective_status: rules.effectiveStatus(event, t),
         joined_count: counts.get(event.id) ?? 0,
         organizers: organizers.get(event.id) ?? [],
+        creator: creators.get(event.created_by) ?? null,
       })),
     );
   })
@@ -287,6 +271,7 @@ export const adminRoutes = new Hono<AppEnv>()
       effective_status: rules.effectiveStatus(event, now()),
       joined_count: (await joinedCounts(db, [id])).get(id) ?? 0,
       organizers: (await organizersOf(db, [id])).get(id) ?? [],
+      creator: (await creatorsOf(db, [event])).get(event.created_by) ?? null,
       branches: branches.map(({ branch }) => ({
         ...branch,
         pillars: PILLARS.filter((p) => links.some((l) => l.branch_id === branch.id && l.pillar === p)),
@@ -399,27 +384,31 @@ export const adminRoutes = new Hono<AppEnv>()
     return c.body(null, 204);
   })
 
-  .post('/events/:id/:action{publish|cancel}', async (c) => {
+  .post('/events/:id/:action{publish|cancel|reject}', async (c) => {
     const { db, now } = c.var.deps;
     const me = c.var.user;
     const id = c.req.param('id');
-    const action = c.req.param('action') as 'publish' | 'cancel';
+    const action = c.req.param('action') as 'publish' | 'cancel' | 'reject';
+    const note = (await readBody(c, statusBody)).note || undefined;
     const t = now();
-    const wasDraft = await db.transaction(async (tx) => {
+    const event = await db.transaction(async (tx) => {
       const event = await anyEvent(tx, id, true);
       const [organizers] = await tx.select({ n: count() }).from(s.event_organizers).where(eq(s.event_organizers.event_id, id));
       const status = adminRules.decideStatusChange({ event, action, organizerCount: organizers.n, hasAttendance: await hasAttendance(tx, id), now: t });
       await tx.update(s.events).set({ status }).where(eq(s.events.id, id));
       await audit(tx, {
         actorId: me.id,
-        action: action === 'publish' ? 'publish_event' : 'cancel_event',
+        action: action === 'publish' ? 'publish_event' : action === 'reject' ? 'reject_event' : 'cancel_event',
         targetId: id,
-        details: { title: event.title },
+        details: action === 'reject' ? { title: event.title, note: note ?? null } : { title: event.title },
         at: new Date(t),
       });
-      return event.status === 'draft';
+      return event;
     });
-    if (action === 'cancel' && !wasDraft) notifyEventCancelled(c.var.deps, id, me.id);
+    if (action === 'cancel') notifyEventCancelled(c.var.deps, id, me.id);
+    // Proposed in the app by someone else: tell them what was decided.
+    if (event.created_by !== me.id && action === 'publish') notifyProposalDecided(c.var.deps, id, 'approved');
+    if (event.created_by !== me.id && action === 'reject') notifyProposalDecided(c.var.deps, id, 'rejected', note);
     return c.body(null, 204);
   })
 

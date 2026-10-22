@@ -3,7 +3,9 @@
 //   finish and when the scheduled job closes attendance left open;
 // - "your dispute was settled", when an admin decides on disputed hours;
 // - "an event was cancelled" / "its time or place changed", to the members
-//   who joined it and its supervisors.
+//   who joined it and its supervisors;
+// - "your event was approved" / "was not approved", to whoever proposed it in the app;
+// - "your photo was removed", when an admin removes an unsuitable profile photo.
 
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 
@@ -192,4 +194,52 @@ export function notifyEventChanged(deps: AppDeps, eventId: string, actorId: stri
       data: { type: 'event_changed', event_id: eventId },
     }));
   });
+}
+
+// ---------- an event proposed in the app, approved or turned down ----------
+
+const DECIDED = {
+  ar: {
+    approvedTitle: 'اعتُمدت فعاليتك',
+    approved: 'اعتمدت إدارة الجمعية «{event}»، وهي الآن على الخريطة.',
+    rejectedTitle: 'لم تُعتمد فعاليتك',
+    rejected: 'لم تعتمد إدارة الجمعية «{event}».',
+    reason: ' السبب: {note}',
+  },
+  en: {
+    approvedTitle: 'Your event was approved',
+    approved: 'The association approved "{event}". It is now on the map.',
+    rejectedTitle: 'Your event was not approved',
+    rejected: 'The association did not approve "{event}".',
+    reason: ' Reason: {note}',
+  },
+};
+
+export function notifyProposalDecided(deps: AppDeps, eventId: string, decision: 'approved' | 'rejected', note?: string) {
+  send(deps, async () => {
+    const [event] = await deps.db.select().from(s.events).where(eq(s.events.id, eventId));
+    if (!event) return [];
+    return [
+      {
+        userId: event.created_by,
+        text: (lang: Lang) => {
+          const d = DECIDED[lang];
+          const body = d[decision].replace('{event}', event.title) + (note ? d.reason.replace('{note}', note) : '');
+          return { title: decision === 'approved' ? d.approvedTitle : d.rejectedTitle, body };
+        },
+        data: { type: decision === 'approved' ? 'event_approved' : 'event_rejected', event_id: eventId },
+      },
+    ];
+  });
+}
+
+// ---------- a profile photo removed by an admin ----------
+
+const PHOTO_REMOVED = {
+  ar: { title: 'أُزيلت صورتك', body: 'أزالت إدارة الجمعية صورة حسابك لأنها لا تناسب التطبيق. تستطيع إضافة صورة أخرى.' },
+  en: { title: 'Your photo was removed', body: "The association removed your profile photo because it doesn't suit the app. You can add another one." },
+};
+
+export function notifyPhotoRemoved(deps: AppDeps, userId: string) {
+  send(deps, async () => [{ userId, text: (lang: Lang) => PHOTO_REMOVED[lang], data: { type: 'photo_removed' } }]);
 }

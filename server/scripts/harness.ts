@@ -47,6 +47,12 @@ export async function startHarness(start: number) {
     return { status: res.status, body: text ? JSON.parse(text) : null };
   }
 
+  /** A request whose answer is not JSON (a photo). `path` is the full path, as users.avatar_url gives it. */
+  async function raw(path: string, token?: string) {
+    const res = await app.request(path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    return { status: res.status, type: res.headers.get('Content-Type'), bytes: Buffer.from(await res.arrayBuffer()) };
+  }
+
   async function expectError(name: string, code: string, request: Promise<Res>) {
     const r = await request;
     if (r.body?.error === code) console.log(`✓ ${name} → ${r.status} ${code}`);
@@ -93,6 +99,7 @@ export async function startHarness(start: number) {
     sentCodes,
     pushes,
     call,
+    raw,
     login,
     expectError,
     expectOk,

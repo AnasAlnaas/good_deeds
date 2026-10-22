@@ -12,6 +12,7 @@ import type {
   EventStatus,
   EventTerm,
   Gender,
+  GenderCategory,
   Level,
   Pillar,
   Registration,
@@ -29,13 +30,18 @@ export type ServerErrorCode =
   | 'code_recently_sent'
   | 'profile_required'
   | 'delivery_not_configured'
+  | 'photo_invalid'
   | 'internal_error';
 
 export interface ErrorBody {
   error: ApiErrorCode | ServerErrorCode | AdminErrorCode;
 }
 
-/** What other people may see about a user: no phone, no email. Gender sets the Arabic wording (حاضر / حاضرة). */
+/**
+ * What other people may see about a user: no phone, no email. Gender sets the
+ * Arabic wording (حاضر / حاضرة). `avatar_url` is null for a viewer who may not
+ * see the photo (rules.canSeePhoto).
+ */
 export type PublicUser = Pick<User, 'id' | 'full_name' | 'avatar_url' | 'gender'>;
 
 // ---------- sign-in ----------
@@ -74,6 +80,44 @@ export interface EventSummary
   my_registration_status: RegistrationStatus | null;
   /** The signed-in user supervises this event. */
   i_organize: boolean;
+  /** The signed-in user created it. Their own drafts and turned-down drafts are listed for them only. */
+  i_created: boolean;
+}
+
+/**
+ * POST /api/events: an event made in the app. Its creator becomes its supervisor.
+ * Points come from the type. A member's event waits for an admin (status `draft`).
+ */
+export interface EventProposal {
+  title: string;
+  description: string;
+  subtype: string;
+  address_text: string;
+  lat: number;
+  lng: number;
+  starts_at: string; // ISO
+  ends_at: string; // ISO
+  capacity: number;
+  gender_category: GenderCategory;
+  branch_ids: string[];
+  /** In order; each one is accepted on its own screen. */
+  terms: string[];
+}
+export interface ProposeEventResponse {
+  id: string;
+  status: 'draft' | 'published';
+}
+
+/** GET /api/events/form: what the event form offers. */
+export interface EventFormMeta {
+  branches: (Branch & { pillars: Pillar[] })[];
+  /** Event types and their fixed points (shared/placeholders.ts until Points_And_Levels.md is in). */
+  subtypes: { id: string; base_points: number }[];
+  /** false = the event waits for an admin's approval. */
+  publishes_directly: boolean;
+  /** The signed-in user's events waiting for approval, and how many may wait at once. */
+  waiting: number;
+  max_waiting: number;
 }
 
 /** GET /api/events/:id */
@@ -147,4 +191,20 @@ export interface MeResponse {
   level: Level;
   next_level: Level | null;
   confirmed_hours: number;
+  /** By level or by role (rules.canCreateEvents). */
+  can_create_events: boolean;
+  /** The first level that opens event creation, for "reach level N" (null if none does). */
+  create_events_level: number | null;
+}
+
+/**
+ * PUT /api/me/photo: a square JPEG (PHOTO_SIZE_PX a side, at most PHOTO_MAX_BYTES),
+ * base64-encoded. The server removes its metadata (EXIF: place, phone model).
+ * DELETE /api/me/photo removes it. GET /api/users/:id/photo serves it to whoever may see it.
+ */
+export interface PhotoBody {
+  jpeg_base64: string;
+}
+export interface PhotoResponse {
+  avatar_url: string;
 }

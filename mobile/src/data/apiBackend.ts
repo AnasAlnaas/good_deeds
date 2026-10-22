@@ -63,6 +63,8 @@ export function createApiBackend(opts: { baseUrl: string; token: string; onUnaut
   return {
     listEvents: () => get('/events'),
     event: (id) => get(`/events/${enc(id)}`),
+    eventForm: () => get('/events/form'),
+    proposeEvent: (body) => send('POST', '/events', body),
     startJoin: (eventId) => send('POST', `/events/${enc(eventId)}/join`),
     acceptTerm: (eventId, termId) => send('POST', `/events/${enc(eventId)}/terms/${enc(termId)}/accept`),
     completeJoin: (eventId) => send('POST', `/events/${enc(eventId)}/join/complete`),
@@ -75,6 +77,8 @@ export function createApiBackend(opts: { baseUrl: string; token: string; onUnaut
     attendance: (id) => get(`/attendance/${enc(id)}`),
     confirmAttendance: (id) => send('POST', `/attendance/${enc(id)}/confirm`),
     disputeAttendance: (id) => send('POST', `/attendance/${enc(id)}/dispute`),
+    setPhoto: (jpegBase64) => call(opts.baseUrl, 'PUT', '/me/photo', { ...opts, body: { jpeg_base64: jpegBase64 } }),
+    removePhoto: () => send('DELETE', '/me/photo'),
     deleteAccount: () => send('DELETE', '/me'),
     registerPushToken: (token, lang) => call(opts.baseUrl, 'PUT', '/me/push-token', { ...opts, body: { token, lang } }),
     unregisterPushToken: (token) => send('DELETE', '/me/push-token', { token }),

@@ -22,6 +22,20 @@
       "when": 1792675504502,
       "tag": "0002_admin_actions",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792699495648,
+      "tag": "0003_proposals_and_photos",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792703122772,
+      "tag": "0004_remove_photo",
+      "breakpoints": true
     }
   ]
 }

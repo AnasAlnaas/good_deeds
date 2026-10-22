@@ -10,7 +10,7 @@ import { dated } from './rows';
 import * as s from './schema';
 
 const ALL_TABLES = [
-  'admin_actions', 'push_tokens', 'login_codes', 'points_ledger', 'attendance', 'term_acceptances', 'registrations', 'event_terms',
+  'admin_actions', 'user_photos', 'push_tokens', 'login_codes', 'points_ledger', 'attendance', 'term_acceptances', 'registrations', 'event_terms',
   'event_branches', 'event_organizers', 'events', 'levels', 'branch_pillars', 'branches', 'users',
 ];
 

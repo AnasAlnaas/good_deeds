@@ -8,7 +8,7 @@ import { and, asc, count, eq, inArray, isNull, lte } from 'drizzle-orm';
 
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
-import { type AppEvent, type Attendance, type EventTerm, type Level, PILLARS, type Pillar, type Registration, type User } from '../../../shared/types';
+import { type AppEvent, type Attendance, type Branch, type EventTerm, type Level, PILLARS, type Pillar, type Registration, type User } from '../../../shared/types';
 import type { PublicUser } from '../../../shared/api';
 import type { Database } from './client';
 import { iso } from './rows';
@@ -21,12 +21,31 @@ export const newId = () => randomUUID();
 /** The columns of a user that other people may see (shared/api.ts PublicUser). */
 export const publicUser = { id: s.users.id, full_name: s.users.full_name, avatar_url: s.users.avatar_url, gender: s.users.gender };
 
-/** Drafts are not visible to anyone yet. */
+/** A person as `viewer` may see them: the photo only where rules.canSeePhoto allows it. */
+export function shownTo(viewer: Pick<User, 'id' | 'gender' | 'role'>, person: PublicUser): PublicUser {
+  return person.avatar_url && !rules.canSeePhoto(viewer, person) ? { ...person, avatar_url: null } : person;
+}
+
+/** Drafts and turned-down drafts are nobody's to act on in the app (only their creator may look: findEventFor). */
 export async function findEvent(q: Database, id: string, opts: Lock = {}): Promise<AppEvent> {
   const query = q.select().from(s.events).where(eq(s.events.id, id));
   const [row] = opts.lock ? await query.for('update') : await query;
-  if (!row || row.status === 'draft') throw new ApiError('not_found');
+  if (!row || rules.isHidden(row)) throw new ApiError('not_found');
   return iso(row);
+}
+
+/** An event as `viewer` may see it: their own drafts included. */
+export async function findEventFor(q: Database, id: string, viewer: Pick<User, 'id'>): Promise<AppEvent> {
+  const [row] = await q.select().from(s.events).where(eq(s.events.id, id));
+  if (!row || !rules.canSeeEvent(viewer, row)) throw new ApiError('not_found');
+  return iso(row);
+}
+
+/** The branches of faith an event form offers, each with its pillars. */
+export async function activeBranches(q: Database): Promise<(Branch & { pillars: Pillar[] })[]> {
+  const branches = await q.select().from(s.branches).where(eq(s.branches.is_active, true)).orderBy(asc(s.branches.id));
+  const links = await q.select().from(s.branch_pillars);
+  return branches.map((b) => ({ ...b, pillars: PILLARS.filter((p) => links.some((l) => l.branch_id === b.id && l.pillar === p)) }));
 }
 
 export async function findUser(q: Database, id: string): Promise<User | undefined> {
@@ -117,6 +136,20 @@ export async function pillarWeights(q: Database, eventIds: string[]): Promise<Ma
 
 export async function allLevels(q: Database): Promise<Level[]> {
   return q.select().from(s.levels).orderBy(asc(s.levels.min_points));
+}
+
+/** A person's level by the points in their ledger (as GET /api/me shows it). */
+export async function levelOf(q: Database, userId: string): Promise<Level> {
+  return rules.levelFor(await allLevels(q), rules.totalOf(rules.pointsByPillar(await ledgerOf(q, userId))));
+}
+
+/** How many of a person's events still wait for an admin. */
+export async function waitingProposals(q: Database, userId: string) {
+  const [row] = await q
+    .select({ n: count() })
+    .from(s.events)
+    .where(and(eq(s.events.created_by, userId), eq(s.events.status, 'draft')));
+  return row.n;
 }
 
 /**

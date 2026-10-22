@@ -7,7 +7,8 @@
 
 import { eq } from 'drizzle-orm';
 
-import type { EventDetail } from '../../shared/api';
+import type { EventDetail, EventFormMeta, EventProposal, EventSummary, MeResponse } from '../../shared/api';
+import { PHOTO_MAX_BYTES } from '../../shared/rules';
 import * as s from '../src/db/schema';
 import { startHarness } from './harness';
 
@@ -165,10 +166,91 @@ expectEqual('English phone, English text', pushesTo(TOKEN_F1)[0]?.body.startsWit
 await expectError('scheduler endpoint off without a secret', 'not_found', call('POST', '/internal/tick'));
 
 // ---------------------------------------------------------------------------
+console.log('\n— proposing an event in the app');
+const HOUR = 3_600_000;
+const proposal = (over: Partial<EventProposal> = {}): EventProposal => ({
+  title: 'تنظيف حديقة الحي',
+  description: 'جمع المخلفات من الحديقة.',
+  subtype: 'street_cleanup',
+  address_text: 'حديقة الحي، طرابلس',
+  lat: 32.88,
+  lng: 13.19,
+  starts_at: iso(h.clock() + 72 * HOUR),
+  ends_at: iso(h.clock() + 75 * HOUR),
+  capacity: 15,
+  gender_category: 'mixed',
+  branch_ids: ['b01', 'b16'],
+  terms: ['أحضر قفازيك.'],
+  ...over,
+});
+const meOf = async (token: string): Promise<MeResponse> => (await call('GET', '/me', token)).body;
+expectEqual('a level-1 member may not create events, and is told the level that opens it', [(await meOf(ahmad)).can_create_events, (await meOf(ahmad)).create_events_level], [false, 5]);
+expectEqual('a supervisor may', (await meOf(khaled)).can_create_events, true);
+await expectError('a member below that level proposes', 'cannot_create_events', call('POST', '/events', ahmad, proposal()));
+await expectError('or opens the form', 'cannot_create_events', call('GET', '/events/form', ahmad));
+await expectError('a man proposes a women-only event', 'category_not_allowed', call('POST', '/events', khaled, proposal({ gender_category: 'female' })));
+await expectError('an event that has already started', 'starts_in_past', call('POST', '/events', khaled, proposal({ starts_at: iso(h.clock() - HOUR) })));
+await expectError('a type that does not exist', 'invalid_request', call('POST', '/events', khaled, proposal({ subtype: 'party' })));
+await expectError('no branch of faith', 'invalid_request', call('POST', '/events', khaled, proposal({ branch_ids: [] })));
+await expectError('a branch that does not exist', 'invalid_request', call('POST', '/events', khaled, proposal({ branch_ids: ['b99'] })));
+const form: EventFormMeta = await expectOk('the form', call('GET', '/events/form', khaled));
+expectEqual('it says the event waits for approval', [form.publishes_directly, form.waiting, form.max_waiting, form.branches.length], [false, 0, 3, 20]);
+const proposed = await expectOk('a supervisor proposes an event', call('POST', '/events', khaled, proposal()));
+expectEqual('it waits for an admin', proposed.status, 'draft');
+const asCreator = ((await call('GET', '/events', khaled)).body as EventSummary[]).find((e) => e.id === proposed.id);
+expectEqual('its creator sees it, as its supervisor, with the points of its type', [asCreator?.status, asCreator?.i_created, asCreator?.i_organize, asCreator?.base_points], ['draft', true, true, 30]);
+expectEqual('nobody else sees it', ((await call('GET', '/events', ahmad)).body as EventSummary[]).some((e) => e.id === proposed.id), false);
+await expectError('or opens it', 'not_found', call('GET', `/events/${proposed.id}`, ahmad));
+await expectError('or joins it', 'not_found', call('POST', `/events/${proposed.id}/join`, ahmad));
+expectEqual('its creator opens it, with its terms', (await call('GET', `/events/${proposed.id}`, khaled)).body.terms.length, 1);
+await expectOk('a second proposal', call('POST', '/events', khaled, proposal({ title: 'تشجير الطريق' })));
+await expectOk('a third', call('POST', '/events', khaled, proposal({ title: 'سقيا الماء' })));
+await expectError('a fourth while three wait', 'too_many_proposals', call('POST', '/events', khaled, proposal()));
+const admin = await login('u_admin');
+const byAdmin = await expectOk("an admin's event made in the app", call('POST', '/events', admin, proposal({ title: 'حملة الإدارة' })));
+expectEqual('is published at once', [byAdmin.status, ((await call('GET', '/events', ahmad)).body as EventSummary[]).some((e) => e.id === byAdmin.id)], ['published', true]);
+
+// ---------------------------------------------------------------------------
+console.log('\n— profile photos');
+// A JPEG header with an EXIF segment saying where it was taken. The server
+// checks the file's segments and removes the metadata; it does not decode the picture.
+const segment = (marker: number, payload: Buffer) =>
+  Buffer.concat([Buffer.from([0xff, marker, (payload.length + 2) >> 8, (payload.length + 2) & 0xff]), payload]);
+const jpeg = Buffer.concat([
+  Buffer.from([0xff, 0xd8]),
+  segment(0xe0, Buffer.from('JFIF\0\x01\x01\0\0\x01\0\x01\0\0', 'latin1')),
+  segment(0xe1, Buffer.from('Exif\0\0GPS 32.8872N 13.1913E', 'latin1')),
+  segment(0xdb, Buffer.alloc(65, 1)),
+  Buffer.from([0xff, 0xda, 0x00, 0x08, 1, 1, 0, 0, 0x3f, 0, 0x12, 0x34, 0xff, 0xd9]),
+]);
+const b64 = (bytes: Buffer) => ({ jpeg_base64: bytes.toString('base64') });
+await expectError('a file that is not a JPEG', 'photo_invalid', call('PUT', '/me/photo', ahmad, b64(Buffer.from('<svg onload="alert(1)"/>'))));
+await expectError('a photo too big', 'photo_invalid', call('PUT', '/me/photo', ahmad, b64(Buffer.concat([jpeg, Buffer.alloc(PHOTO_MAX_BYTES)]))));
+await expectError('text that is not base64', 'photo_invalid', call('PUT', '/me/photo', ahmad, { jpeg_base64: 'not base64!' }));
+const { avatar_url } = await expectOk('a member adds a photo', call('PUT', '/me/photo', ahmad, b64(jpeg)));
+expectEqual('his profile points to it', (await meOf(ahmad)).user.avatar_url, avatar_url);
+const seen = await h.raw(avatar_url, khaled);
+expectEqual("a man sees another man's photo", [seen.status, seen.type], [200, 'image/jpeg']);
+expectEqual('as a JPEG without its metadata', [seen.bytes[0], seen.bytes[1], seen.bytes.includes('Exif'), seen.bytes.includes('GPS'), seen.bytes.includes('JFIF')], [0xff, 0xd8, false, false, true]);
+expectEqual('a woman does not (no photo, as far as she can tell)', (await h.raw(avatar_url, mariam)).status, 404);
+expectEqual('an admin and the owner do', [(await h.raw(avatar_url, admin)).status, (await h.raw(avatar_url, ahmad)).status], [200, 200]);
+expectEqual('nobody signed out does', (await h.raw(avatar_url)).status, 401);
+const listedFor = async (token: string) =>
+  ((await call('GET', '/events/e10', token)).body as EventDetail).participants.find((p) => p.id === 'u_ahmad')?.avatar_url;
+expectEqual('among participants: with his photo for a man, without it for a woman', [await listedFor(khaled), await listedFor(mariam)], [avatar_url, null]);
+h.setClock(h.clock() + 1000);
+const renewed = (await call('PUT', '/me/photo', ahmad, b64(jpeg))).body.avatar_url;
+expectEqual('a new photo gets a new address, so no phone shows the old one', renewed !== avatar_url, true);
+await expectOk('remove the photo', call('DELETE', '/me/photo', ahmad));
+expectEqual('gone from the profile and the server', [(await meOf(ahmad)).user.avatar_url, (await h.raw(renewed, khaled)).status], [null, 404]);
+
+// ---------------------------------------------------------------------------
 console.log('\n— deleting an account');
 await call('PUT', '/me/push-token', signup.token, { token: TOKEN_NEW, lang: 'ar' });
+const newPhoto = (await call('PUT', '/me/photo', signup.token, b64(jpeg))).body.avatar_url;
 await expectOk('delete my account', call('DELETE', '/me', signup.token));
 expectEqual("the account's phones are forgotten", await tokenOwner(TOKEN_NEW), null);
+expectEqual('and its photo', (await h.raw(newPhoto, admin)).status, 404);
 await expectError('old token stops working', 'unauthorized', call('GET', '/me', signup.token));
 h.setClock(h.clock() + 2 * 60_000);
 await call('POST', '/auth/request-code', undefined, { phone: phoneB });

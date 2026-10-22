@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 
-import { colors } from '@/theme/tokens';
+import { leafletPage } from './leaflet';
 
 export interface MapPin {
   id: string;
@@ -20,27 +20,13 @@ interface Props {
   onClear(): void;
 }
 
-// OpenStreetMap through Leaflet in a web view: no API key, same look on
-// Android and iOS. Public OSM tiles are fine for testing; before launch,
-// switch TILE_URL to a tile provider (their usage policy forbids heavy app use).
-const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-
+// OpenStreetMap through Leaflet in a web view (leaflet.ts): no API key, same
+// look on Android and iOS.
 function html(center: Props['center']) {
-  return `<!doctype html><html><head>
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-  integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin=""></script>
-<style>
-  html, body, #map { margin: 0; height: 100%; background: ${colors.surfaceAlt}; }
-  /* DESIGN.md: the map is context, the pins are content. */
-  .leaflet-tile-pane { filter: saturate(0.4); }
-</style></head><body><div id="map"></div><script>
+  return leafletPage(`
   const post = (m) => window.ReactNativeWebView.postMessage(JSON.stringify(m));
   const map = L.map('map', { zoomControl: false }).setView([${center.lat}, ${center.lng}], ${center.zoom});
-  map.attributionControl.setPrefix(false);
-  L.tileLayer('${TILE_URL}', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+  tiles(map);
   const layer = L.layerGroup().addTo(map);
   map.on('click', () => post({ type: 'clear' }));
   window.setPins = (pins) => {
@@ -56,8 +42,7 @@ function html(center: Props['center']) {
       }).on('click', select).addTo(layer);
     }
   };
-  post({ type: 'ready' });
-</script></body></html>`;
+  post({ type: 'ready' });`);
 }
 
 export function OsmMap({ center, pins, onSelect, onClear }: Props) {

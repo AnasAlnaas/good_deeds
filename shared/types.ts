@@ -40,7 +40,9 @@ export interface BranchPillar {
   pillar: Pillar;
 }
 
-export type EventStatus = 'draft' | 'published' | 'running' | 'finished' | 'cancelled';
+// Not in Data_Model.md yet: `rejected` = a draft an admin turned down (or dropped)
+// instead of publishing it. Like a draft, nobody but its creator sees it in the app.
+export type EventStatus = 'draft' | 'published' | 'running' | 'finished' | 'cancelled' | 'rejected';
 
 export interface AppEvent {
   id: string;

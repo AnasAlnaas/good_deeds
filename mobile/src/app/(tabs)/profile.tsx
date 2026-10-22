@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 
+import { Avatar } from '@/components/Avatar';
 import { Button } from '@/components/Button';
 import { PillarBar } from '@/components/PillarBar';
 import { Screen } from '@/components/Screen';
@@ -8,7 +9,9 @@ import { Txt } from '@/components/Txt';
 import { Badge, Card, InfoRow, QueryState, SectionTitle } from '@/components/ui';
 import { useMeSummary } from '@/data/queries';
 import { count, fmt, num } from '@/i18n/format';
+import { type PhotoSource, pickPhoto } from '@/lib/photo';
 import { useApp } from '@/state/app';
+import { useAction } from '@/state/useAction';
 import { colors, radius, space } from '@/theme/tokens';
 
 // Keeps a phone number left-to-right inside Arabic text (DESIGN.md: isolate Latin and digits).
@@ -17,6 +20,29 @@ const ltr = (text: string) => `⁦${text}⁩`;
 export default function ProfileScreen() {
   const { s } = useApp();
   const summary = useMeSummary();
+  const { run, busy } = useAction();
+
+  const applyPhoto = async (source: PhotoSource) => {
+    let photo: string | 'denied' | null;
+    try {
+      photo = await pickPhoto(source);
+    } catch {
+      photo = null; // the picker or the resizing failed: nothing changes
+    }
+    if (photo === 'denied') Alert.alert(s.profile.photoFrom, s.profile.cameraDenied);
+    else if (photo) await run((b) => b.setPhoto(photo));
+  };
+  const choosePhoto = () =>
+    Alert.alert(s.profile.photoFrom, s.profile.photoWho, [
+      { text: s.cancel, style: 'cancel' },
+      { text: s.profile.camera, onPress: () => applyPhoto('camera') },
+      { text: s.profile.library, onPress: () => applyPhoto('library') },
+    ]);
+  const removePhoto = () =>
+    Alert.alert(s.profile.removeTitle, s.profile.removeBody, [
+      { text: s.cancel, style: 'cancel' },
+      { text: s.profile.removePhoto, style: 'destructive', onPress: () => run((b) => b.removePhoto()) },
+    ]);
   if (!summary.data) {
     return (
       <Screen title={s.tabs.profile}>
@@ -26,14 +52,14 @@ export default function ProfileScreen() {
   }
   const { user: me, total_points: total, level, next_level: next, points_by_pillar } = summary.data;
   const progress = next ? (total - level.min_points) / (next.min_points - level.min_points) : 1;
+  const unlockLevel = summary.data.create_events_level;
 
   return (
     <Screen title={s.tabs.profile}>
       <View style={styles.head}>
-        <View style={styles.avatar}>
-          <Txt variant="screenTitle" color={colors.primary} align="center">
-            {me.full_name.charAt(0)}
-          </Txt>
+        <View>
+          <Avatar user={me} size={72} />
+          {busy && <ActivityIndicator style={StyleSheet.absoluteFill} color={colors.primary} accessibilityLabel={s.loading} />}
         </View>
         <View style={styles.flex}>
           <Txt variant="sectionTitle">{me.full_name}</Txt>
@@ -43,6 +69,19 @@ export default function ProfileScreen() {
           </View>
         </View>
       </View>
+      <View style={styles.photoActions}>
+        <Button
+          variant="quiet"
+          icon="camera-outline"
+          label={me.avatar_url ? s.profile.changePhoto : s.profile.addPhoto}
+          disabled={busy}
+          onPress={choosePhoto}
+        />
+        {me.avatar_url && <Button variant="quiet" icon="trash-outline" label={s.profile.removePhoto} disabled={busy} onPress={removePhoto} />}
+      </View>
+      <Txt variant="caption" color={colors.inkMuted}>
+        {s.profile.photoWho}
+      </Txt>
 
       <Card>
         <View style={styles.levelRow}>
@@ -59,6 +98,15 @@ export default function ProfileScreen() {
             ? fmt(s.profile.toNext, { n: count(next.min_points - total, s.units.point), level: next.level })
             : s.profile.maxLevel}
         </Txt>
+        {summary.data.can_create_events ? (
+          <Button variant="secondary" icon="add-circle-outline" label={s.events.propose} onPress={() => router.push('/event/new')} />
+        ) : (
+          unlockLevel !== null && (
+            <Txt variant="caption" color={colors.inkMuted}>
+              {fmt(s.profile.createUnlock, { level: unlockLevel })}
+            </Txt>
+          )
+        )}
       </Card>
 
       <SectionTitle>{s.profile.distribution}</SectionTitle>
@@ -80,14 +128,7 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   head: { flexDirection: 'row', alignItems: 'center', gap: space.md },
-  avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: colors.primarySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  photoActions: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginTop: -space.sm },
   flex: { flex: 1, gap: space.xs },
   badges: { flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' },
   levelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

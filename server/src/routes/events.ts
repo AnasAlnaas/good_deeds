@@ -1,8 +1,9 @@
-// Events, joining (with the terms one by one) and the supervisor's roster.
+// Events, proposing one in the app, joining (with the terms one by one) and
+// the supervisor's roster.
 // Every change runs in a transaction: the rows are read (and locked), the
 // shared rule decides, and the result is written, or nothing is.
 
-import { and, asc, eq, inArray, isNull, ne } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, notInArray, or } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
@@ -10,31 +11,40 @@ import type {
   AcceptTermResponse,
   AttendanceResponse,
   EventDetail,
+  EventFormMeta,
   EventSummary,
+  ProposeEventResponse,
   RegistrationResponse,
   RosterResponse,
 } from '../../../shared/api';
 import { ApiError } from '../../../shared/errors';
+import { BASE_POINTS_BY_SUBTYPE } from '../../../shared/placeholders';
 import * as rules from '../../../shared/rules';
 import { type AppEvent, PILLARS, type Registration, type User } from '../../../shared/types';
 import { requireUser } from '../auth';
 import type { Database } from '../db/client';
 import {
   acceptedTermIds,
+  activeBranches,
   attendanceOf,
   findEvent,
+  findEventFor,
   isOrganizer,
   joinedCounts,
   joinedUsers,
+  levelOf,
   newId,
   pillarWeights,
   registrationOf,
+  shownTo,
   termsOf,
+  waitingProposals,
 } from '../db/queries';
 import { iso } from '../db/rows';
 import * as s from '../db/schema';
 import { type AppEnv, readBody } from '../http';
 import { notifyHoursToConfirm } from '../notify';
+import { assertIdsExist, proposalInput, writeLinks, writeTerms } from './event-input';
 
 const recordTimeBody = z.object({ at: z.iso.datetime({ offset: true }).optional() });
 
@@ -66,6 +76,7 @@ async function summarize(db: Database, me: User, events: AppEvent[], now: number
       can_join_category: rules.canUserJoinCategory(me, e),
       my_registration_status: myStatus.get(e.id) ?? null,
       i_organize: iOrganize.has(e.id),
+      i_created: e.created_by === me.id,
     };
   });
 }
@@ -75,15 +86,76 @@ export const eventRoutes = new Hono<AppEnv>()
 
   .get('/', async (c) => {
     const { db, now } = c.var.deps;
-    const rows = await db.select().from(s.events).where(ne(s.events.status, 'draft')).orderBy(asc(s.events.starts_at));
-    return c.json<EventSummary[]>(await summarize(db, c.var.user, rows.map(iso), now()));
+    const me = c.var.user;
+    // Drafts and turned-down drafts: only their creator sees them.
+    const visible = or(notInArray(s.events.status, ['draft', 'rejected']), eq(s.events.created_by, me.id));
+    const rows = await db.select().from(s.events).where(visible).orderBy(asc(s.events.starts_at));
+    return c.json<EventSummary[]>(await summarize(db, me, rows.map(iso), now()));
+  })
+
+  // ---------- proposing an event (before /:id, which would take "form" for an id) ----------
+
+  .get('/form', async (c) => {
+    const { db } = c.var.deps;
+    const me = c.var.user;
+    if (!rules.canCreateEvents(me, await levelOf(db, me.id))) throw new ApiError('cannot_create_events');
+    return c.json<EventFormMeta>({
+      branches: await activeBranches(db),
+      subtypes: Object.entries(BASE_POINTS_BY_SUBTYPE).map(([id, base_points]) => ({ id, base_points })),
+      publishes_directly: rules.proposalStatus(me) === 'published',
+      waiting: await waitingProposals(db, me.id),
+      max_waiting: rules.MAX_WAITING_PROPOSALS,
+    });
+  })
+
+  .post('/', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const body = await readBody(c, proposalInput);
+    const t = now();
+    const id = newId();
+    const status = rules.proposalStatus(me);
+    await db.transaction(async (tx) => {
+      // Locking the person makes two proposals sent at once count each other.
+      await tx.select({ id: s.users.id }).from(s.users).where(eq(s.users.id, me.id)).for('update');
+      rules.assertCanProposeEvent({
+        user: me,
+        level: await levelOf(tx, me.id),
+        event: body,
+        waitingCount: await waitingProposals(tx, me.id),
+        now: t,
+      });
+      const { branchIds } = await assertIdsExist(tx, { branch_ids: body.branch_ids, organizer_ids: [] });
+      await tx.insert(s.events).values({
+        id,
+        title: body.title,
+        description: body.description,
+        subtype: body.subtype,
+        image_url: null,
+        lat: body.lat,
+        lng: body.lng,
+        address_text: body.address_text,
+        starts_at: new Date(body.starts_at),
+        ends_at: new Date(body.ends_at),
+        capacity: body.capacity,
+        gender_category: body.gender_category,
+        base_points: BASE_POINTS_BY_SUBTYPE[body.subtype],
+        status,
+        created_by: me.id,
+        created_at: new Date(t),
+      });
+      // Whoever proposes an event supervises it; an admin can add others from the panel.
+      await writeLinks(tx, id, branchIds, [me.id]);
+      await writeTerms(tx, id, body.terms, new Date(t));
+    });
+    return c.json<ProposeEventResponse>({ id, status }, 201);
   })
 
   .get('/:id', async (c) => {
     const { db, now } = c.var.deps;
     const me = c.var.user;
     const id = c.req.param('id');
-    const event = await findEvent(db, id);
+    const event = await findEventFor(db, id, me);
     const [summary] = await summarize(db, me, [event], now());
     const branches = await db
       .select({ branch: s.branches })
@@ -106,7 +178,7 @@ export const eventRoutes = new Hono<AppEnv>()
         pillars: PILLARS.filter((p) => links.some((l) => l.branch_id === r.branch.id && l.pillar === p)),
       })),
       terms: await termsOf(db, id),
-      participants: await joinedUsers(db, id),
+      participants: (await joinedUsers(db, id)).map((u) => shownTo(me, u)),
       my_registration: registration ?? null,
       my_accepted_term_ids: await acceptedTermIds(db, registration?.id),
       my_attendance: (await attendanceOf(db, id, me.id)) ?? null,
@@ -217,7 +289,7 @@ export const eventRoutes = new Hono<AppEnv>()
     const byUser = new Map(rows.map((r) => [r.user_id, iso(r)]));
     return c.json<RosterResponse>({
       event: summary,
-      participants: people.map((user) => ({ user, attendance: byUser.get(user.id) ?? null })),
+      participants: people.map((user) => ({ user: shownTo(me, user), attendance: byUser.get(user.id) ?? null })),
     });
   })
 

@@ -3,8 +3,10 @@
 // in the on-phone database, calls the rule, and writes what the rule decided.
 // The screens never compute hours or points themselves.
 
+import type { EventProposal } from '@/data/api';
 import type { AppEvent, Attendance, Db, EventStatus, EventTerm, Pillar, Registration, User } from '@/data/types';
 import { PILLARS } from '@/data/types';
+import { BASE_POINTS_BY_SUBTYPE } from './placeholders';
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
 
@@ -16,9 +18,17 @@ const newId = (prefix: string) => `${prefix}_${Date.now().toString(36)}${Math.ra
 
 // ---------- reads (selectors) ----------
 
+/** Like the server's findEvent: drafts and turned-down drafts are nobody's to act on. */
 export function getEvent(db: Db, eventId: string): AppEvent {
   const e = db.events.find((x) => x.id === eventId);
-  if (!e) throw new ApiError('not_found');
+  if (!e || rules.isHidden(e)) throw new ApiError('not_found');
+  return e;
+}
+
+/** An event as `viewerId` may see it: their own drafts included. */
+export function getEventFor(db: Db, eventId: string, viewerId: string): AppEvent {
+  const e = db.events.find((x) => x.id === eventId);
+  if (!e || !rules.canSeeEvent({ id: viewerId }, e)) throw new ApiError('not_found');
   return e;
 }
 
@@ -91,6 +101,14 @@ export function nextLevel(db: Db, points: number) {
   return rules.nextLevel(db.levels, points);
 }
 
+export function waitingProposals(db: Db, userId: string) {
+  return db.events.filter((e) => e.created_by === userId && e.status === 'draft').length;
+}
+
+export function canCreateEvents(db: Db, user: User) {
+  return rules.canCreateEvents(user, levelFor(db, totalPoints(db, user.id)));
+}
+
 export function confirmedHours(db: Db, userId: string) {
   return rules.round2(
     db.attendance
@@ -113,6 +131,60 @@ export function tick(db: Db, now: number): Db {
     const close = rules.decideAutoClose(a, getEvent(next, a.event_id), now);
     if (close) Object.assign(a, close);
   }
+  return next;
+}
+
+// ---------- proposing an event ----------
+
+/**
+ * An event made in the app. The demo has no admin, so a proposal stays waiting.
+ * The form's fields are checked before this (demoBackend.ts), as the server's request checks do.
+ */
+export function proposeEvent(db: Db, userId: string, input: EventProposal, now: number): { db: Db; event: AppEvent } {
+  const user = getUser(db, userId)!;
+  rules.assertCanProposeEvent({
+    user,
+    level: levelFor(db, totalPoints(db, userId)),
+    event: input,
+    waitingCount: waitingProposals(db, userId),
+    now,
+  });
+  const next = clone(db);
+  const at = new Date(now).toISOString();
+  const event: AppEvent = {
+    id: newId('ev'),
+    title: input.title,
+    description: input.description,
+    subtype: input.subtype,
+    image_url: null,
+    lat: input.lat,
+    lng: input.lng,
+    address_text: input.address_text,
+    starts_at: input.starts_at,
+    ends_at: input.ends_at,
+    capacity: input.capacity,
+    gender_category: input.gender_category,
+    base_points: BASE_POINTS_BY_SUBTYPE[input.subtype],
+    status: rules.proposalStatus(user),
+    terms_locked_at: null,
+    created_by: userId,
+    created_at: at,
+  };
+  next.events.push(event);
+  next.event_organizers.push({ event_id: event.id, user_id: userId });
+  for (const branch_id of new Set(input.branch_ids)) next.event_branches.push({ event_id: event.id, branch_id });
+  input.terms.forEach((text, i) =>
+    next.event_terms.push({ id: newId('term'), event_id: event.id, order_index: i + 1, text, image_url: null, audio_url: null, created_at: at }),
+  );
+  return { db: next, event };
+}
+
+// ---------- profile photo ----------
+
+/** The demo keeps the photo on the phone, inside its data, as a data: address. null removes it. */
+export function setPhoto(db: Db, userId: string, dataUri: string | null): Db {
+  const next = clone(db);
+  next.users.find((u) => u.id === userId)!.avatar_url = dataUri;
   return next;
 }
 
@@ -293,7 +365,10 @@ export function disputeAttendance(db: Db, userId: string, attendanceId: string, 
 export function deleteAccount(db: Db, userId: string, now: number): Db {
   const next = clone(db);
   const u = next.users.find((x) => x.id === userId);
-  if (u) u.deleted_at = new Date(now).toISOString();
+  if (u) {
+    u.deleted_at = new Date(now).toISOString();
+    u.avatar_url = null;
+  }
   for (const r of next.registrations) if (r.user_id === userId) r.status = 'cancelled';
   return next;
 }

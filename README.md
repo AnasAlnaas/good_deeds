@@ -44,7 +44,8 @@ server on port 3000 of the computer running `npx expo start`, so a phone on the
 same Wi-Fi finds `npm run dev` with no setup. A build without either shows only
 the demo. Android blocks plain `http://` in release builds, so a test APK needs
 the server behind HTTPS; Expo Go and development builds are fine with `http://`.
-After adding `expo-secure-store`, native builds (the test APK) must be rebuilt.
+After adding `expo-secure-store`, `expo-image-picker` and `expo-image-manipulator`,
+native builds (the test APK, a development build) must be rebuilt; Expo Go already has them.
 
 The app follows the planning notes (`DESIGN.md`, `Screens.md`, `Data_Model.md`,
 `Attendance_And_Hours.md`).
@@ -56,10 +57,22 @@ The app follows the planning notes (`DESIGN.md`, `Screens.md`, `Data_Model.md`,
 - Supervisor roster: record start and finish, with backdating limited to event start → now.
 - Participant confirms or disputes recorded hours; confirming credits points per pillar.
 - My activity, profile with level, account deletion.
+- **Profile photo**: from the phone's photos or the camera, made a small square
+  JPEG on the phone; the server removes its metadata (EXIF: place, phone). Seen
+  only by the owner, admins and people of the same gender (owner's decision);
+  everyone else sees the first letter of the name. Shown on the roster and the
+  record screen, so the supervisor can see who stands in front of them.
+- **Proposing an event** (Events tab → "اقترح فعالية"): opens at level 5, or for
+  supervisors and admins. The creator becomes its supervisor and may choose only
+  mixed or their own men/women category. It waits for an admin (at most 3 waiting
+  per person), who approves or turns it down from the admin panel; the creator is
+  notified either way. Until then only the creator sees it, under "أنظّمها".
+  An admin's own event made in the app is published at once.
 
 Try the full loop: sign in as **خالد منصور** (supervisor), open **حملة نظافة السراج**
 (happening now) → roster → record start and finish for **أحمد سالم**. Then switch
-account to أحمد → My activity → confirm the hours.
+account to أحمد → My activity → confirm the hours. As خالد you can also propose
+an event (Events → اقترح فعالية); the demo has no admin, so it stays waiting.
 
 `src/demo/server.ts` stands in for the backend. It calls the same rules as the
 real server (`shared/rules.ts`), and the screens never compute hours or points.
@@ -112,7 +125,9 @@ name (`com.islahtarbawi.gooddeeds`) are always picked up.
 **Placeholders to replace** (`shared/placeholders.ts`): base points per event
 type, level thresholds and the end-time grace period — they belong to
 `Points_And_Levels.md`. Fields marked `DEMO-ONLY` in `shared/types.ts` are
-not in `Data_Model.md` yet and need a decision.
+not in `Data_Model.md` yet and need a decision. Marked `⚠️ ASSUMPTION` in
+`shared/rules.ts`: who may propose events ("level + direct nomination" read as
+level 5, or supervisor/admin) and how many proposals may wait at once (3).
 
 ## API
 
@@ -152,6 +167,14 @@ How it fits together:
   in the message; a corrected title or description sends nothing). It sends
   through Expo's push service in production and prints to the server log in
   development. Times are written in `TIME_ZONE` (default Africa/Tripoli).
+  Whoever proposed an event in the app is told when it is approved or turned
+  down (with the admin's reason, if given).
+- Profile photos are kept in the database (`user_photos`), so the server needs no
+  file storage. `GET /api/users/:id/photo` serves one only to those allowed to
+  see it (`rules.canSeePhoto`), and answers 404 to anyone else.
+- Events proposed in the app are drafts (`events.status = 'draft'`) until an admin
+  publishes them, or `rejected` if turned down: neither is listed for anyone but
+  their creator.
 
 Settings are environment variables; see `server/.env.example`. In production
 (`NODE_ENV=production`) `DATABASE_URL` and `JWT_SECRET` are required, and sign-in
@@ -170,16 +193,20 @@ npm run dev        # http://localhost:5173 (the server must be running)
 Sign in with an admin's phone number. In development the code appears in the
 server log, and the development database has an admin: **0910000000**.
 
-- **Overview**: disputes waiting, events running and upcoming, drafts, hours
-  waiting for their owners to confirm.
+- **Overview**: disputes and proposed events waiting, events running and
+  upcoming, drafts, hours waiting for their owners to confirm.
 - **Events**: create (as a draft or published), edit, publish, cancel. Choose
   the type (it sets the points), branches of faith, supervisors and terms.
   What people already agreed to is protected: terms lock at the first
   acceptance, the men/women/mixed category once someone joined, the time and
-  type once attendance was recorded.
+  type once attendance was recorded. An event proposed in the app shows who
+  proposed it; approve it (publish) or turn it down with a reason, which is sent
+  to them. An admin's own draft can be discarded the same way.
 - **Disputes**: accept the recorded hours, correct them, or count none, with a
   reason. Points are credited like a confirmation and the member is notified.
-- **Members**: search, change roles (member, supervisor, admin).
+- **Members**: search, change roles (member, supervisor, admin). Each member's
+  photo is shown (click to open it full size); an unsuitable one can be removed,
+  and the member is told and may add another.
 - **Hours report**: confirmed hours and points per member for a period;
   downloads as a CSV that Excel opens with Arabic intact.
 - **Audit log**: every admin decision, who made it and when.

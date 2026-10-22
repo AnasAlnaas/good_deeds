@@ -18,6 +18,8 @@ export function EventCard({ event }: { event: EventSummary }) {
     <Card onPress={() => router.push(`/event/${event.id}`)} style={event.can_join_category ? undefined : styles.dim}>
       <Row>
         {event.status === 'running' && <Badge label={s.status.running} color={colors.danger} icon="radio-button-on" />}
+        {event.status === 'draft' && <Badge label={s.status.draft} color={colors.warning} icon="hourglass-outline" />}
+        {(event.status === 'rejected' || event.status === 'cancelled') && <Badge label={s.status[event.status]} color={colors.inkMuted} />}
         {event.my_registration_status === 'joined' && <Badge label={s.event.joined} color={colors.success} icon="checkmark-circle" />}
         {event.gender_category !== 'mixed' && <Badge label={s.category[event.gender_category]} color={colors.inkMuted} />}
       </Row>

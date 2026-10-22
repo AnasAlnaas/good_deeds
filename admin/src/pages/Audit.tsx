@@ -64,6 +64,15 @@ function Details({ entry: e }: { entry: AuditEntry }) {
     case 'publish_event':
     case 'cancel_event':
       return <Link to={`/events/${e.target_id}`}>{str('title')}</Link>;
+    case 'remove_photo':
+      return <>{str('name')}</>;
+    case 'reject_event':
+      return (
+        <>
+          <Link to={`/events/${e.target_id}`}>{str('title')}</Link>
+          {str('note') && ` · «${str('note')}»`}
+        </>
+      );
     case 'update_event': {
       const changed = Array.isArray(d.changed) ? (d.changed as string[]) : [];
       const labels = [...new Set(changed.map((k) => t.audit.fields[k] ?? k))];

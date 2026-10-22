@@ -1,6 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { Alert, StyleSheet, View } from 'react-native';
 
+import { Avatar } from '@/components/Avatar';
 import { Button } from '@/components/Button';
 import { PillarBar } from '@/components/PillarBar';
 import { Screen } from '@/components/Screen';
@@ -45,7 +46,14 @@ export default function EventDetail() {
     ]);
 
   let footer;
-  if (organizer) {
+  if (status === 'draft' || status === 'rejected') {
+    // Only its creator sees an event that is not published.
+    footer = (
+      <Txt color={status === 'draft' ? colors.inkMuted : colors.danger} align="center">
+        {status === 'draft' ? s.event.waiting : s.event.rejected}
+      </Txt>
+    );
+  } else if (organizer) {
     footer = (
       <>
         <Txt variant="caption" color={colors.inkMuted} align="center">
@@ -87,8 +95,8 @@ export default function EventDetail() {
       <Row>
         <Badge
           label={s.status[status]}
-          color={status === 'running' ? colors.danger : colors.primary}
-          icon={status === 'running' ? 'radio-button-on' : undefined}
+          color={status === 'running' ? colors.danger : status === 'draft' ? colors.warning : status === 'rejected' ? colors.inkMuted : colors.primary}
+          icon={status === 'running' ? 'radio-button-on' : status === 'draft' ? 'hourglass-outline' : undefined}
         />
         <Badge label={s.category[event.gender_category]} color={colors.inkMuted} />
       </Row>
@@ -122,7 +130,14 @@ export default function EventDetail() {
       {participants.length === 0 ? (
         <Txt color={colors.inkMuted}>{s.event.noParticipants}</Txt>
       ) : (
-        <Txt color={colors.inkMuted}>{participants.map((u) => u.full_name).join(lang === 'ar' ? '، ' : ', ')}</Txt>
+        <View style={styles.people}>
+          {participants.map((u) => (
+            <View key={u.id} style={styles.person}>
+              <Avatar user={u} size={32} />
+              <Txt variant="caption">{u.full_name}</Txt>
+            </View>
+          ))}
+        </View>
       )}
     </Screen>
   );
@@ -131,4 +146,6 @@ export default function EventDetail() {
 const styles = StyleSheet.create({
   branch: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   flex: { flex: 1 },
+  people: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  person: { flexDirection: 'row', alignItems: 'center', gap: space.xs, paddingEnd: space.sm },
 });

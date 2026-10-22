@@ -3,6 +3,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { Avatar } from '@/components/Avatar';
 import { RecordedMotion } from '@/components/brand';
 import { Button } from '@/components/Button';
 import { Screen } from '@/components/Screen';
@@ -104,11 +105,15 @@ export default function RecordScreen() {
           onPress={submit}
         />
       }>
-      <Card>
-        <Txt variant="sectionTitle">{user.full_name}</Txt>
-        <Txt variant="caption" color={colors.inkMuted}>
-          {event.title}
-        </Txt>
+      <Card style={styles.person}>
+        {/* The photo helps the supervisor confirm who stands in front of them. */}
+        <Avatar user={user} size={64} />
+        <View style={styles.flex}>
+          <Txt variant="sectionTitle">{user.full_name}</Txt>
+          <Txt variant="caption" color={colors.inkMuted}>
+            {event.title}
+          </Txt>
+        </View>
       </Card>
 
       {mode === 'start' && (
@@ -142,6 +147,7 @@ export default function RecordScreen() {
 
 const styles = StyleSheet.create({
   ack: { flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: touch },
+  person: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   flex: { flex: 1 },
   done: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.md, padding: space.lg },
 });

@@ -5,7 +5,7 @@
 // Run: npm run check:api (runs this after check-api.ts)
 
 import type { EventDetail, EventSummary } from '../../shared/api';
-import type { AdminEventDetail, AdminOverview, AdminUserRow, AuditEntry, CreateEventBody, EventInput } from '../../shared/admin-api';
+import type { AdminEventDetail, AdminEventRow, AdminOverview, AdminUserRow, AuditEntry, CreateEventBody, EventInput } from '../../shared/admin-api';
 import type { PushMessage } from '../src/push';
 import { startHarness } from './harness';
 
@@ -233,5 +233,71 @@ expectEqual('and what changed', [log.filter((e) => e.action === 'update_event').
   'member',
   'supervisor',
 ]);
+
+// ---------------------------------------------------------------------------
+console.log('\n— events proposed in the app');
+const { organizer_ids: _, publish: __, ...proposal } = base;
+await eventNews();
+const approved = (await call('POST', '/events', khaled, { ...proposal, title: 'تنظيف حديقة الحي' })).body.id;
+const turnedDown = (await call('POST', '/events', khaled, { ...proposal, title: 'سقيا الماء في السوق' })).body.id;
+expectEqual('the overview counts them', ((await call('GET', '/admin/overview', admin)).body as AdminOverview).proposals_waiting, 2);
+const rows: AdminEventRow[] = (await call('GET', '/admin/events', admin)).body;
+const row = rows.find((r) => r.event.id === approved);
+expectEqual('with who proposed it, as its supervisor', [row?.event.status, row?.creator?.id, row?.creator?.role, row?.organizers.map((o) => o.id)], [
+  'draft',
+  'u_khaled',
+  'supervisor',
+  ['u_khaled'],
+]);
+await expectError('cancel a proposal (it is turned down instead)', 'invalid_status_change', call('POST', `/admin/events/${approved}/cancel`, admin));
+await expectOk('approve one: publish it', call('POST', `/admin/events/${approved}/publish`, admin));
+expectEqual('everyone sees it now', ((await call('GET', '/events', ahmad)).body as EventSummary[]).some((e) => e.id === approved), true);
+const approval = await eventNews();
+expectEqual('only its creator is told', [who(approval), approval[0]?.data.type, bodyFor(approval, 'khaled')], [
+  ['khaled'],
+  'event_approved',
+  'اعتمدت إدارة الجمعية «تنظيف حديقة الحي»، وهي الآن على الخريطة.',
+]);
+await expectError('a reason longer than the limit', 'invalid_request', call('POST', `/admin/events/${turnedDown}/reject`, admin, { note: 'س'.repeat(501) }));
+await expectOk('turn the other down, with a reason', call('POST', `/admin/events/${turnedDown}/reject`, admin, { note: 'المكان مزدحم وقت السوق؛ اقترح موعداً صباحياً.' }));
+const refusal = await eventNews();
+expectEqual('its creator is told why', [who(refusal), refusal[0]?.data.type, bodyFor(refusal, 'khaled')], [
+  ['khaled'],
+  'event_rejected',
+  'لم تعتمد إدارة الجمعية «سقيا الماء في السوق». السبب: المكان مزدحم وقت السوق؛ اقترح موعداً صباحياً.',
+]);
+expectEqual('it stays out of the app for everyone else', ((await call('GET', '/events', ahmad)).body as EventSummary[]).some((e) => e.id === turnedDown), false);
+expectEqual('its creator sees it was not approved', (await call('GET', `/events/${turnedDown}`, khaled)).body.status, 'rejected');
+await expectError('nobody can join it', 'not_found', call('POST', `/events/${turnedDown}/join`, khaled));
+await expectError('turn down a published event', 'invalid_status_change', call('POST', `/admin/events/${approved}/reject`, admin));
+await expectError('publish a turned-down event', 'invalid_status_change', call('POST', `/admin/events/${turnedDown}/publish`, admin));
+await expectError('edit a turned-down event', 'event_not_editable', call('PUT', `/admin/events/${turnedDown}`, admin, inputFrom(await detail(turnedDown))));
+expectEqual('none wait any more', ((await call('GET', '/admin/overview', admin)).body as AdminOverview).proposals_waiting, 0);
+const latest: AuditEntry[] = (await call('GET', '/admin/audit', admin)).body;
+expectEqual('both decisions are in the audit log, the reason too', [latest[0].action, latest[0].details.note, latest[1].action], [
+  'reject_event',
+  'المكان مزدحم وقت السوق؛ اقترح موعداً صباحياً.',
+  'publish_event',
+]);
+
+// ---------------------------------------------------------------------------
+console.log('\n— removing an unsuitable profile photo');
+// A JPEG header is enough: the server checks the file's segments, it does not decode the picture.
+const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x04, 1, 1, 0xff, 0xda, 0x00, 0x08, 1, 1, 0, 0, 0x3f, 0, 0x12, 0xff, 0xd9]);
+const { avatar_url: photo } = (await call('PUT', '/me/photo', mariam, { jpeg_base64: jpeg.toString('base64') })).body;
+const mariamRow = ((await call('GET', `/admin/users?q=${encodeURIComponent('مريم')}`, admin)).body as AdminUserRow[])[0];
+expectEqual('the members list shows her photo', mariamRow?.avatar_url, photo);
+expectEqual('an admin sees it, though a man', (await h.raw(photo, admin)).status, 200);
+await expectError('a supervisor removes it', 'forbidden', call('DELETE', '/admin/users/u_mariam/photo', khaled));
+await expectOk('an admin removes it', call('DELETE', '/admin/users/u_mariam/photo', admin));
+expectEqual('gone from her profile and the server', [(await call('GET', '/me', mariam)).body.user.avatar_url, (await h.raw(photo, admin)).status], [null, 404]);
+await expectError('remove it twice', 'not_found', call('DELETE', '/admin/users/u_mariam/photo', admin));
+await settle();
+expectEqual('she is told, in her phone\'s language', pushes.filter((p) => p.data.type === 'photo_removed').map((p) => [p.to, p.title]), [
+  ['ExponentPushToken[mariam]', 'Your photo was removed'],
+]);
+const removal = ((await call('GET', '/admin/audit', admin)).body as AuditEntry[])[0];
+expectEqual('the removal is in the audit log', [removal.action, removal.target_id, removal.details.name], ['remove_photo', 'u_mariam', 'مريم علي']);
+await expectOk('she can add another', call('PUT', '/me/photo', mariam, { jpeg_base64: jpeg.toString('base64') }));
 
 await h.done();

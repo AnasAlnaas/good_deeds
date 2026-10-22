@@ -69,6 +69,8 @@ interface AppState {
   sessionKey: string;
   /** The demo's data, for the demo accounts on the login screen. */
   demoDb: Db;
+  /** How to load a profile photo (users.avatar_url): from the server with the sign-in token, or the demo's data: address. */
+  photoSource(url: string | null): { uri: string; headers?: Record<string, string> } | null;
   setLang(lang: Lang): void;
   setMode(mode: Mode): void;
   finishOnboarding(): void;
@@ -234,6 +236,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       backend,
       sessionKey: `${mode}:${meId ?? 'none'}`,
       demoDb: db,
+      photoSource(url) {
+        if (!url) return null;
+        // A photo on the server is served only to signed-in people allowed to see it.
+        if (url.startsWith('/')) return API_URL && token ? { uri: API_URL + url, headers: { Authorization: `Bearer ${token}` } } : null;
+        return { uri: url };
+      },
       setLang(l) {
         setLangState(l);
         save(KEYS.lang, l);
@@ -269,7 +277,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         queryClient.invalidateQueries();
       },
     }),
-    [ready, lang, onboarded, now, mode, me, lastMe, backend, meId, db, apiSession, signOut, commit, queryClient],
+    [ready, lang, onboarded, now, mode, me, lastMe, backend, meId, db, token, apiSession, signOut, commit, queryClient],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

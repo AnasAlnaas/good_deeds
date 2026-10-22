@@ -108,7 +108,11 @@ export function Field({ label, ltr, ...input }: { label: string; ltr?: boolean }
       <TextInput
         placeholderTextColor={colors.inkMuted}
         {...input}
-        style={[styles.input, { textAlign: ltr ? 'left' : isRTL ? 'right' : 'left', writingDirection: ltr ? 'ltr' : undefined }]}
+        style={[
+          styles.input,
+          input.multiline && styles.multiline,
+          { textAlign: ltr ? 'left' : isRTL ? 'right' : 'left', writingDirection: ltr ? 'ltr' : undefined },
+        ]}
       />
     </View>
   );
@@ -171,4 +175,5 @@ export const styles = StyleSheet.create({
     color: colors.ink,
     backgroundColor: colors.surface,
   },
+  multiline: { minHeight: 96, paddingVertical: space.sm, textAlignVertical: 'top' },
 });

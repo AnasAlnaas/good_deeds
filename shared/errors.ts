@@ -22,7 +22,11 @@ export type ApiErrorCode =
   | 'end_before_start'
   | 'end_after_event'
   | 'not_your_attendance'
-  | 'already_acted';
+  | 'already_acted'
+  | 'cannot_create_events'
+  | 'category_not_allowed'
+  | 'starts_in_past'
+  | 'too_many_proposals';
 
 export class ApiError extends Error {
   readonly code: ApiErrorCode;

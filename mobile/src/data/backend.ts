@@ -10,8 +10,12 @@ import type {
   AttendanceResponse,
   ConfirmResponse,
   EventDetail,
+  EventFormMeta,
+  EventProposal,
   EventSummary,
   MeResponse,
+  PhotoResponse,
+  ProposeEventResponse,
   RegistrationResponse,
   RosterResponse,
   ServerErrorCode,
@@ -39,6 +43,9 @@ export function errorCode(e: unknown): ErrorCode {
 export interface Backend {
   listEvents(): Promise<EventSummary[]>;
   event(id: string): Promise<EventDetail>;
+  /** What the event form offers; refused for someone who may not create events. */
+  eventForm(): Promise<EventFormMeta>;
+  proposeEvent(body: EventProposal): Promise<ProposeEventResponse>;
   startJoin(eventId: string): Promise<RegistrationResponse>;
   acceptTerm(eventId: string, termId: string): Promise<AcceptTermResponse>;
   completeJoin(eventId: string): Promise<RegistrationResponse>;
@@ -52,6 +59,9 @@ export interface Backend {
   attendance(id: string): Promise<AttendanceItem>;
   confirmAttendance(id: string): Promise<ConfirmResponse>;
   disputeAttendance(id: string): Promise<AttendanceResponse>;
+  /** A square JPEG, base64-encoded (src/lib/photo.ts makes it). */
+  setPhoto(jpegBase64: string): Promise<PhotoResponse>;
+  removePhoto(): Promise<void>;
   deleteAccount(): Promise<void>;
   /** This phone signed in: send this account's notifications to it. */
   registerPushToken(token: string, lang: 'ar' | 'en'): Promise<void>;

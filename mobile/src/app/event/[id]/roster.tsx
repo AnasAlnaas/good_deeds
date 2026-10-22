@@ -1,6 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
+import { Avatar } from '@/components/Avatar';
 import { Button } from '@/components/Button';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
@@ -47,6 +48,7 @@ export default function RosterScreen() {
         return (
           <Card key={u.id}>
             <View style={styles.head}>
+              <Avatar user={u} size={40} />
               <Txt variant="bodyStrong" style={styles.flex}>
                 {u.full_name}
               </Txt>

@@ -37,7 +37,7 @@ type JoinableEvent = EventTimes & Pick<AppEvent, 'gender_category'>;
 // ---------- event status ----------
 
 export function effectiveStatus(e: EventTimes, now: number): EventStatus {
-  if (e.status === 'cancelled' || e.status === 'draft') return e.status;
+  if (e.status === 'cancelled' || e.status === 'draft' || e.status === 'rejected') return e.status;
   if (now >= toMs(e.ends_at)) return 'finished';
   if (now >= toMs(e.starts_at)) return 'running';
   return 'published';
@@ -51,11 +51,68 @@ export function sortTerms<T extends Pick<EventTerm, 'order_index'>>(terms: T[]):
   return [...terms].sort((a, b) => a.order_index - b.order_index);
 }
 
+/** Drafts and turned-down drafts are seen only by whoever created them. */
+export function isHidden(e: Pick<AppEvent, 'status'>) {
+  return e.status === 'draft' || e.status === 'rejected';
+}
+
+export function canSeeEvent(viewer: Pick<User, 'id'>, e: Pick<AppEvent, 'status' | 'created_by'>) {
+  return !isHidden(e) || e.created_by === viewer.id;
+}
+
+// ---------- creating events in the app ----------
+
+// ⚠️ ASSUMPTION: the master file says event creation opens by "level + direct
+// nomination". Read here as: a level that allows it (level 5 in
+// placeholders.ts), or being named a supervisor or admin by the association.
+export function canCreateEvents(user: Pick<User, 'role'>, level: Pick<Level, 'can_create_events'>) {
+  return level.can_create_events || user.role === 'supervisor' || user.role === 'admin';
+}
+
+// ⚠️ ASSUMPTION: how many proposals one person may have waiting for an admin at once.
+export const MAX_WAITING_PROPOSALS = 3;
+
+/**
+ * A member proposing an event. The creator becomes its supervisor, so they may
+ * choose only an event they could take part in themselves: their own men /
+ * women category, or mixed. It must start in the future.
+ */
+export function assertCanProposeEvent(args: {
+  user: Pick<User, 'role' | 'gender'>;
+  level: Pick<Level, 'can_create_events'>;
+  event: Pick<AppEvent, 'starts_at' | 'gender_category'>;
+  /** The creator's events still waiting for an admin (drafts). */
+  waitingCount: number;
+  now: number;
+}) {
+  const { user, event } = args;
+  if (!canCreateEvents(user, args.level)) throw new ApiError('cannot_create_events');
+  if (!canUserJoinCategory(user, event)) throw new ApiError('category_not_allowed');
+  if (toMs(event.starts_at) <= args.now) throw new ApiError('starts_in_past');
+  if (user.role !== 'admin' && args.waitingCount >= MAX_WAITING_PROPOSALS) throw new ApiError('too_many_proposals');
+}
+
+/** Owner's decision (2026-10-22): an admin approves every event made in the app; an admin's own is published at once. */
+export function proposalStatus(user: Pick<User, 'role'>): 'draft' | 'published' {
+  return user.role === 'admin' ? 'published' : 'draft';
+}
+
+// ---------- profile photos ----------
+
+/** Owner's decision (2026-10-22): a photo is seen by its owner, by admins, and by people of the same gender. */
+export function canSeePhoto(viewer: Pick<User, 'id' | 'gender' | 'role'>, owner: Pick<User, 'id' | 'gender'>) {
+  return viewer.id === owner.id || viewer.role === 'admin' || viewer.gender === owner.gender;
+}
+
+/** Photos are sent as a square JPEG of this many pixels a side, and never bigger than PHOTO_MAX_BYTES. */
+export const PHOTO_SIZE_PX = 512;
+export const PHOTO_MAX_BYTES = 300_000;
+
 // ---------- joining ----------
 
 function assertJoinable(user: Pick<User, 'gender'>, e: JoinableEvent, now: number) {
   const status = effectiveStatus(e, now);
-  if (status === 'finished' || status === 'cancelled' || status === 'draft') throw new ApiError('event_closed');
+  if (status !== 'published' && status !== 'running') throw new ApiError('event_closed');
   if (!canUserJoinCategory(user, e)) throw new ApiError('gender_not_allowed');
 }
 

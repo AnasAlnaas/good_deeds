@@ -73,7 +73,11 @@ export function screenFor(data: Record<string, unknown> | undefined): string | n
       return str('attendance_id') ? `/attendance/${str('attendance_id')}` : null;
     case 'event_cancelled':
     case 'event_changed':
+    case 'event_approved':
+    case 'event_rejected':
       return str('event_id') ? `/event/${str('event_id')}` : null;
+    case 'photo_removed':
+      return '/profile';
     default:
       return null;
   }
