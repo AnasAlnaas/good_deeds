@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "630675112550",
+    "project_id": "good-deeds-c2990",
+    "storage_bucket": "good-deeds-c2990.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:630675112550:android:43b52c39b0c578c1d7a3a7",
+        "android_client_info": {
+          "package_name": "com.islahtarbawi.gooddeeds"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBYXnb6T1Rf54CXpo2ydkiwAJ8Xo1TRD08"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

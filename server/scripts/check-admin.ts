@@ -1,0 +1,237 @@
+// Tries to break the admin panel's rules through the API: non-admins knocking,
+// an admin changing their own role, edits that would change what people
+// already agreed to, settling a dispute twice. Every attempt must be refused,
+// and every decision must land in the audit log.
+// Run: npm run check:api (runs this after check-api.ts)
+
+import type { EventDetail, EventSummary } from '../../shared/api';
+import type { AdminEventDetail, AdminOverview, AdminUserRow, AuditEntry, CreateEventBody, EventInput } from '../../shared/admin-api';
+import type { PushMessage } from '../src/push';
+import { startHarness } from './harness';
+
+const NOW = new Date('2026-10-21T12:00:00').getTime();
+const HOUR = 3_600_000;
+const iso = (ms: number) => new Date(ms).toISOString();
+const h = await startHarness(NOW);
+const { call, login, expectError, expectOk, expectEqual, settle, pushes } = h;
+
+const admin = await login('u_admin');
+const ahmad = await login('u_ahmad');
+const mariam = await login('u_mariam');
+const khaled = await login('u_khaled');
+const f1 = await login('u_f1');
+
+// A phone for everyone in this script, so a notification to the wrong person shows up.
+for (const [token, user, lang] of [
+  ['ahmad', ahmad, 'ar'],
+  ['mariam', mariam, 'en'],
+  ['f1', f1, 'ar'],
+  ['khaled', khaled, 'ar'],
+  ['admin', admin, 'ar'],
+] as const) {
+  await call('PUT', '/me/push-token', user, { token: `ExponentPushToken[${token}]`, lang });
+}
+let seen = 0;
+/** Notifications about events sent since the last look. */
+async function eventNews() {
+  await h.settle();
+  const fresh = h.pushes.slice(seen).filter((p) => p.data.event_id);
+  seen = h.pushes.length;
+  return fresh;
+}
+const who = (messages: PushMessage[]) => messages.map((m) => m.to.slice('ExponentPushToken['.length, -1)).sort();
+const bodyFor = (messages: PushMessage[], phone: string) => messages.find((m) => m.to === `ExponentPushToken[${phone}]`)?.body;
+/** How the server should write a time: the association's zone, Western digits. */
+const tripoli = (locale: string, ms: number, opts: Intl.DateTimeFormatOptions) =>
+  new Intl.DateTimeFormat(locale, { timeZone: 'Africa/Tripoli', ...opts }).format(ms);
+const DAY: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'long' };
+const CLOCK: Intl.DateTimeFormatOptions = { hour: 'numeric', minute: '2-digit' };
+
+const inputFrom = (d: AdminEventDetail): EventInput => ({
+  title: d.event.title,
+  description: d.event.description,
+  subtype: d.event.subtype,
+  address_text: d.event.address_text,
+  lat: d.event.lat,
+  lng: d.event.lng,
+  starts_at: d.event.starts_at,
+  ends_at: d.event.ends_at,
+  capacity: d.event.capacity,
+  gender_category: d.event.gender_category,
+  branch_ids: d.branches.map((b) => b.id),
+  organizer_ids: d.organizers.map((o) => o.id),
+  terms: d.terms.map((t) => t.text ?? ''),
+});
+const detail = async (id: string): Promise<AdminEventDetail> => (await call('GET', `/admin/events/${id}`, admin)).body;
+const totalOf = async (token: string): Promise<number> => (await call('GET', '/me', token)).body.total_points;
+
+async function joinFully(token: string, eventId: string) {
+  await call('POST', `/events/${eventId}/join`, token);
+  const d: EventDetail = (await call('GET', `/events/${eventId}`, token)).body;
+  for (const term of d.terms) await call('POST', `/events/${eventId}/terms/${term.id}/accept`, token);
+  return call('POST', `/events/${eventId}/join/complete`, token);
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n— who may use the admin panel');
+await expectError('not signed in', 'unauthorized', call('GET', '/admin/overview'));
+await expectError('a member', 'forbidden', call('GET', '/admin/overview', ahmad));
+await expectError('a supervisor', 'forbidden', call('GET', '/admin/overview', khaled));
+const overview: AdminOverview = await expectOk('an admin', call('GET', '/admin/overview', admin));
+expectEqual('overview counts', [overview.users, overview.running_events, overview.awaiting_confirmation, overview.open_disputes], [13, 1, 3, 0]);
+
+// ---------------------------------------------------------------------------
+console.log('\n— people and roles');
+const found: AdminUserRow[] = (await call('GET', `/admin/users?q=${encodeURIComponent('أحمد')}`, admin)).body;
+expectEqual('search by name, with confirmed hours', found.map((u) => [u.id, u.confirmed_hours]), [['u_ahmad', 5.5]]);
+expectEqual('search by phone', (await call('GET', '/admin/users?q=911000000', admin)).body.map((u: AdminUserRow) => u.id), ['u_ahmad']);
+expectEqual('wildcards are only text', (await call('GET', '/admin/users?q=%25', admin)).body.length, 0);
+await expectOk('make a member a supervisor', call('PATCH', '/admin/users/u_f1', admin, { role: 'supervisor' }));
+expectEqual('role changed', (await call('GET', '/me', f1)).body.user.role, 'supervisor');
+await expectError('an admin changes their own role', 'cannot_change_own_role', call('PATCH', '/admin/users/u_admin', admin, { role: 'member' }));
+await expectError('a role that does not exist', 'invalid_request', call('PATCH', '/admin/users/u_f1', admin, { role: 'owner' }));
+await expectError('someone who does not exist', 'not_found', call('PATCH', '/admin/users/nobody', admin, { role: 'member' }));
+
+// ---------------------------------------------------------------------------
+console.log('\n— creating events');
+const meta = (await call('GET', '/admin/meta', admin)).body;
+expectEqual('form choices', [meta.branches.length, meta.subtypes.find((x: { id: string }) => x.id === 'street_cleanup')?.base_points], [20, 30]);
+const base: CreateEventBody = {
+  title: 'حملة نظافة تجريبية',
+  description: 'تنظيف الساحة.',
+  subtype: 'street_cleanup',
+  address_text: 'طرابلس',
+  lat: 32.88,
+  lng: 13.19,
+  starts_at: iso(NOW + 48 * HOUR),
+  ends_at: iso(NOW + 51 * HOUR),
+  capacity: 10,
+  gender_category: 'mixed',
+  branch_ids: ['b01'],
+  organizer_ids: [],
+  terms: ['البند الأول', 'البند الثاني'],
+  publish: false,
+};
+await expectError('ends before it starts', 'invalid_request', call('POST', '/admin/events', admin, { ...base, ends_at: iso(NOW) }));
+await expectError('a branch that does not exist', 'invalid_request', call('POST', '/admin/events', admin, { ...base, branch_ids: ['b99'] }));
+await expectError('published with nobody to record attendance', 'needs_organizer', call('POST', '/admin/events', admin, { ...base, publish: true }));
+const { id } = await expectOk('save a draft', call('POST', '/admin/events', admin, base));
+const draft = await detail(id);
+expectEqual('draft with its terms and points', [draft.event.status, draft.terms.length, draft.event.base_points], ['draft', 2, 30]);
+expectEqual('a draft is not in the app', (await call('GET', '/events', ahmad)).body.some((e: EventSummary) => e.id === id), false);
+await expectError('nor can it be opened there', 'not_found', call('GET', `/events/${id}`, ahmad));
+await expectError('publish without a supervisor', 'needs_organizer', call('POST', `/admin/events/${id}/publish`, admin));
+await expectOk('add a supervisor', call('PUT', `/admin/events/${id}`, admin, { ...inputFrom(draft), organizer_ids: ['u_f1'] }));
+await expectOk('publish', call('POST', `/admin/events/${id}/publish`, admin));
+await expectError('publish twice', 'invalid_status_change', call('POST', `/admin/events/${id}/publish`, admin));
+expectEqual('now in the app', (await call('GET', '/events', ahmad)).body.some((e: EventSummary) => e.id === id), true);
+expectEqual('changing a draft tells nobody', (await eventNews()).length, 0);
+
+// ---------------------------------------------------------------------------
+console.log('\n— editing what people agreed to');
+await expectOk('a member joins (terms accepted)', joinFully(ahmad, id));
+await expectOk('a second member joins', joinFully(mariam, id));
+await call('POST', `/events/${id}/join`, khaled); // still reading the terms: not joined
+const joined = await detail(id);
+await expectError('change the terms after someone accepted them', 'terms_locked', call('PUT', `/admin/events/${id}`, admin, { ...inputFrom(joined), terms: ['بند جديد'] }));
+await expectError('make it women-only after men joined', 'category_locked', call('PUT', `/admin/events/${id}`, admin, { ...inputFrom(joined), gender_category: 'female' }));
+await expectError('fewer seats than people joined', 'capacity_below_joined', call('PUT', `/admin/events/${id}`, admin, { ...inputFrom(joined), capacity: 1 }));
+await expectError('remove the last supervisor of a published event', 'needs_organizer', call('PUT', `/admin/events/${id}`, admin, { ...inputFrom(joined), organizer_ids: [] }));
+await expectOk('fix the title', call('PUT', `/admin/events/${id}`, admin, { ...inputFrom(joined), title: 'حملة نظافة الساحة' }));
+expectEqual('the app shows the new title', (await call('GET', `/events/${id}`, ahmad)).body.title, 'حملة نظافة الساحة');
+expectEqual('a corrected title tells nobody', (await eventNews()).length, 0);
+
+const start = NOW + 49 * HOUR;
+const end = NOW + 52 * HOUR;
+await expectOk('move it an hour later', call('PUT', `/admin/events/${id}`, admin, { ...inputFrom(await detail(id)), starts_at: iso(start), ends_at: iso(end) }));
+const moved = await eventNews();
+expectEqual('the members who joined and the supervisor are told', who(moved), ['ahmad', 'f1', 'mariam']);
+expectEqual(
+  'with the new time, in Arabic',
+  bodyFor(moved, 'ahmad'),
+  `تغيّر موعد «حملة نظافة الساحة». الموعد الجديد: ${tripoli('ar-LY-u-nu-latn', start, DAY)}، ${tripoli('ar-LY-u-nu-latn', start, CLOCK)} – ${tripoli('ar-LY-u-nu-latn', end, CLOCK)}.`,
+);
+expectEqual(
+  'and in English on an English phone',
+  bodyFor(moved, 'mariam'),
+  `"حملة نظافة الساحة" has a new time: ${tripoli('en-GB', start, DAY)}, ${tripoli('en-GB', start, CLOCK)} – ${tripoli('en-GB', end, CLOCK)}.`,
+);
+await expectOk('move it to another place', call('PUT', `/admin/events/${id}`, admin, {
+  ...inputFrom(await detail(id)),
+  address_text: 'ساحة الشهداء، طرابلس',
+  lat: 32.8955,
+  lng: 13.1803,
+}));
+const relocated = await eventNews();
+expectEqual('told the new place', [who(relocated), bodyFor(relocated, 'ahmad')], [
+  ['ahmad', 'f1', 'mariam'],
+  'تغيّر مكان «حملة نظافة الساحة». المكان الجديد: ساحة الشهداء، طرابلس.',
+]);
+const running = await detail('e01');
+await expectError('move an event that has recorded attendance', 'locked_after_attendance', call('PUT', '/admin/events/e01', admin, { ...inputFrom(running), starts_at: iso(NOW - 2 * HOUR) }));
+await expectError('cancel an event that has recorded attendance', 'invalid_status_change', call('POST', '/admin/events/e01/cancel', admin));
+await expectError('edit a finished event', 'event_not_editable', call('PUT', '/admin/events/e13', admin, inputFrom(await detail('e13'))));
+await expectOk('cancel an event before it starts', call('POST', `/admin/events/${id}/cancel`, admin));
+const cancelled = await eventNews();
+expectEqual('everyone concerned is told it was cancelled', [who(cancelled), bodyFor(cancelled, 'mariam')], [
+  ['ahmad', 'f1', 'mariam'],
+  '"حملة نظافة الساحة" has been cancelled. We hope to see you at another event.',
+]);
+expectEqual('the app shows it cancelled', (await call('GET', `/events/${id}`, ahmad)).body.status, 'cancelled');
+await expectError('join a cancelled event', 'event_closed', call('POST', `/events/${id}/join`, f1));
+
+// ---------------------------------------------------------------------------
+console.log('\n— settling disputed hours');
+await call('PUT', '/me/push-token', ahmad, { token: 'ExponentPushToken[ahmad]', lang: 'ar' });
+await expectOk('a member disputes recorded hours', call('POST', '/attendance/att_e15_u_ahmad/dispute', ahmad));
+const disputes = (await call('GET', '/admin/disputes', admin)).body;
+expectEqual('the admin sees it', disputes.map((d: { attendance: { id: string }; user: { id: string } }) => [d.attendance.id, d.user.id]), [['att_e15_u_ahmad', 'u_ahmad']]);
+await expectError('a decision without a reason', 'invalid_request', call('POST', '/admin/disputes/att_e15_u_ahmad/resolve', admin, { decision: 'accept', note: '' }));
+await expectError('more hours than the event lasted', 'hours_out_of_range', call('POST', '/admin/disputes/att_e15_u_ahmad/resolve', admin, { decision: 'correct', hours: 99, note: 'خطأ' }));
+const before = await totalOf(ahmad);
+await expectOk('correct the hours to 2', call('POST', '/admin/disputes/att_e15_u_ahmad/resolve', admin, { decision: 'correct', hours: 2, note: 'غادر قبل نهاية الحملة' }));
+// Beach clean-up: 30 points × (2 h / 3 h event), all physical.
+expectEqual('points credited for the corrected hours', Math.round(((await totalOf(ahmad)) - before) * 100) / 100, 20);
+await settle();
+expectEqual('the member is told', pushes.filter((p) => p.data.type === 'dispute_settled').map((p) => p.body), ['عُدّلت ساعاتك في «تنظيف شاطئ طرابلس» إلى 2 ساعة.']);
+await expectError('settle it twice', 'not_disputed', call('POST', '/admin/disputes/att_e15_u_ahmad/resolve', admin, { decision: 'accept', note: 'مكرر' }));
+await expectOk('another member disputes', call('POST', '/attendance/att_e15_u_mariam/dispute', mariam));
+const mariamBefore = await totalOf(mariam);
+await expectOk('decide the hours do not count', call('POST', '/admin/disputes/att_e15_u_mariam/resolve', admin, { decision: 'reject', note: 'لم تحضر' }));
+expectEqual('no points', await totalOf(mariam), mariamBefore);
+await expectOk('a member disputes hours still being worked', call('POST', '/attendance/att_e01_u_f1/dispute', f1));
+await expectError('settle before the finish is known', 'still_open', call('POST', '/admin/disputes/att_e01_u_f1/resolve', admin, { decision: 'accept', note: 'لاحقاً' }));
+
+// ---------------------------------------------------------------------------
+console.log('\n— hours report');
+const report = (await call('GET', `/admin/reports/hours?from=${iso(NOW - 30 * 24 * HOUR)}&to=${iso(NOW + 24 * HOUR)}`, admin)).body;
+const rowOf = (userId: string) => report.find((r: { user_id: string }) => r.user_id === userId);
+expectEqual("a member's confirmed hours and events", [rowOf('u_ahmad')?.hours, rowOf('u_ahmad')?.events], [7.5, 3]);
+expectEqual('the same points as their profile', rowOf('u_ahmad')?.total_points, await totalOf(ahmad));
+expectEqual('hours that do not count, counted as 0', [rowOf('u_mariam')?.hours, rowOf('u_mariam')?.events], [3, 2]);
+await expectError('a period that ends before it starts', 'invalid_request', call('GET', `/admin/reports/hours?from=${iso(NOW)}&to=${iso(NOW - HOUR)}`, admin));
+
+// ---------------------------------------------------------------------------
+console.log('\n— audit log');
+const log: AuditEntry[] = (await call('GET', '/admin/audit', admin)).body;
+expectEqual('every decision, newest first', log.map((e) => e.action), [
+  'resolve_dispute',
+  'resolve_dispute',
+  'cancel_event',
+  'update_event',
+  'update_event',
+  'update_event',
+  'publish_event',
+  'update_event',
+  'create_event',
+  'change_role',
+]);
+expectEqual('with who made it', log.every((e) => e.actor?.id === 'u_admin'), true);
+const role = log.find((e) => e.action === 'change_role')!.details;
+expectEqual('and what changed', [log.filter((e) => e.action === 'update_event').map((e) => e.details.changed), role.from, role.to], [
+  [['address_text', 'lat', 'lng'], ['starts_at', 'ends_at'], ['title'], []],
+  'member',
+  'supervisor',
+]);
+
+await h.done();
