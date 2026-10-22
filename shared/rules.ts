@@ -62,20 +62,20 @@ export function canSeeEvent(viewer: Pick<User, 'id'>, e: Pick<AppEvent, 'status'
 
 // ---------- creating events in the app ----------
 
-// ⚠️ ASSUMPTION: the master file says event creation opens by "level + direct
-// nomination". Read here as: a level that allows it (level 5 in
-// placeholders.ts), or being named a supervisor or admin by the association.
+// Owner's decision (2026-10-22): the master file's "level + direct nomination"
+// means a level that allows it (level 5 in placeholders.ts), or being named a
+// supervisor or admin by the association.
 export function canCreateEvents(user: Pick<User, 'role'>, level: Pick<Level, 'can_create_events'>) {
   return level.can_create_events || user.role === 'supervisor' || user.role === 'admin';
 }
 
-// ⚠️ ASSUMPTION: how many proposals one person may have waiting for an admin at once.
+// Owner's decision (2026-10-22): how many proposals one person may have waiting for an admin at once.
 export const MAX_WAITING_PROPOSALS = 3;
 
 /**
  * A member proposing an event. The creator becomes its supervisor, so they may
  * choose only an event they could take part in themselves: their own men /
- * women category, or mixed. It must start in the future.
+ * women category, or mixed (owner's decision, 2026-10-22). It must start in the future.
  */
 export function assertCanProposeEvent(args: {
   user: Pick<User, 'role' | 'gender'>;

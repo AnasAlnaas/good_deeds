@@ -125,9 +125,10 @@ name (`com.islahtarbawi.gooddeeds`) are always picked up.
 **Placeholders to replace** (`shared/placeholders.ts`): base points per event
 type, level thresholds and the end-time grace period — they belong to
 `Points_And_Levels.md`. Fields marked `DEMO-ONLY` in `shared/types.ts` are
-not in `Data_Model.md` yet and need a decision. Marked `⚠️ ASSUMPTION` in
-`shared/rules.ts`: who may propose events ("level + direct nomination" read as
-level 5, or supervisor/admin) and how many proposals may wait at once (3).
+not in `Data_Model.md` yet and need a decision. Decided by the owner
+(2026-10-22, in `shared/rules.ts`): events may be proposed from level 5 or by
+supervisors and admins ("level + direct nomination"), at most 3 may wait at
+once, and a proposal is mixed or for the proposer's own men/women category.
 
 ## API
 
