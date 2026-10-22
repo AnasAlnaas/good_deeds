@@ -44,6 +44,9 @@ server on port 3000 of the computer running `npx expo start`, so a phone on the
 same Wi-Fi finds `npm run dev` with no setup. A build without either shows only
 the demo. Android blocks plain `http://` in release builds, so a test APK needs
 the server behind HTTPS; Expo Go and development builds are fine with `http://`.
+The privacy policy's address goes in `EXPO_PUBLIC_PRIVACY_URL`; Settings links to it,
+and shows no link without it. The policy itself, the Data safety answers and the
+store listing are drafts in `docs/` (⚠️ marks what the association must fill in).
 After adding `expo-secure-store`, `expo-image-picker` and `expo-image-manipulator`,
 native builds (the test APK, a development build) must be rebuilt; Expo Go already has them.
 

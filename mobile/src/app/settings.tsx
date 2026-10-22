@@ -1,9 +1,11 @@
 import { router } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { Alert } from 'react-native';
 
 import { Button } from '@/components/Button';
 import { Screen } from '@/components/Screen';
 import { Chip, Row, SectionTitle } from '@/components/ui';
+import { PRIVACY_URL } from '@/data/config';
 import { useApp } from '@/state/app';
 import { useAction } from '@/state/useAction';
 
@@ -52,6 +54,18 @@ export default function SettingsScreen() {
           <SectionTitle>{s.settings.demo}</SectionTitle>
           <Button variant="secondary" icon="swap-horizontal" label={s.settings.switchAccount} onPress={toLogin} />
           <Button variant="secondary" icon="refresh" label={s.settings.reset} onPress={reset} />
+        </>
+      )}
+
+      {PRIVACY_URL && (
+        <>
+          <SectionTitle>{s.settings.privacy}</SectionTitle>
+          <Button
+            variant="secondary"
+            icon="shield-checkmark-outline"
+            label={s.settings.privacyPolicy}
+            onPress={() => WebBrowser.openBrowserAsync(PRIVACY_URL)}
+          />
         </>
       )}
 
