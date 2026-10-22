@@ -7,13 +7,26 @@
     "node": "24.x"
   },
   "scripts": {
-    "dev": "vercel dev",
+    "dev": "tsx watch src/node.ts",
+    "start": "tsx src/node.ts",
     "typecheck": "tsc --noEmit",
-    "deploy": "vercel deploy"
+    "check:api": "tsx scripts/check-api.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:seed": "tsx scripts/seed.ts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
-    "typescript": "^7.0.2",
-    "vercel": "^65.0.0"
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.11",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.11",
+    "@hono/node-server": "^2.1.5",
+    "drizzle-orm": "^0.45.4",
+    "hono": "^4.13.13",
+    "pg": "^8.23.1",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.7"
   }
 }

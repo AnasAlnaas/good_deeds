@@ -5,21 +5,26 @@ import { Button } from '@/components/Button';
 import { PillarBar } from '@/components/PillarBar';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
-import { Badge, Card, InfoRow, SectionTitle } from '@/components/ui';
-import * as server from '@/demo/server';
+import { Badge, Card, InfoRow, QueryState, SectionTitle } from '@/components/ui';
+import { useMeSummary } from '@/data/queries';
 import { count, fmt, num } from '@/i18n/format';
-import { useApp, useMe } from '@/state/app';
+import { useApp } from '@/state/app';
 import { colors, radius, space } from '@/theme/tokens';
 
 // Keeps a phone number left-to-right inside Arabic text (DESIGN.md: isolate Latin and digits).
 const ltr = (text: string) => `⁦${text}⁩`;
 
 export default function ProfileScreen() {
-  const { db, s } = useApp();
-  const me = useMe();
-  const total = server.totalPoints(db, me.id);
-  const level = server.levelFor(db, total);
-  const next = server.nextLevel(db, total);
+  const { s } = useApp();
+  const summary = useMeSummary();
+  if (!summary.data) {
+    return (
+      <Screen title={s.tabs.profile}>
+        <QueryState query={summary} />
+      </Screen>
+    );
+  }
+  const { user: me, total_points: total, level, next_level: next, points_by_pillar } = summary.data;
   const progress = next ? (total - level.min_points) / (next.min_points - level.min_points) : 1;
 
   return (
@@ -58,7 +63,7 @@ export default function ProfileScreen() {
 
       <SectionTitle>{s.profile.distribution}</SectionTitle>
       {total > 0 ? (
-        <PillarBar values={server.pointsByPillar(db, me.id)} height={18} />
+        <PillarBar values={points_by_pillar} height={18} />
       ) : (
         <Txt color={colors.inkMuted}>{s.profile.noPoints}</Txt>
       )}

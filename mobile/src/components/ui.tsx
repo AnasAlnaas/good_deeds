@@ -1,8 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
+import type { UseQueryResult } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, TextInput, View, type TextInputProps, type ViewStyle } from 'react-native';
 
-import { colors, radius, space, touch } from '@/theme/tokens';
+import { errorCode } from '@/data/backend';
+import { useApp } from '@/state/app';
+import { colors, fonts, radius, space, touch } from '@/theme/tokens';
+import { Button } from './Button';
 import { Txt } from './Txt';
 
 export function Card({ children, onPress, style }: { children: ReactNode; onPress?: () => void; style?: ViewStyle }) {
@@ -69,6 +73,47 @@ export function EmptyState({ icon, text }: { icon: keyof typeof Ionicons.glyphMa
   );
 }
 
+/** What a screen shows before its data arrives: a spinner, or why it failed and a way to try again. */
+export function QueryState({ query }: { query: UseQueryResult<unknown> }) {
+  const { s } = useApp();
+  if (query.isError) {
+    const code = errorCode(query.error);
+    // Trying again helps only when the connection or the server failed, not when a rule refused.
+    const retryable = code === 'network' || code === 'internal_error';
+    return (
+      <View style={styles.empty}>
+        <Ionicons name={code === 'network' ? 'cloud-offline-outline' : 'alert-circle-outline'} size={40} color={colors.inkMuted} />
+        <Txt align="center" color={colors.inkMuted}>
+          {s.errors[code]}
+        </Txt>
+        {retryable && <Button variant="secondary" icon="refresh" label={s.retry} onPress={() => query.refetch()} />}
+      </View>
+    );
+  }
+  return (
+    <View style={styles.empty}>
+      <ActivityIndicator size="large" color={colors.primary} accessibilityLabel={s.loading} />
+    </View>
+  );
+}
+
+/** A labelled text input. `ltr` keeps numbers (phone, code) left-to-right inside Arabic. */
+export function Field({ label, ltr, ...input }: { label: string; ltr?: boolean } & TextInputProps) {
+  const { isRTL } = useApp();
+  return (
+    <View style={styles.field}>
+      <Txt variant="caption" color={colors.inkMuted}>
+        {label}
+      </Txt>
+      <TextInput
+        placeholderTextColor={colors.inkMuted}
+        {...input}
+        style={[styles.input, { textAlign: ltr ? 'left' : isRTL ? 'right' : 'left', writingDirection: ltr ? 'ltr' : undefined }]}
+      />
+    </View>
+  );
+}
+
 export function SectionTitle({ children }: { children: string }) {
   return <Txt variant="sectionTitle">{children}</Txt>;
 }
@@ -114,4 +159,16 @@ export const styles = StyleSheet.create({
   infoIcon: { marginTop: 2 },
   empty: { alignItems: 'center', gap: space.md, paddingVertical: space.xxl, paddingHorizontal: space.lg },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' },
+  field: { gap: space.xs },
+  input: {
+    minHeight: touch,
+    borderRadius: radius.input,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: space.md,
+    fontFamily: fonts.plex400,
+    fontSize: 16,
+    color: colors.ink,
+    backgroundColor: colors.surface,
+  },
 });

@@ -4,17 +4,15 @@ import { Alert } from 'react-native';
 import { Button } from '@/components/Button';
 import { Screen } from '@/components/Screen';
 import { Chip, Row, SectionTitle } from '@/components/ui';
-import * as server from '@/demo/server';
-import { useApp, useMe } from '@/state/app';
+import { useApp } from '@/state/app';
 import { useAction } from '@/state/useAction';
 
 export default function SettingsScreen() {
-  const { s, lang, setLang, signOut, resetDemo } = useApp();
-  const me = useMe();
-  const act = useAction();
+  const { s, lang, setLang, signOut, resetDemo, mode } = useApp();
+  const { run, busy } = useAction();
 
   const toLogin = () => {
-    router.dismissAll();
+    if (router.canDismiss()) router.dismissAll();
     router.replace('/login');
     signOut();
   };
@@ -32,8 +30,8 @@ export default function SettingsScreen() {
       {
         text: s.settings.deleteAccount,
         style: 'destructive',
-        onPress: () => {
-          if (act((d, t) => server.deleteAccount(d, me.id, t))) {
+        onPress: async () => {
+          if (await run((b) => b.deleteAccount())) {
             toLogin();
             Alert.alert(s.settings.deleted);
           }
@@ -49,12 +47,17 @@ export default function SettingsScreen() {
         <Chip label={s.settings.english} selected={lang === 'en'} onPress={() => setLang('en')} />
       </Row>
 
-      <SectionTitle>{s.settings.demo}</SectionTitle>
-      <Button variant="secondary" icon="swap-horizontal" label={s.settings.switchAccount} onPress={toLogin} />
-      <Button variant="secondary" icon="refresh" label={s.settings.reset} onPress={reset} />
+      {mode === 'demo' && (
+        <>
+          <SectionTitle>{s.settings.demo}</SectionTitle>
+          <Button variant="secondary" icon="swap-horizontal" label={s.settings.switchAccount} onPress={toLogin} />
+          <Button variant="secondary" icon="refresh" label={s.settings.reset} onPress={reset} />
+        </>
+      )}
 
       <SectionTitle>{s.settings.account}</SectionTitle>
-      <Button variant="danger" icon="trash-outline" label={s.settings.deleteAccount} onPress={deleteAccount} />
+      {mode === 'api' && <Button variant="secondary" icon="log-out-outline" label={s.settings.signOut} onPress={toLogin} />}
+      <Button variant="danger" icon="trash-outline" label={s.settings.deleteAccount} disabled={busy} onPress={deleteAccount} />
     </Screen>
   );
 }

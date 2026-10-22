@@ -5,31 +5,37 @@ import { StyleSheet, View } from 'react-native';
 import { PillarBar } from '@/components/PillarBar';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
-import { Badge, Card, EmptyState, SectionTitle } from '@/components/ui';
-import * as server from '@/demo/server';
+import { Badge, Card, EmptyState, QueryState, SectionTitle } from '@/components/ui';
+import { useMeSummary, useMyAttendance } from '@/data/queries';
 import { count, day, num } from '@/i18n/format';
-import { useApp, useMe } from '@/state/app';
+import { useApp } from '@/state/app';
 import { colors, space } from '@/theme/tokens';
 
 export default function ActivityScreen() {
-  const { db, s, now, isRTL } = useApp();
-  const me = useMe();
+  const { s, now, isRTL } = useApp();
+  const records = useMyAttendance();
+  const summary = useMeSummary();
 
-  const mine = db.attendance
-    .filter((a) => a.user_id === me.id)
-    .sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime());
-  const working = mine.filter((a) => !a.ended_at);
-  const pending = mine.filter((a) => a.ended_at && a.participant_status === 'pending');
-  const history = mine.filter((a) => a.participant_status !== 'pending');
-  const byPillar = server.pointsByPillar(db, me.id);
-  const total = server.totalPoints(db, me.id);
+  if (!records.data || !summary.data) {
+    return (
+      <Screen title={s.activity.title}>
+        <QueryState query={records.data ? summary : records} />
+      </Screen>
+    );
+  }
+
+  const mine = records.data;
+  const working = mine.filter((x) => !x.attendance.ended_at);
+  const pending = mine.filter((x) => x.attendance.ended_at && x.attendance.participant_status === 'pending');
+  const history = mine.filter((x) => x.attendance.participant_status !== 'pending');
+  const total = summary.data.total_points;
 
   return (
     <Screen title={s.activity.title}>
       <View style={styles.metrics}>
         <Card style={styles.metric}>
           <Txt variant="metric" tabular>
-            {num(server.confirmedHours(db, me.id))}
+            {num(summary.data.confirmed_hours)}
           </Txt>
           <Txt variant="caption" color={colors.inkMuted}>
             {s.activity.hours}
@@ -44,42 +50,35 @@ export default function ActivityScreen() {
           </Txt>
         </Card>
       </View>
-      {total > 0 && <PillarBar values={byPillar} height={16} />}
+      {total > 0 && <PillarBar values={summary.data.points_by_pillar} height={16} />}
 
       {mine.length === 0 && <EmptyState icon="leaf-outline" text={s.activity.empty} />}
 
-      {working.map((a) => {
-        const e = server.getEvent(db, a.event_id);
-        return (
-          <Card key={a.id} onPress={() => router.push(`/event/${e.id}`)}>
-            <Badge label={s.activity.workingLabel} color={colors.danger} icon="radio-button-on" />
-            <Txt variant="bodyStrong">{e.title}</Txt>
-          </Card>
-        );
-      })}
+      {working.map(({ attendance: a, event: e }) => (
+        <Card key={a.id} onPress={() => router.push(`/event/${e.id}`)}>
+          <Badge label={s.activity.workingLabel} color={colors.danger} icon="radio-button-on" />
+          <Txt variant="bodyStrong">{e.title}</Txt>
+        </Card>
+      ))}
 
       {pending.length > 0 && <SectionTitle>{s.activity.pending}</SectionTitle>}
-      {pending.map((a) => {
-        const e = server.getEvent(db, a.event_id);
-        return (
-          <Card key={a.id} onPress={() => router.push(`/attendance/${a.id}`)} style={styles.pending}>
-            <Txt variant="bodyStrong">{e.title}</Txt>
-            <Txt variant="caption" color={colors.inkMuted}>
-              {day(a.started_at, s, now)} · {count(a.hours ?? 0, s.units.hour)}
+      {pending.map(({ attendance: a, event: e }) => (
+        <Card key={a.id} onPress={() => router.push(`/attendance/${a.id}`)} style={styles.pending}>
+          <Txt variant="bodyStrong">{e.title}</Txt>
+          <Txt variant="caption" color={colors.inkMuted}>
+            {day(a.started_at, s, now)} · {count(a.hours ?? 0, s.units.hour)}
+          </Txt>
+          <View style={styles.cta}>
+            <Txt variant="bodyStrong" color={colors.primary}>
+              {s.activity.review}
             </Txt>
-            <View style={styles.cta}>
-              <Txt variant="bodyStrong" color={colors.primary}>
-                {s.activity.review}
-              </Txt>
-              <Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={18} color={colors.primary} />
-            </View>
-          </Card>
-        );
-      })}
+            <Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={18} color={colors.primary} />
+          </View>
+        </Card>
+      ))}
 
       {history.length > 0 && <SectionTitle>{s.activity.history}</SectionTitle>}
-      {history.map((a) => {
-        const e = server.getEvent(db, a.event_id);
+      {history.map(({ attendance: a, event: e }) => {
         const confirmed = a.participant_status === 'confirmed';
         return (
           <Card key={a.id} onPress={() => router.push(`/attendance/${a.id}`)}>

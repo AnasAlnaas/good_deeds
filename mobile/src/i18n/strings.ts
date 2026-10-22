@@ -5,6 +5,8 @@
 // Event content (titles, descriptions, terms) is written by supervisors and is
 // shown in the language it was written in; it is not translated here.
 
+import type { ErrorCode } from '@/data/backend';
+
 const ar = {
   appName: 'الأعمال الصالحة',
   association: 'جمعية الإصلاح التربوي',
@@ -13,6 +15,7 @@ const ar = {
   back: 'رجوع',
   retry: 'أعد المحاولة',
   errorTitle: 'تعذّر إتمام العملية',
+  loading: 'جارٍ التحميل…',
 
   onboarding: {
     next: 'التالي',
@@ -36,6 +39,28 @@ const ar = {
     supervisorHint: 'يسجّل حضور المشاركين في الفعاليات',
     supervisorHintFemale: 'تسجّل حضور المشاركات في الفعاليات',
     language: 'English',
+    modeDemo: 'حسابات تجريبية',
+    modeServer: 'حسابك',
+    phoneTitle: 'ادخل برقم هاتفك',
+    phoneBody: 'نرسل إليك رمزاً من ستة أرقام لتدخل به. إن لم يكن لك حساب أنشأناه لك.',
+    phone: 'رقم الهاتف',
+    phonePlaceholder: '091 234 5678',
+    getCode: 'اطلب رمز الدخول',
+    codeTitle: 'أدخل الرمز',
+    codeBody: 'أرسلنا رمزاً إلى {phone}.',
+    code: 'رمز الدخول',
+    enter: 'ادخل',
+    changePhone: 'غيّر الرقم',
+    devHint: 'في بيئة التطوير يظهر الرمز في سجل الخادم.',
+    profileTitle: 'أهلاً بك',
+    profileBody: 'هذه أول مرة تدخل بهذا الرقم. أكمل بياناتك لننشئ حسابك.',
+    fullName: 'الاسم الكامل',
+    gender: 'الجنس',
+    male: 'ذكر',
+    female: 'أنثى',
+    city: 'المدينة',
+    defaultCity: 'طرابلس',
+    createAccount: 'أنشئ حسابك',
   },
 
   tabs: { map: 'الخريطة', events: 'الفعاليات', activity: 'نشاطي', profile: 'حسابي' },
@@ -187,6 +212,7 @@ const ar = {
     deleteTitle: 'حذف الحساب نهائياً؟',
     deleteBody: 'تُحذف بياناتك الشخصية، ويُلغى انضمامك إلى كل الفعاليات. لا يمكن التراجع.',
     deleted: 'حُذف حسابك',
+    signOut: 'اخرج من حسابك',
   },
 
   units: {
@@ -226,7 +252,17 @@ const ar = {
     end_after_event: 'لا يمكن أن يتجاوز الانتهاء موعد نهاية الفعالية.',
     not_your_attendance: 'هذا السجل ليس لك.',
     already_acted: 'سبق أن أكّدت هذا السجل أو اعترضت عليه.',
-  },
+    invalid_request: 'تحقّق مما أدخلته.',
+    unauthorized: 'انتهت جلستك. ادخل من جديد.',
+    code_invalid: 'الرمز غير صحيح.',
+    code_expired: 'انتهت صلاحية الرمز. اطلب رمزاً جديداً.',
+    too_many_attempts: 'محاولات كثيرة. اطلب رمزاً جديداً.',
+    code_recently_sent: 'أرسلنا رمزاً قبل قليل. انتظر دقيقة ثم اطلب غيره.',
+    profile_required: 'أكمل بياناتك لننشئ حسابك.',
+    delivery_not_configured: 'الدخول غير متاح الآن.',
+    internal_error: 'حدث خطأ في الخادم. أعد المحاولة بعد قليل.',
+    network: 'تعذّر الوصول إلى الخادم. تحقّق من اتصالك بالإنترنت.',
+  } satisfies Record<ErrorCode, string>,
 };
 
 export type Strings = typeof ar;
@@ -239,6 +275,7 @@ const en: Strings = {
   back: 'Back',
   retry: 'Try again',
   errorTitle: "Couldn't complete that",
+  loading: 'Loading…',
 
   onboarding: {
     next: 'Next',
@@ -262,6 +299,28 @@ const en: Strings = {
     supervisorHint: 'Records attendance at events',
     supervisorHintFemale: 'Records attendance at women-only events',
     language: 'العربية',
+    modeDemo: 'Demo accounts',
+    modeServer: 'Your account',
+    phoneTitle: 'Sign in with your phone number',
+    phoneBody: "We'll send you a six-digit code to sign in. If you don't have an account yet, we'll create one.",
+    phone: 'Phone number',
+    phonePlaceholder: '091 234 5678',
+    getCode: 'Get a sign-in code',
+    codeTitle: 'Enter the code',
+    codeBody: 'We sent a code to {phone}.',
+    code: 'Sign-in code',
+    enter: 'Sign in',
+    changePhone: 'Change the number',
+    devHint: 'In development, the code appears in the server log.',
+    profileTitle: 'Welcome',
+    profileBody: "This is the first sign-in with this number. Add your details and we'll create your account.",
+    fullName: 'Full name',
+    gender: 'Gender',
+    male: 'Male',
+    female: 'Female',
+    city: 'City',
+    defaultCity: 'Tripoli',
+    createAccount: 'Create your account',
   },
 
   tabs: { map: 'Map', events: 'Events', activity: 'My activity', profile: 'Profile' },
@@ -413,6 +472,7 @@ const en: Strings = {
     deleteTitle: 'Delete your account for good?',
     deleteBody: "Your personal data is deleted and you leave every event. This can't be undone.",
     deleted: 'Your account was deleted',
+    signOut: 'Sign out',
   },
 
   units: {
@@ -452,6 +512,16 @@ const en: Strings = {
     end_after_event: "The finish can't be after the event ends.",
     not_your_attendance: "This record isn't yours.",
     already_acted: "You've already confirmed or disputed this record.",
+    invalid_request: 'Check what you entered.',
+    unauthorized: 'Your session ended. Sign in again.',
+    code_invalid: "That code isn't right.",
+    code_expired: 'This code has expired. Get a new one.',
+    too_many_attempts: 'Too many tries. Get a new code.',
+    code_recently_sent: 'We just sent a code. Wait a minute before asking for another.',
+    profile_required: "Add your details and we'll create your account.",
+    delivery_not_configured: "Sign-in isn't available right now.",
+    internal_error: 'Something went wrong on the server. Try again shortly.',
+    network: "Couldn't reach the server. Check your internet connection.",
   },
 };
 

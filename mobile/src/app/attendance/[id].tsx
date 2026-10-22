@@ -1,17 +1,17 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 
+import { ConfirmedMotion } from '@/components/brand';
 import { Button } from '@/components/Button';
 import { PillarBar } from '@/components/PillarBar';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
-import { Badge, Card, EmptyState, InfoRow } from '@/components/ui';
+import { Badge, Card, InfoRow, QueryState } from '@/components/ui';
+import { useAttendance, useMeSummary } from '@/data/queries';
 import { PILLARS, type Pillar } from '@/data/types';
-import * as server from '@/demo/server';
 import { count, day, fmt, num, time } from '@/i18n/format';
-import { useApp, useMe } from '@/state/app';
+import { useApp } from '@/state/app';
 import { useAction } from '@/state/useAction';
 import { colors, pillarColor, space } from '@/theme/tokens';
 
@@ -19,53 +19,58 @@ import { colors, pillarColor, space } from '@/theme/tokens';
 // Confirming is the app's one reward moment: the pillar bar fills over 600ms.
 export default function ConfirmHours() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { db, s, now } = useApp();
-  const me = useMe();
-  const act = useAction();
-  const [reward, setReward] = useState<{ before: number; earned: number } | null>(null);
-
-  const a = db.attendance.find((x) => x.id === id && x.user_id === me.id);
-  if (!a) {
-    return (
-      <Screen back>
-        <EmptyState icon="alert-circle-outline" text={s.errors.not_your_attendance} />
-      </Screen>
-    );
-  }
-  const event = server.getEvent(db, a.event_id);
-  const supervisor = server.getUser(db, a.recorded_by);
-  const preview = server.pointsForAttendance(db, a);
-  const previewTotal = PILLARS.reduce((sum, p) => sum + preview[p], 0);
-
-  const confirm = () => {
-    const before = server.totalPoints(db, me.id);
-    if (act((d, t) => server.confirmAttendance(d, me.id, a.id, t))) setReward({ before, earned: previewTotal });
-  };
-  const dispute = () =>
-    Alert.alert(s.confirm.disputeTitle, s.confirm.disputeBody, [
-      { text: s.cancel, style: 'cancel' },
-      { text: s.confirm.dispute, style: 'destructive', onPress: () => act((d, t) => server.disputeAttendance(d, me.id, a.id, t)) },
-    ]);
+  const { s, now } = useApp();
+  const { run, busy } = useAction();
+  const query = useAttendance(id);
+  const summary = useMeSummary();
+  const [reward, setReward] = useState<{ before: number; earned: Record<Pillar, number> } | null>(null);
 
   if (reward) {
-    const after = server.totalPoints(db, me.id);
+    const earnedTotal = PILLARS.reduce((sum, p) => sum + reward.earned[p], 0);
+    const after = summary.data?.total_points ?? reward.before + earnedTotal;
     return (
       <Screen footer={<Button label={s.confirm.done} onPress={() => router.back()} />}>
         <View style={styles.reward}>
-          <Ionicons name="checkmark-circle" size={72} color={colors.success} />
+          <ConfirmedMotion values={reward.earned} />
           <Txt variant="screenTitle" align="center">
             {s.confirm.confirmed}
           </Txt>
           <Txt variant="sectionTitle" align="center" color={colors.primary}>
-            {fmt(s.confirm.earned, { points: count(reward.earned, s.units.point) })}
+            {fmt(s.confirm.earned, { points: count(earnedTotal, s.units.point) })}
           </Txt>
           <View style={styles.fullWidth}>
-            <PillarBar values={server.pointsByPillar(db, me.id)} height={20} fill={1} animateFrom={after > 0 ? reward.before / after : 0} />
+            <PillarBar
+              values={summary.data?.points_by_pillar ?? reward.earned}
+              height={20}
+              fill={1}
+              animateFrom={after > 0 ? reward.before / after : 0}
+            />
           </View>
         </View>
       </Screen>
     );
   }
+
+  if (!query.data) {
+    return (
+      <Screen back>
+        <QueryState query={query} />
+      </Screen>
+    );
+  }
+  const { attendance: a, event, recorded_by: supervisor, points: preview } = query.data;
+  const previewTotal = PILLARS.reduce((sum, p) => sum + preview[p], 0);
+
+  const confirm = async () => {
+    const before = summary.data?.total_points ?? 0;
+    const done = await run((b) => b.confirmAttendance(a.id));
+    if (done) setReward({ before, earned: done.value.points_earned });
+  };
+  const dispute = () =>
+    Alert.alert(s.confirm.disputeTitle, s.confirm.disputeBody, [
+      { text: s.cancel, style: 'cancel' },
+      { text: s.confirm.dispute, style: 'destructive', onPress: () => run((b) => b.disputeAttendance(a.id)) },
+    ]);
 
   const pending = a.participant_status === 'pending' && !!a.ended_at;
 
@@ -76,8 +81,8 @@ export default function ConfirmHours() {
       footer={
         pending ? (
           <>
-            <Button icon="checkmark" label={s.confirm.confirm} onPress={confirm} />
-            <Button variant="danger" icon="alert-circle-outline" label={s.confirm.dispute} onPress={dispute} />
+            <Button icon="checkmark" label={s.confirm.confirm} disabled={busy} onPress={confirm} />
+            <Button variant="danger" icon="alert-circle-outline" label={s.confirm.dispute} disabled={busy} onPress={dispute} />
           </>
         ) : undefined
       }>

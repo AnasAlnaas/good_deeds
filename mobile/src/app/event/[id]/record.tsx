@@ -3,34 +3,72 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { RecordedMotion } from '@/components/brand';
 import { Button } from '@/components/Button';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
-import { Card, Chip, Row } from '@/components/ui';
-import * as server from '@/demo/server';
+import { Card, Chip, EmptyState, QueryState, Row } from '@/components/ui';
+import { useRoster } from '@/data/queries';
 import { END_GRACE_MINUTES } from '@/demo/placeholders';
 import { fmt, time } from '@/i18n/format';
-import { useApp, useMe } from '@/state/app';
+import { useApp } from '@/state/app';
 import { useAction } from '@/state/useAction';
 import { colors, space, touch } from '@/theme/tokens';
 
 // Screens 15–16: record a participant's start or finish. The time defaults to
-// now; backdating is offered only inside the allowed window. The demo server
-// re-checks every rule, as the real server must.
+// now; backdating is offered only inside the allowed window. The server
+// re-checks every rule with its own clock.
 export default function RecordScreen() {
   const { id, userId, mode } = useLocalSearchParams<{ id: string; userId: string; mode: 'start' | 'end' }>();
-  const { db, s, now } = useApp();
-  const me = useMe();
-  const act = useAction();
+  const { s, now } = useApp();
+  const { run, busy } = useAction();
+  const query = useRoster(id);
   const [ack, setAck] = useState(mode === 'end');
   const [choice, setChoice] = useState(0);
   const [done, setDone] = useState(false);
   // Fixed when the screen opens, so the options don't shift while the supervisor reads them.
   const [openedAt] = useState(() => Date.now());
 
-  const event = server.getEvent(db, id);
-  const user = server.getUser(db, userId)!;
-  const attendance = server.attendanceOf(db, id, userId);
+  const entry = query.data?.participants.find((p) => p.user.id === userId);
+
+  useEffect(() => {
+    if (!done) return;
+    const timer = setTimeout(() => router.back(), 900);
+    return () => clearTimeout(timer);
+  }, [done]);
+
+  if (done) {
+    return (
+      <Screen scroll={false}>
+        <View style={styles.done}>
+          <RecordedMotion mode={mode} />
+          <Txt variant="screenTitle" align="center">
+            {mode === 'start' ? s.record.doneStart : s.record.doneEnd}
+          </Txt>
+          <Txt align="center" color={colors.inkMuted}>
+            {entry?.user.full_name ?? ''}
+          </Txt>
+        </View>
+      </Screen>
+    );
+  }
+  if (!query.data) {
+    return (
+      <Screen back>
+        <QueryState query={query} />
+      </Screen>
+    );
+  }
+  if (!entry) {
+    return (
+      <Screen back>
+        <EmptyState icon="alert-circle-outline" text={s.errors.not_joined} />
+      </Screen>
+    );
+  }
+
+  const { event } = query.data;
+  const { user, attendance } = entry;
   const starts = new Date(event.starts_at).getTime();
   const ends = new Date(event.ends_at).getTime();
 
@@ -47,38 +85,12 @@ export default function RecordScreen() {
     return all.filter((o, i) => i === 0 || (o.at! >= min && o.at! <= max && o.at! < openedAt - 60_000));
   })();
 
-  useEffect(() => {
-    if (!done) return;
-    const timer = setTimeout(() => router.back(), 900);
-    return () => clearTimeout(timer);
-  }, [done]);
-
   const chosen = options[Math.min(choice, options.length - 1)];
 
-  const submit = () => {
-    const ok = act((d, t) =>
-      mode === 'start'
-        ? server.recordStart(d, me.id, { eventId: id, userId, startedAt: chosen.at }, t)
-        : server.recordEnd(d, me.id, { eventId: id, userId, endedAt: chosen.at }, t),
-    );
+  const submit = async () => {
+    const ok = await run((b) => (mode === 'start' ? b.recordStart(id, userId, chosen.at) : b.recordEnd(id, userId, chosen.at)));
     if (ok) setDone(true);
   };
-
-  if (done) {
-    return (
-      <Screen scroll={false}>
-        <View style={styles.done}>
-          <Ionicons name="checkmark-circle" size={72} color={colors.success} />
-          <Txt variant="screenTitle" align="center">
-            {mode === 'start' ? s.record.doneStart : s.record.doneEnd}
-          </Txt>
-          <Txt align="center" color={colors.inkMuted}>
-            {user.full_name}
-          </Txt>
-        </View>
-      </Screen>
-    );
-  }
 
   return (
     <Screen
@@ -88,7 +100,7 @@ export default function RecordScreen() {
         <Button
           icon={mode === 'start' ? 'play' : 'stop'}
           label={mode === 'start' ? s.record.submitStart : s.record.submitEnd}
-          disabled={!ack}
+          disabled={!ack || busy}
           onPress={submit}
         />
       }>

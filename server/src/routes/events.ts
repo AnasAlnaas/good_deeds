@@ -1,0 +1,283 @@
+// Events, joining (with the terms one by one) and the supervisor's roster.
+// Every change runs in a transaction: the rows are read (and locked), the
+// shared rule decides, and the result is written, or nothing is.
+
+import { and, asc, eq, inArray, isNull, ne } from 'drizzle-orm';
+import { Hono } from 'hono';
+import { z } from 'zod';
+
+import type {
+  AcceptTermResponse,
+  AttendanceResponse,
+  EventDetail,
+  EventSummary,
+  RegistrationResponse,
+  RosterResponse,
+} from '../../../shared/api';
+import { ApiError } from '../../../shared/errors';
+import * as rules from '../../../shared/rules';
+import { type AppEvent, PILLARS, type Registration, type User } from '../../../shared/types';
+import { requireUser } from '../auth';
+import type { Database } from '../db/client';
+import {
+  acceptedTermIds,
+  attendanceOf,
+  findEvent,
+  isOrganizer,
+  joinedCounts,
+  joinedUsers,
+  newId,
+  pillarWeights,
+  registrationOf,
+  termsOf,
+} from '../db/queries';
+import { iso } from '../db/rows';
+import * as s from '../db/schema';
+import { type AppEnv, readBody } from '../http';
+import { notifyHoursToConfirm } from '../notify';
+
+const recordTimeBody = z.object({ at: z.iso.datetime({ offset: true }).optional() });
+
+async function summarize(db: Database, me: User, events: AppEvent[], now: number): Promise<EventSummary[]> {
+  const ids = events.map((e) => e.id);
+  if (ids.length === 0) return [];
+  const weights = await pillarWeights(db, ids);
+  const counts = await joinedCounts(db, ids);
+  const mine = await db
+    .select({ event_id: s.registrations.event_id, status: s.registrations.status })
+    .from(s.registrations)
+    .where(and(eq(s.registrations.user_id, me.id), inArray(s.registrations.event_id, ids)));
+  const organized = await db
+    .select({ event_id: s.event_organizers.event_id })
+    .from(s.event_organizers)
+    .where(and(eq(s.event_organizers.user_id, me.id), inArray(s.event_organizers.event_id, ids)));
+  const myStatus = new Map(mine.map((r) => [r.event_id, r.status]));
+  const iOrganize = new Set(organized.map((r) => r.event_id));
+
+  return events.map((e) => {
+    const { description, status, terms_locked_at, created_by, created_at, ...shown } = e;
+    const w = weights.get(e.id)!;
+    return {
+      ...shown,
+      status: rules.effectiveStatus(e, now),
+      joined_count: counts.get(e.id) ?? 0,
+      pillar_weights: w,
+      dominant_pillar: rules.dominantPillar(w),
+      can_join_category: rules.canUserJoinCategory(me, e),
+      my_registration_status: myStatus.get(e.id) ?? null,
+      i_organize: iOrganize.has(e.id),
+    };
+  });
+}
+
+export const eventRoutes = new Hono<AppEnv>()
+  .use(requireUser)
+
+  .get('/', async (c) => {
+    const { db, now } = c.var.deps;
+    const rows = await db.select().from(s.events).where(ne(s.events.status, 'draft')).orderBy(asc(s.events.starts_at));
+    return c.json<EventSummary[]>(await summarize(db, c.var.user, rows.map(iso), now()));
+  })
+
+  .get('/:id', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    const event = await findEvent(db, id);
+    const [summary] = await summarize(db, me, [event], now());
+    const branches = await db
+      .select({ branch: s.branches })
+      .from(s.event_branches)
+      .innerJoin(s.branches, eq(s.branches.id, s.event_branches.branch_id))
+      .where(eq(s.event_branches.event_id, id));
+    const links = branches.length
+      ? await db
+          .select()
+          .from(s.branch_pillars)
+          .where(inArray(s.branch_pillars.branch_id, branches.map((r) => r.branch.id)))
+      : [];
+    const registration = await registrationOf(db, id, me.id);
+    return c.json<EventDetail>({
+      ...summary,
+      description: event.description,
+      terms_locked_at: event.terms_locked_at,
+      branches: branches.map((r) => ({
+        ...r.branch,
+        pillars: PILLARS.filter((p) => links.some((l) => l.branch_id === r.branch.id && l.pillar === p)),
+      })),
+      terms: await termsOf(db, id),
+      participants: await joinedUsers(db, id),
+      my_registration: registration ?? null,
+      my_accepted_term_ids: await acceptedTermIds(db, registration?.id),
+      my_attendance: (await attendanceOf(db, id, me.id)) ?? null,
+    });
+  })
+
+  // ---------- joining ----------
+
+  .post('/:id/join', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    const t = now();
+    const registration = await db.transaction(async (tx) => {
+      const event = await findEvent(tx, id);
+      const existing = await registrationOf(tx, id, me.id, { lock: true });
+      const action = rules.decideStartJoin({ user: me, event, registration: existing, now: t });
+      if (action === 'reopen') {
+        await tx.update(s.registrations).set({ status: 'pending_terms' }).where(eq(s.registrations.id, existing!.id));
+      } else if (action === 'create') {
+        await tx
+          .insert(s.registrations)
+          .values({ id: newId(), event_id: id, user_id: me.id, status: 'pending_terms', created_at: new Date(t) })
+          .onConflictDoNothing();
+      }
+      return (await registrationOf(tx, id, me.id))!;
+    });
+    return c.json<RegistrationResponse>({ registration });
+  })
+
+  .post('/:id/terms/:termId/accept', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const { id, termId } = c.req.param();
+    const t = now();
+    const result = await db.transaction(async (tx) => {
+      await findEvent(tx, id);
+      const registration = await registrationOf(tx, id, me.id, { lock: true });
+      const accepted = await acceptedTermIds(tx, registration?.id);
+      const action = rules.decideAcceptTerm({ registration, terms: await termsOf(tx, id), acceptedTermIds: accepted, termId });
+      if (action === 'accept') {
+        await tx.insert(s.term_acceptances).values({ id: newId(), registration_id: registration!.id, term_id: termId, accepted_at: new Date(t) });
+        // Nobody may agree to a text that later changes: the terms lock at the first acceptance.
+        await tx
+          .update(s.events)
+          .set({ terms_locked_at: new Date(t) })
+          .where(and(eq(s.events.id, id), isNull(s.events.terms_locked_at)));
+        accepted.push(termId);
+      }
+      return { registration: registration!, accepted_term_ids: accepted };
+    });
+    return c.json<AcceptTermResponse>(result);
+  })
+
+  .post('/:id/join/complete', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    const t = now();
+    const registration = await db.transaction(async (tx) => {
+      // Locking the event makes joins to it wait in line, so the seat count is exact.
+      const event = await findEvent(tx, id, { lock: true });
+      const reg = await registrationOf(tx, id, me.id, { lock: true });
+      rules.assertCompleteJoin({
+        user: me,
+        event,
+        registration: reg,
+        terms: await termsOf(tx, id),
+        acceptedTermIds: await acceptedTermIds(tx, reg?.id),
+        joinedCount: (await joinedCounts(tx, [id])).get(id) ?? 0,
+        now: t,
+      });
+      const [row] = await tx
+        .update(s.registrations)
+        .set({ status: 'joined', joined_at: new Date(t) })
+        .where(eq(s.registrations.id, reg!.id))
+        .returning();
+      return iso(row) as Registration;
+    });
+    return c.json<RegistrationResponse>({ registration });
+  })
+
+  .delete('/:id/join', async (c) => {
+    const { db } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    const registration = await db.transaction(async (tx) => {
+      await findEvent(tx, id);
+      const reg = await registrationOf(tx, id, me.id, { lock: true });
+      rules.assertCancelJoin({ registration: reg, hasAttendance: !!(await attendanceOf(tx, id, me.id)) });
+      const [row] = await tx.update(s.registrations).set({ status: 'cancelled' }).where(eq(s.registrations.id, reg!.id)).returning();
+      return iso(row) as Registration;
+    });
+    return c.json<RegistrationResponse>({ registration });
+  })
+
+  // ---------- the supervisor's roster ----------
+
+  .get('/:id/roster', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    const event = await findEvent(db, id);
+    if (!(await isOrganizer(db, id, me.id))) throw new ApiError('not_organizer');
+    const [summary] = await summarize(db, me, [event], now());
+    const people = await joinedUsers(db, id);
+    const rows = await db.select().from(s.attendance).where(eq(s.attendance.event_id, id));
+    const byUser = new Map(rows.map((r) => [r.user_id, iso(r)]));
+    return c.json<RosterResponse>({
+      event: summary,
+      participants: people.map((user) => ({ user, attendance: byUser.get(user.id) ?? null })),
+    });
+  })
+
+  .post('/:id/attendance/:userId/start', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const { id, userId } = c.req.param();
+    const body = await readBody(c, recordTimeBody);
+    const t = now();
+    const attendance = await db.transaction(async (tx) => {
+      const event = await findEvent(tx, id);
+      const registration = await registrationOf(tx, id, userId, { lock: true });
+      const start = rules.decideRecordStart({
+        actorId: me.id,
+        participantId: userId,
+        actorIsOrganizer: await isOrganizer(tx, id, me.id),
+        event,
+        registration,
+        attendance: await attendanceOf(tx, id, userId),
+        startedAt: body.at ? Date.parse(body.at) : undefined,
+        now: t,
+      });
+      await tx.insert(s.attendance).values({
+        id: newId(),
+        event_id: id,
+        user_id: userId,
+        started_at: new Date(start.started_at),
+        start_source: start.start_source,
+        recorded_by: me.id,
+        recorded_at: new Date(t),
+      });
+      return (await attendanceOf(tx, id, userId))!;
+    });
+    return c.json<AttendanceResponse>({ attendance });
+  })
+
+  .post('/:id/attendance/:userId/end', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const { id, userId } = c.req.param();
+    const body = await readBody(c, recordTimeBody);
+    const t = now();
+    const attendance = await db.transaction(async (tx) => {
+      const event = await findEvent(tx, id);
+      const current = await attendanceOf(tx, id, userId, { lock: true });
+      const end = rules.decideRecordEnd({
+        actorId: me.id,
+        participantId: userId,
+        actorIsOrganizer: await isOrganizer(tx, id, me.id),
+        event,
+        attendance: current,
+        endedAt: body.at ? Date.parse(body.at) : undefined,
+        now: t,
+      });
+      await tx
+        .update(s.attendance)
+        .set({ ended_at: new Date(end.ended_at!), end_source: end.end_source, hours: end.hours })
+        .where(eq(s.attendance.id, current!.id));
+      return (await attendanceOf(tx, id, userId))!;
+    });
+    notifyHoursToConfirm(c.var.deps, [attendance.id], 'recorded');
+    return c.json<AttendanceResponse>({ attendance });
+  });

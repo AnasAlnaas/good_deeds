@@ -2,28 +2,28 @@ import { useState } from 'react';
 
 import { EventCard } from '@/components/EventCard';
 import { Screen } from '@/components/Screen';
-import { Chip, EmptyState, Row } from '@/components/ui';
-import * as server from '@/demo/server';
-import { useApp, useMe } from '@/state/app';
+import { Chip, EmptyState, QueryState, Row } from '@/components/ui';
+import { useEvents } from '@/data/queries';
+import { useApp } from '@/state/app';
 
 const t = (iso: string) => new Date(iso).getTime();
 
 export default function EventsScreen() {
-  const { db, s, now } = useApp();
-  const me = useMe();
+  const { s } = useApp();
+  const query = useEvents();
   const [tab, setTab] = useState<'upcoming' | 'mine'>('upcoming');
+  const events = query.data ?? [];
 
-  const upcoming = db.events
-    .filter((e) => ['published', 'running'].includes(server.effectiveStatus(e, now)))
+  const upcoming = events
+    .filter((e) => e.status === 'published' || e.status === 'running')
     .sort((a, b) => t(a.starts_at) - t(b.starts_at));
 
-  const mineIds = db.registrations.filter((r) => r.user_id === me.id && r.status === 'joined').map((r) => r.event_id);
-  const mine = db.events
-    .filter((e) => mineIds.includes(e.id))
+  const mine = events
+    .filter((e) => e.my_registration_status === 'joined')
     .sort((a, b) => {
       // Still to come first (soonest first), then finished (most recent first).
-      const fa = server.effectiveStatus(a, now) === 'finished';
-      const fb = server.effectiveStatus(b, now) === 'finished';
+      const fa = a.status === 'finished';
+      const fb = b.status === 'finished';
       if (fa !== fb) return fa ? 1 : -1;
       return fa ? t(b.starts_at) - t(a.starts_at) : t(a.starts_at) - t(b.starts_at);
     });
@@ -36,7 +36,9 @@ export default function EventsScreen() {
         <Chip label={s.events.upcoming} selected={tab === 'upcoming'} onPress={() => setTab('upcoming')} />
         <Chip label={s.events.mine} selected={tab === 'mine'} onPress={() => setTab('mine')} />
       </Row>
-      {list.length === 0 ? (
+      {!query.data ? (
+        <QueryState query={query} />
+      ) : list.length === 0 ? (
         <EmptyState icon="calendar-outline" text={tab === 'upcoming' ? s.events.emptyUpcoming : s.events.emptyMine} />
       ) : (
         list.map((e) => <EventCard key={e.id} event={e} />)

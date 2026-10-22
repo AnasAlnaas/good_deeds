@@ -4,8 +4,8 @@ import { StyleSheet, View } from 'react-native';
 import { Button } from '@/components/Button';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
-import { Badge, Card, EmptyState } from '@/components/ui';
-import * as server from '@/demo/server';
+import { Badge, Card, EmptyState, QueryState } from '@/components/ui';
+import { useRoster } from '@/data/queries';
 import { END_GRACE_MINUTES } from '@/demo/placeholders';
 import { count, fmt, time } from '@/i18n/format';
 import { useApp, useMe } from '@/state/app';
@@ -14,11 +14,18 @@ import { colors, space } from '@/theme/tokens';
 // Screen 14: the supervisor's list of joined participants and each one's state.
 export default function RosterScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { db, s, now } = useApp();
+  const { s, now } = useApp();
   const me = useMe();
-  const event = server.getEvent(db, id);
-  const status = server.effectiveStatus(event, now);
-  const participants = server.joinedUsers(db, id);
+  const query = useRoster(id);
+  if (!query.data) {
+    return (
+      <Screen back title={s.roster.title}>
+        <QueryState query={query} />
+      </Screen>
+    );
+  }
+  const { event, participants } = query.data;
+  const status = event.status;
   const canStart = status === 'running';
   const canEnd = now >= new Date(event.starts_at).getTime() && now <= new Date(event.ends_at).getTime() + END_GRACE_MINUTES * 60_000;
 
@@ -34,8 +41,7 @@ export default function RosterScreen() {
         </Card>
       )}
       {participants.length === 0 && <EmptyState icon="people-outline" text={s.roster.empty} />}
-      {participants.map((u) => {
-        const a = server.attendanceOf(db, id, u.id);
+      {participants.map(({ user: u, attendance: a }) => {
         const state = !a ? 'notStarted' : a.ended_at ? 'done' : 'working';
         const self = u.id === me.id;
         return (

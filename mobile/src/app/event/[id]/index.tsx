@@ -5,45 +5,43 @@ import { Button } from '@/components/Button';
 import { PillarBar } from '@/components/PillarBar';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
-import { Badge, Card, EmptyState, InfoRow, Row, SectionTitle } from '@/components/ui';
-import { PILLARS } from '@/data/types';
-import * as server from '@/demo/server';
+import { Badge, Card, InfoRow, QueryState, Row, SectionTitle } from '@/components/ui';
+import { useEvent } from '@/data/queries';
 import { dayTimeRange, fmt } from '@/i18n/format';
-import { useApp, useMe } from '@/state/app';
+import { useApp } from '@/state/app';
 import { useAction } from '@/state/useAction';
 import { colors, pillarColor, space } from '@/theme/tokens';
 
 export default function EventDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { db, s, lang, now } = useApp();
-  const me = useMe();
-  const act = useAction();
-  const event = db.events.find((e) => e.id === id);
-  if (!event) {
+  const { s, lang, now } = useApp();
+  const { run, busy } = useAction();
+  const query = useEvent(id);
+  if (!query.data) {
     return (
       <Screen back>
-        <EmptyState icon="alert-circle-outline" text={s.errors.not_found} />
+        <QueryState query={query} />
       </Screen>
     );
   }
 
-  const status = server.effectiveStatus(event, now);
-  const participants = server.joinedUsers(db, event.id);
-  const full = participants.length >= event.capacity;
-  const reg = server.registrationOf(db, event.id, me.id);
-  const attendance = server.attendanceOf(db, event.id, me.id);
-  const organizer = server.isOrganizer(db, event.id, me.id);
-  const forMe = server.canUserJoinCategory(me, event);
+  const event = query.data;
+  const status = event.status;
+  const participants = event.participants;
+  const full = event.joined_count >= event.capacity;
+  const reg = event.my_registration;
+  const attendance = event.my_attendance;
+  const organizer = event.i_organize;
+  const forMe = event.can_join_category;
   const open = status === 'published' || status === 'running';
-  const branches = server.eventBranches(db, event.id);
 
-  const join = () => {
-    if (act((d, t) => server.startJoin(d, me.id, event.id, t))) router.push(`/event/${event.id}/terms`);
+  const join = async () => {
+    if (await run((b) => b.startJoin(event.id))) router.push(`/event/${event.id}/terms`);
   };
   const cancel = () =>
     Alert.alert(s.event.cancelJoinTitle, s.event.cancelJoinBody, [
       { text: s.cancel, style: 'cancel' },
-      { text: s.event.cancelJoin, style: 'destructive', onPress: () => act((d) => server.cancelJoin(d, me.id, event.id)) },
+      { text: s.event.cancelJoin, style: 'destructive', onPress: () => run((b) => b.cancelJoin(event.id)) },
     ]);
 
   let footer;
@@ -60,7 +58,7 @@ export default function EventDetail() {
     footer = (
       <>
         <Badge label={s.event.joined} color={colors.success} icon="checkmark-circle" />
-        {open && !attendance && <Button variant="danger" label={s.event.cancelJoin} onPress={cancel} />}
+        {open && !attendance && <Button variant="danger" label={s.event.cancelJoin} disabled={busy} onPress={cancel} />}
       </>
     );
   } else if (!open) {
@@ -78,6 +76,7 @@ export default function EventDetail() {
       <Button
         icon="hand-left-outline"
         label={reg?.status === 'pending_terms' ? s.event.continueTerms : s.event.join}
+        disabled={busy}
         onPress={join}
       />
     );
@@ -102,18 +101,18 @@ export default function EventDetail() {
         <InfoRow
           icon="people-outline"
           label={s.event.participants}
-          value={full ? s.event.full : fmt(s.event.seats, { joined: participants.length, capacity: event.capacity })}
+          value={full ? s.event.full : fmt(s.event.seats, { joined: event.joined_count, capacity: event.capacity })}
         />
       </Card>
 
       <SectionTitle>{s.event.pillars}</SectionTitle>
-      <PillarBar values={server.eventPillarWeights(db, event.id)} height={14} />
+      <PillarBar values={event.pillar_weights} height={14} />
 
       <SectionTitle>{s.event.branches}</SectionTitle>
-      {branches.map((b) => (
+      {event.branches.map((b) => (
         <View key={b.id} style={styles.branch}>
           <Txt style={styles.flex}>{lang === 'ar' ? b.name_ar : b.name_en}</Txt>
-          {PILLARS.filter((p) => db.branch_pillars.some((bp) => bp.branch_id === b.id && bp.pillar === p)).map((p) => (
+          {b.pillars.map((p) => (
             <Badge key={p} label={s.pillar[p]} color={pillarColor[p]} />
           ))}
         </View>

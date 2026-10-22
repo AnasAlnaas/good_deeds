@@ -1,56 +1,18 @@
-// The demo's stand-in for the backend. Every rule that Build_Plan.md and
-// Data_Model.md say must be enforced on the server lives here, so the screens
-// never compute hours or points themselves. When the real Node.js API on
-// Vercel exists, these functions become HTTP calls with the same names and
-// the same rules move to the server unchanged.
+// The demo's stand-in for the backend. The rules live in shared/rules.ts and
+// are the same ones the real server (server/) runs. This file only finds rows
+// in the on-phone database, calls the rule, and writes what the rule decided.
+// The screens never compute hours or points themselves.
 
-import type {
-  AppEvent,
-  Attendance,
-  Db,
-  EventStatus,
-  EventTerm,
-  Pillar,
-  Registration,
-  User,
-} from '@/data/types';
+import type { AppEvent, Attendance, Db, EventStatus, EventTerm, Pillar, Registration, User } from '@/data/types';
 import { PILLARS } from '@/data/types';
-import { END_GRACE_MINUTES } from './placeholders';
+import { ApiError } from '../../../shared/errors';
+import * as rules from '../../../shared/rules';
 
-export type ApiErrorCode =
-  | 'not_found'
-  | 'event_closed'
-  | 'event_not_started'
-  | 'event_full'
-  | 'gender_not_allowed'
-  | 'terms_incomplete'
-  | 'term_out_of_order'
-  | 'already_joined'
-  | 'not_joined'
-  | 'cannot_cancel_after_attendance'
-  | 'not_organizer'
-  | 'cannot_record_self'
-  | 'start_before_event'
-  | 'time_in_future'
-  | 'already_started'
-  | 'not_started'
-  | 'already_ended'
-  | 'end_before_start'
-  | 'end_after_event'
-  | 'not_your_attendance'
-  | 'already_acted';
+export { ApiError } from '../../../shared/errors';
+export type { ApiErrorCode } from '../../../shared/errors';
 
-export class ApiError extends Error {
-  constructor(public code: ApiErrorCode) {
-    super(code);
-  }
-}
-
-const MS_HOUR = 3_600_000;
-const t = (iso: string) => new Date(iso).getTime();
 const clone = (db: Db): Db => JSON.parse(JSON.stringify(db));
 const newId = (prefix: string) => `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-const round2 = (n: number) => Math.round(n * 100) / 100;
 
 // ---------- reads (selectors) ----------
 
@@ -65,14 +27,11 @@ export function getUser(db: Db, userId: string): User | undefined {
 }
 
 export function effectiveStatus(e: AppEvent, now: number): EventStatus {
-  if (e.status === 'cancelled' || e.status === 'draft') return e.status;
-  if (now >= t(e.ends_at)) return 'finished';
-  if (now >= t(e.starts_at)) return 'running';
-  return 'published';
+  return rules.effectiveStatus(e, now);
 }
 
 export function eventTerms(db: Db, eventId: string): EventTerm[] {
-  return db.event_terms.filter((x) => x.event_id === eventId).sort((a, b) => a.order_index - b.order_index);
+  return rules.sortTerms(db.event_terms.filter((x) => x.event_id === eventId));
 }
 
 export function eventBranches(db: Db, eventId: string) {
@@ -102,105 +61,73 @@ export function acceptedTermIds(db: Db, registrationId: string): string[] {
 }
 
 export function canUserJoinCategory(user: User, e: AppEvent) {
-  return e.gender_category === 'mixed' || e.gender_category === user.gender;
+  return rules.canUserJoinCategory(user, e);
 }
 
-// ⚠️ PLACEHOLDER: how an event's points split across pillars is not written
-// down yet. Here each link in branch_pillars counts once, then normalised.
 export function eventPillarWeights(db: Db, eventId: string): Record<Pillar, number> {
-  const w: Record<Pillar, number> = { spiritual: 0, mental: 0, physical: 0 };
-  for (const b of eventBranches(db, eventId)) {
-    for (const bp of db.branch_pillars.filter((x) => x.branch_id === b.id)) w[bp.pillar] += 1;
-  }
-  const sum = PILLARS.reduce((s, p) => s + w[p], 0) || 1;
-  for (const p of PILLARS) w[p] = w[p] / sum;
-  return w;
+  const links = eventBranches(db, eventId).flatMap((b) =>
+    db.branch_pillars.filter((x) => x.branch_id === b.id).map((x) => x.pillar),
+  );
+  return rules.pillarWeights(links);
 }
 
 export function dominantPillar(db: Db, eventId: string): Pillar {
-  const w = eventPillarWeights(db, eventId);
-  return PILLARS.reduce((best, p) => (w[p] > w[best] ? p : best), 'physical' as Pillar);
+  return rules.dominantPillar(eventPillarWeights(db, eventId));
 }
 
 export function pointsByPillar(db: Db, userId: string): Record<Pillar, number> {
-  const r: Record<Pillar, number> = { spiritual: 0, mental: 0, physical: 0 };
-  for (const l of db.points_ledger) if (l.user_id === userId) r[l.pillar] += l.points;
-  for (const p of PILLARS) r[p] = round2(r[p]);
-  return r;
+  return rules.pointsByPillar(db.points_ledger.filter((l) => l.user_id === userId));
 }
 
 export function totalPoints(db: Db, userId: string) {
-  const r = pointsByPillar(db, userId);
-  return round2(r.spiritual + r.mental + r.physical);
+  return rules.totalOf(pointsByPillar(db, userId));
 }
 
 export function levelFor(db: Db, points: number) {
-  return [...db.levels].sort((a, b) => b.min_points - a.min_points).find((l) => points >= l.min_points) ?? db.levels[0];
+  return rules.levelFor(db.levels, points);
 }
 
 export function nextLevel(db: Db, points: number) {
-  return [...db.levels].sort((a, b) => a.min_points - b.min_points).find((l) => l.min_points > points);
+  return rules.nextLevel(db.levels, points);
 }
 
 export function confirmedHours(db: Db, userId: string) {
-  return round2(
+  return rules.round2(
     db.attendance
       .filter((a) => a.user_id === userId && a.participant_status === 'confirmed')
       .reduce((s, a) => s + (a.hours ?? 0), 0),
   );
 }
 
-// ---------- the points formula (master file: points = event points × attendance ratio) ----------
-
 export function pointsForAttendance(db: Db, a: Attendance): Record<Pillar, number> {
-  const e = getEvent(db, a.event_id);
-  const duration = (t(e.ends_at) - t(e.starts_at)) / MS_HOUR;
-  const ratio = Math.min(1, (a.hours ?? 0) / duration);
-  const total = e.base_points * ratio;
-  const w = eventPillarWeights(db, e.id);
-  return {
-    spiritual: round2(total * w.spiritual),
-    mental: round2(total * w.mental),
-    physical: round2(total * w.physical),
-  };
+  return rules.pointsForAttendance(getEvent(db, a.event_id), a.hours, eventPillarWeights(db, a.event_id));
 }
 
 // ---------- scheduled job: auto-close open attendance at events.ends_at ----------
 
 export function tick(db: Db, now: number): Db {
-  const open = db.attendance.filter((a) => !a.ended_at && now >= t(getEvent(db, a.event_id).ends_at));
-  if (open.length === 0) return db;
+  const due = db.attendance.filter((a) => rules.decideAutoClose(a, getEvent(db, a.event_id), now));
+  if (due.length === 0) return db;
   const next = clone(db);
   for (const a of next.attendance) {
-    const e = getEvent(next, a.event_id);
-    if (!a.ended_at && now >= t(e.ends_at)) {
-      a.ended_at = e.ends_at;
-      a.end_source = 'auto_closed';
-      a.hours = round2((t(e.ends_at) - t(a.started_at)) / MS_HOUR);
-    }
+    const close = rules.decideAutoClose(a, getEvent(next, a.event_id), now);
+    if (close) Object.assign(a, close);
   }
   return next;
 }
 
 // ---------- joining ----------
 
-function assertJoinable(db: Db, user: User, e: AppEvent, now: number) {
-  const status = effectiveStatus(e, now);
-  if (status === 'finished' || status === 'cancelled' || status === 'draft') throw new ApiError('event_closed');
-  if (!canUserJoinCategory(user, e)) throw new ApiError('gender_not_allowed');
-}
-
 /** Opens (or reopens) a registration so the user can go through the terms. */
 export function startJoin(db: Db, userId: string, eventId: string, now: number): Db {
   const user = getUser(db, userId)!;
-  const e = getEvent(db, eventId);
-  assertJoinable(db, user, e, now);
+  const event = getEvent(db, eventId);
   const existing = registrationOf(db, eventId, userId);
-  if (existing?.status === 'joined') throw new ApiError('already_joined');
-  if (existing?.status === 'pending_terms') return db;
+  const action = rules.decideStartJoin({ user, event, registration: existing, now });
+  if (action === 'nothing') return db;
   const next = clone(db);
-  if (existing) {
-    next.registrations.find((r) => r.id === existing.id)!.status = 'pending_terms';
+  if (action === 'reopen') {
+    next.registrations.find((r) => r.id === existing!.id)!.status = 'pending_terms';
   } else {
     next.registrations.push({
       id: newId('reg'),
@@ -217,19 +144,20 @@ export function startJoin(db: Db, userId: string, eventId: string, now: number):
 /** Accepts one term. Terms are accepted strictly in order, one at a time. */
 export function acceptTerm(db: Db, userId: string, eventId: string, termId: string, now: number): Db {
   const reg = registrationOf(db, eventId, userId);
-  if (!reg || reg.status === 'cancelled') throw new ApiError('not_joined');
-  const accepted = acceptedTermIds(db, reg.id);
-  if (accepted.includes(termId)) return db;
-  const nextTerm = eventTerms(db, eventId).find((x) => !accepted.includes(x.id));
-  if (!nextTerm || nextTerm.id !== termId) throw new ApiError('term_out_of_order');
+  const action = rules.decideAcceptTerm({
+    registration: reg,
+    terms: eventTerms(db, eventId),
+    acceptedTermIds: reg ? acceptedTermIds(db, reg.id) : [],
+    termId,
+  });
+  if (action === 'nothing') return db;
   const next = clone(db);
   next.term_acceptances.push({
     id: newId('acc'),
-    registration_id: reg.id,
+    registration_id: reg!.id,
     term_id: termId,
     accepted_at: new Date(now).toISOString(),
   });
-  // Terms are locked at the first acceptance: nobody may agree to a text that later changes.
   const e = next.events.find((x) => x.id === eventId)!;
   if (!e.terms_locked_at) e.terms_locked_at = new Date(now).toISOString();
   return next;
@@ -238,16 +166,19 @@ export function acceptTerm(db: Db, userId: string, eventId: string, termId: stri
 /** Turns a registration into `joined`: only after every term is accepted, and only if there is room. */
 export function completeJoin(db: Db, userId: string, eventId: string, now: number): Db {
   const user = getUser(db, userId)!;
-  const e = getEvent(db, eventId);
-  assertJoinable(db, user, e, now);
+  const event = getEvent(db, eventId);
   const reg = registrationOf(db, eventId, userId);
-  if (!reg || reg.status === 'cancelled') throw new ApiError('not_joined');
-  if (reg.status === 'joined') throw new ApiError('already_joined');
-  const accepted = acceptedTermIds(db, reg.id);
-  if (eventTerms(db, eventId).some((x) => !accepted.includes(x.id))) throw new ApiError('terms_incomplete');
-  if (joinedUsers(db, eventId).length >= e.capacity) throw new ApiError('event_full');
+  rules.assertCompleteJoin({
+    user,
+    event,
+    registration: reg,
+    terms: eventTerms(db, eventId),
+    acceptedTermIds: reg ? acceptedTermIds(db, reg.id) : [],
+    joinedCount: joinedUsers(db, eventId).length,
+    now,
+  });
   const next = clone(db);
-  const r = next.registrations.find((x) => x.id === reg.id)!;
+  const r = next.registrations.find((x) => x.id === reg!.id)!;
   r.status = 'joined';
   r.joined_at = new Date(now).toISOString();
   return next;
@@ -255,19 +186,13 @@ export function completeJoin(db: Db, userId: string, eventId: string, now: numbe
 
 export function cancelJoin(db: Db, userId: string, eventId: string): Db {
   const reg = registrationOf(db, eventId, userId);
-  if (!reg || reg.status !== 'joined') throw new ApiError('not_joined');
-  if (attendanceOf(db, eventId, userId)) throw new ApiError('cannot_cancel_after_attendance');
+  rules.assertCancelJoin({ registration: reg, hasAttendance: !!attendanceOf(db, eventId, userId) });
   const next = clone(db);
-  next.registrations.find((x) => x.id === reg.id)!.status = 'cancelled';
+  next.registrations.find((x) => x.id === reg!.id)!.status = 'cancelled';
   return next;
 }
 
 // ---------- attendance (recorded by a supervisor of THIS event) ----------
-
-function assertRecorder(db: Db, actorId: string, eventId: string, participantId: string) {
-  if (!isOrganizer(db, eventId, actorId)) throw new ApiError('not_organizer');
-  if (actorId === participantId) throw new ApiError('cannot_record_self');
-}
 
 export function recordStart(
   db: Db,
@@ -275,22 +200,23 @@ export function recordStart(
   args: { eventId: string; userId: string; startedAt?: number },
   now: number,
 ): Db {
-  const e = getEvent(db, args.eventId);
-  assertRecorder(db, actorId, e.id, args.userId);
-  if (now < t(e.starts_at)) throw new ApiError('event_not_started');
-  if (now > t(e.ends_at)) throw new ApiError('event_closed');
-  if (registrationOf(db, e.id, args.userId)?.status !== 'joined') throw new ApiError('not_joined');
-  if (attendanceOf(db, e.id, args.userId)) throw new ApiError('already_started');
-  const startedAt = args.startedAt ?? now;
-  if (startedAt < t(e.starts_at)) throw new ApiError('start_before_event');
-  if (startedAt > now) throw new ApiError('time_in_future');
+  const event = getEvent(db, args.eventId);
+  const start = rules.decideRecordStart({
+    actorId,
+    participantId: args.userId,
+    actorIsOrganizer: isOrganizer(db, event.id, actorId),
+    event,
+    registration: registrationOf(db, event.id, args.userId),
+    attendance: attendanceOf(db, event.id, args.userId),
+    startedAt: args.startedAt,
+    now,
+  });
   const next = clone(db);
   next.attendance.push({
     id: newId('att'),
-    event_id: e.id,
+    event_id: event.id,
     user_id: args.userId,
-    started_at: new Date(startedAt).toISOString(),
-    start_source: now - startedAt > 60_000 ? 'backdated' : 'live',
+    ...start,
     ended_at: null,
     end_source: null,
     hours: null,
@@ -308,34 +234,26 @@ export function recordEnd(
   args: { eventId: string; userId: string; endedAt?: number },
   now: number,
 ): Db {
-  const e = getEvent(db, args.eventId);
-  assertRecorder(db, actorId, e.id, args.userId);
-  const a = attendanceOf(db, e.id, args.userId);
-  if (!a) throw new ApiError('not_started');
-  if (a.ended_at) throw new ApiError('already_ended');
-  const endedAt = args.endedAt ?? now;
-  if (endedAt > now) throw new ApiError('time_in_future');
-  if (endedAt <= t(a.started_at)) throw new ApiError('end_before_start');
-  if (endedAt > t(e.ends_at) + END_GRACE_MINUTES * 60_000) throw new ApiError('end_after_event');
+  const event = getEvent(db, args.eventId);
+  const a = attendanceOf(db, event.id, args.userId);
+  const end = rules.decideRecordEnd({
+    actorId,
+    participantId: args.userId,
+    actorIsOrganizer: isOrganizer(db, event.id, actorId),
+    event,
+    attendance: a,
+    endedAt: args.endedAt,
+    now,
+  });
   const next = clone(db);
-  const row = next.attendance.find((x) => x.id === a.id)!;
-  row.ended_at = new Date(endedAt).toISOString();
-  row.end_source = now - endedAt > 60_000 ? 'backdated' : 'live';
-  row.hours = round2((endedAt - t(a.started_at)) / MS_HOUR);
+  Object.assign(next.attendance.find((x) => x.id === a!.id)!, end);
   return next;
 }
 
 // ---------- participant confirms or disputes what was recorded ----------
 
-// ⚠️ ASSUMPTION: points are credited when the participant confirms (DESIGN.md
-// puts the reward moment there). A disputed record earns nothing until an
-// admin decides — that flow is not in the demo.
 export function confirmAttendance(db: Db, userId: string, attendanceId: string, now: number): Db {
-  const a = db.attendance.find((x) => x.id === attendanceId);
-  if (!a) throw new ApiError('not_found');
-  if (a.user_id !== userId) throw new ApiError('not_your_attendance');
-  if (!a.ended_at) throw new ApiError('not_started');
-  if (a.participant_status !== 'pending') throw new ApiError('already_acted');
+  rules.assertCanConfirm(db.attendance.find((x) => x.id === attendanceId), userId);
   const next = clone(db);
   const row = next.attendance.find((x) => x.id === attendanceId)!;
   row.participant_status = 'confirmed';
@@ -361,10 +279,7 @@ export function confirmAttendance(db: Db, userId: string, attendanceId: string, 
 }
 
 export function disputeAttendance(db: Db, userId: string, attendanceId: string, now: number): Db {
-  const a = db.attendance.find((x) => x.id === attendanceId);
-  if (!a) throw new ApiError('not_found');
-  if (a.user_id !== userId) throw new ApiError('not_your_attendance');
-  if (a.participant_status !== 'pending') throw new ApiError('already_acted');
+  rules.assertCanDispute(db.attendance.find((x) => x.id === attendanceId), userId);
   const next = clone(db);
   const row = next.attendance.find((x) => x.id === attendanceId)!;
   row.participant_status = 'disputed';

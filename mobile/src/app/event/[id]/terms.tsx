@@ -3,12 +3,14 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { JoinedMotion } from '@/components/brand';
 import { Button } from '@/components/Button';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
-import * as server from '@/demo/server';
+import { QueryState } from '@/components/ui';
+import { useEvent } from '@/data/queries';
 import { fmt } from '@/i18n/format';
-import { useApp, useMe } from '@/state/app';
+import { useApp } from '@/state/app';
 import { useAction } from '@/state/useAction';
 import { colors, radius, space } from '@/theme/tokens';
 
@@ -19,16 +21,15 @@ const READ_DELAY_MS = 2000;
 
 export default function TermsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { db, s } = useApp();
-  const me = useMe();
-  const act = useAction();
+  const { s } = useApp();
+  const { run, busy } = useAction();
+  const query = useEvent(id);
   const [joined, setJoined] = useState(false);
   // The term whose reading delay has passed; accepting is enabled only for that term.
   const [readTermId, setReadTermId] = useState<string | null>(null);
 
-  const terms = server.eventTerms(db, id);
-  const reg = server.registrationOf(db, id, me.id);
-  const accepted = reg ? server.acceptedTermIds(db, reg.id) : [];
+  const terms = query.data?.terms ?? [];
+  const accepted = query.data?.my_accepted_term_ids ?? [];
   const current = terms.find((x) => !accepted.includes(x.id));
   const index = current ? terms.indexOf(current) : terms.length;
 
@@ -43,7 +44,7 @@ export default function TermsScreen() {
     return (
       <Screen background={colors.surfaceAlt} footer={<Button label={s.back} onPress={() => router.back()} />}>
         <View style={styles.done}>
-          <Ionicons name="checkmark-circle" size={72} color={colors.success} />
+          <JoinedMotion />
           <Txt variant="screenTitle" align="center">
             {s.terms.joinedTitle}
           </Txt>
@@ -55,19 +56,28 @@ export default function TermsScreen() {
     );
   }
 
+  if (!query.data) {
+    return (
+      <Screen back title={s.terms.title} background={colors.surfaceAlt}>
+        <QueryState query={query} />
+      </Screen>
+    );
+  }
+
   const footer = current ? (
     <Button
       label={canAccept ? s.terms.accept : s.terms.reading}
       icon={canAccept ? 'checkmark' : 'hourglass-outline'}
-      disabled={!canAccept}
-      onPress={() => act((d, t) => server.acceptTerm(d, me.id, id, current.id, t))}
+      disabled={!canAccept || busy}
+      onPress={() => run((b) => b.acceptTerm(id, current.id))}
     />
   ) : (
     <Button
       label={s.terms.join}
       icon="hand-left-outline"
-      onPress={() => {
-        if (act((d, t) => server.completeJoin(d, me.id, id, t))) setJoined(true);
+      disabled={busy}
+      onPress={async () => {
+        if (await run((b) => b.completeJoin(id))) setJoined(true);
       }}
     />
   );

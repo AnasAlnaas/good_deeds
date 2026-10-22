@@ -1,22 +1,22 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
 
+import { Logo, OnboardingArt } from '@/components/brand';
 import { Button } from '@/components/Button';
-import { PillarBar } from '@/components/PillarBar';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
 import { useApp } from '@/state/app';
-import { colors, radius, space } from '@/theme/tokens';
-
-const ICONS = ['map', 'clipboard'] as const;
+import { colors, space } from '@/theme/tokens';
 
 export default function Onboarding() {
   const { s, finishOnboarding } = useApp();
+  const { width, height } = useWindowDimensions();
   const [i, setI] = useState(0);
   const slides = s.onboarding.slides;
   const last = i === slides.length - 1;
+  // The art is 6:5; keep it from crowding the text on short phones.
+  const artSize = Math.min(280, width - space.lg * 2, height * 0.4);
 
   const next = () => {
     if (!last) return setI(i + 1);
@@ -26,15 +26,12 @@ export default function Onboarding() {
 
   return (
     <Screen scroll={false} footer={<Button label={last ? s.onboarding.start : s.onboarding.next} onPress={next} />}>
+      <View style={styles.brand}>
+        <Logo size={32} />
+      </View>
       <View style={styles.center}>
         <View style={styles.art}>
-          {i < ICONS.length ? (
-            <Ionicons name={ICONS[i]} size={72} color={colors.primary} />
-          ) : (
-            <View style={styles.barWrap}>
-              <PillarBar values={{ spiritual: 1, mental: 1.4, physical: 2 }} height={18} />
-            </View>
-          )}
+          <OnboardingArt index={i} size={artSize} />
         </View>
         <Txt variant="screenTitle" align="center">
           {slides[i].title}
@@ -53,18 +50,9 @@ export default function Onboarding() {
 }
 
 const styles = StyleSheet.create({
+  brand: { alignItems: 'center', paddingTop: space.md },
   center: { flex: 1, justifyContent: 'center', padding: space.lg, gap: space.md },
-  art: {
-    alignSelf: 'center',
-    width: 160,
-    height: 160,
-    borderRadius: radius.card,
-    backgroundColor: colors.primarySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: space.lg,
-  },
-  barWrap: { width: 120 },
+  art: { alignSelf: 'center', marginBottom: space.md },
   dots: { flexDirection: 'row', justifyContent: 'center', gap: space.sm, marginTop: space.lg },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.border },
   dotActive: { backgroundColor: colors.primary, width: 24 },
