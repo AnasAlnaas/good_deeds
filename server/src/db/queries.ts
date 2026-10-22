@@ -8,7 +8,7 @@ import { and, asc, count, eq, inArray, isNull, lte } from 'drizzle-orm';
 
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
-import type { AppEvent, Attendance, EventTerm, Level, Pillar, Registration, User } from '../../../shared/types';
+import { type AppEvent, type Attendance, type EventTerm, type Level, PILLARS, type Pillar, type Registration, type User } from '../../../shared/types';
 import type { PublicUser } from '../../../shared/api';
 import type { Database } from './client';
 import { iso } from './rows';
@@ -117,6 +117,30 @@ export async function pillarWeights(q: Database, eventIds: string[]): Promise<Ma
 
 export async function allLevels(q: Database): Promise<Level[]> {
   return q.select().from(s.levels).orderBy(asc(s.levels.min_points));
+}
+
+/**
+ * Adds points for confirmed hours to the ledger (one row per pillar, only ever
+ * added) and updates the person's total and level.
+ */
+export async function creditPoints(
+  q: Database,
+  args: { userId: string; eventId: string; earned: Record<Pillar, number>; reason: string; at: Date },
+): Promise<{ total: number; level: Level }> {
+  const rows = PILLARS.filter((p) => args.earned[p] > 0).map((p) => ({
+    id: newId(),
+    user_id: args.userId,
+    event_id: args.eventId,
+    pillar: p,
+    points: args.earned[p],
+    reason: args.reason,
+    created_at: args.at,
+  }));
+  if (rows.length) await q.insert(s.points_ledger).values(rows);
+  const total = rules.totalOf(rules.pointsByPillar(await ledgerOf(q, args.userId)));
+  const level = rules.levelFor(await allLevels(q), total);
+  await q.update(s.users).set({ total_points: total, level: level.level }).where(eq(s.users.id, args.userId));
+  return { total, level };
 }
 
 export async function ledgerOf(q: Database, userId: string) {

@@ -10,9 +10,10 @@
     "dev": "tsx watch src/node.ts",
     "start": "tsx src/node.ts",
     "typecheck": "tsc --noEmit",
-    "check:api": "tsx scripts/check-api.ts",
+    "check:api": "tsx scripts/check-api.ts && tsx scripts/check-admin.ts",
     "db:generate": "drizzle-kit generate",
-    "db:seed": "tsx scripts/seed.ts"
+    "db:seed": "tsx scripts/seed.ts",
+    "make-admin": "tsx scripts/make-admin.ts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

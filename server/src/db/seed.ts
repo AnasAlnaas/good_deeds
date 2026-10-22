@@ -10,7 +10,7 @@ import { dated } from './rows';
 import * as s from './schema';
 
 const ALL_TABLES = [
-  'push_tokens', 'login_codes', 'points_ledger', 'attendance', 'term_acceptances', 'registrations', 'event_terms',
+  'admin_actions', 'push_tokens', 'login_codes', 'points_ledger', 'attendance', 'term_acceptances', 'registrations', 'event_terms',
   'event_branches', 'event_organizers', 'events', 'levels', 'branch_pillars', 'branches', 'users',
 ];
 
@@ -28,11 +28,27 @@ export async function seedReference(db: Database) {
   });
 }
 
+/**
+ * Development only: an admin to sign in to the admin panel with (the code
+ * appears in the server log). The offline demo has no admin, so it is not in
+ * shared/demo-seed.ts. In production, make the first admin with
+ * `npm run make-admin -- <phone>`.
+ */
+export const DEV_ADMIN = {
+  id: 'u_admin',
+  full_name: 'إدارة الجمعية',
+  gender: 'male' as const,
+  phone: '+218910000000',
+  city: 'طرابلس',
+  role: 'admin' as const,
+  is_association_member: true,
+};
+
 /** The demo's people and events, with times relative to `nowMs` (one event is always running). */
 export async function seedDemo(db: Database, nowMs: number) {
   const d = buildSeed(nowMs);
   await db.transaction(async (tx) => {
-    await tx.insert(s.users).values(d.users.map(dated));
+    await tx.insert(s.users).values([...d.users.map(dated), { ...DEV_ADMIN, created_at: new Date(nowMs) }]);
     await tx.insert(s.branches).values(d.branches);
     await tx.insert(s.branch_pillars).values(d.branch_pillars);
     await tx.insert(s.levels).values(d.levels);

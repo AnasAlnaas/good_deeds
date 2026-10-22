@@ -202,6 +202,10 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
         return { attendance: db.attendance.find((x) => x.id === id)! };
       }),
 
+    // The demo has no server to send notifications.
+    registerPushToken: async () => {},
+    unregisterPushToken: async () => {},
+
     deleteAccount: () =>
       async(() => {
         change((d, t) => server.deleteAccount(d, meId, t));

@@ -8,10 +8,14 @@
     "scheme": "gooddeeds",
     "userInterfaceStyle": "light",
     "ios": {
-      "bundleIdentifier": "com.anasalnaas.gooddeeds"
+      "bundleIdentifier": "com.islahtarbawi.gooddeeds",
+      "infoPlist": {
+        "ExpoLocalization_supportsRTL": false
+      }
     },
     "android": {
-      "package": "com.anasalnaas.gooddeeds",
+      "package": "com.islahtarbawi.gooddeeds",
+      "googleServicesFile": "./google-services.json",
       "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#103048",
@@ -41,11 +45,26 @@
           "supportsRTL": false
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/brand/notification-icon.png",
+          "color": "#103048",
+          "defaultChannel": "default"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": false,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "96f191ca-ab90-4b32-b12d-fd1bad262292"
+      }
+    },
+    "owner": "anasalnaas"
   }
 }

@@ -9,6 +9,7 @@ import {
   doublePrecision,
   index,
   integer,
+  jsonb,
   numeric,
   pgEnum,
   pgTable,
@@ -28,6 +29,14 @@ export const startSource = pgEnum('start_source', ['live', 'backdated']);
 export const endSource = pgEnum('end_source', ['live', 'backdated', 'auto_closed']);
 export const participantStatus = pgEnum('participant_status', ['pending', 'confirmed', 'disputed']);
 export const lang = pgEnum('lang', ['ar', 'en']);
+export const adminAction = pgEnum('admin_action', [
+  'change_role',
+  'create_event',
+  'update_event',
+  'publish_event',
+  'cancel_event',
+  'resolve_dispute',
+]);
 
 const at = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 const points = (name: string) => numeric(name, { precision: 10, scale: 2, mode: 'number' });
@@ -230,4 +239,20 @@ export const push_tokens = pgTable(
     updated_at: at('updated_at').notNull(),
   },
   (t) => [index('push_tokens_user').on(t.user_id)],
+);
+
+// Not in Data_Model.md yet: every admin decision, who made it and when.
+// Rows are only ever added, like the points ledger.
+export const admin_actions = pgTable(
+  'admin_actions',
+  {
+    id: text('id').primaryKey(),
+    /** Empty when done from the server's command line (npm run make-admin). */
+    actor_id: text('actor_id').references(() => users.id),
+    action: adminAction('action').notNull(),
+    target_id: text('target_id').notNull(),
+    details: jsonb('details').$type<Record<string, unknown>>().notNull(),
+    created_at: at('created_at').notNull(),
+  },
+  (t) => [index('admin_actions_created').on(t.created_at)],
 );

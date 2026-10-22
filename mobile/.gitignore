@@ -44,3 +44,6 @@ example
 
 # test APKs
 /builds
+
+# Firebase service account keys are secrets (google-services.json is fine to commit)
+*firebase-adminsdk*.json

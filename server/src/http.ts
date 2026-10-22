@@ -7,7 +7,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { z } from 'zod';
 
 import type { ErrorBody, ServerErrorCode } from '../../shared/api';
-import { ApiError, type ApiErrorCode } from '../../shared/errors';
+import { AdminError, type AdminErrorCode, ApiError, type ApiErrorCode } from '../../shared/errors';
 import type { User } from '../../shared/types';
 import type { Database } from './db/client';
 import type { SendPush } from './push';
@@ -21,6 +21,8 @@ export interface AppDeps {
   sendLoginCode: ((phone: string, code: string) => Promise<void>) | null;
   /** Delivers push notifications. `null` = notifications are off. */
   sendPush: SendPush | null;
+  /** The association's time zone, for times written into notifications (e.g. Africa/Tripoli). */
+  timeZone: string;
   /** Runs work the answer should not wait for (notifications). Tests collect it to wait on. */
   runLater: (task: () => Promise<void>) => void;
   cronSecret?: string;
@@ -50,8 +52,14 @@ const RULE_STATUS: Partial<Record<ApiErrorCode, ContentfulStatusCode>> = {
   gender_not_allowed: 403,
 };
 
+const ADMIN_STATUS: Partial<Record<AdminErrorCode, ContentfulStatusCode>> = {
+  forbidden: 403,
+  cannot_change_own_role: 403,
+};
+
 export function errorResponse(err: Error, c: Context): Response {
   if (err instanceof ApiError) return c.json<ErrorBody>({ error: err.code }, RULE_STATUS[err.code] ?? 409);
+  if (err instanceof AdminError) return c.json<ErrorBody>({ error: err.code }, ADMIN_STATUS[err.code] ?? 409);
   if (err instanceof HttpError) return c.json<ErrorBody>({ error: err.code }, err.status);
   if (err instanceof HTTPException && err.status < 500) {
     return c.json<ErrorBody>({ error: err.status === 401 ? 'unauthorized' : 'invalid_request' }, err.status);

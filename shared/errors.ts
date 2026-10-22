@@ -32,3 +32,27 @@ export class ApiError extends Error {
     this.code = code;
   }
 }
+
+// Refusals that only the admin panel can meet (admin/src/strings.ts → errors).
+export type AdminErrorCode =
+  | 'forbidden'
+  | 'cannot_change_own_role'
+  | 'event_not_editable'
+  | 'terms_locked'
+  | 'capacity_below_joined'
+  | 'category_locked'
+  | 'locked_after_attendance'
+  | 'needs_organizer'
+  | 'invalid_status_change'
+  | 'not_disputed'
+  | 'still_open'
+  | 'hours_out_of_range';
+
+export class AdminError extends Error {
+  readonly code: AdminErrorCode;
+  constructor(code: AdminErrorCode) {
+    super(code);
+    this.name = 'AdminError';
+    this.code = code;
+  }
+}

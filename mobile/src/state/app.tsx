@@ -9,6 +9,7 @@ import { createApiBackend } from '@/data/apiBackend';
 import type { Backend, Mode } from '@/data/backend';
 import { API_URL } from '@/data/config';
 import { createDemoBackend, type DemoStore } from '@/data/demoBackend';
+import { forgetPushToken, getPushToken, lastPushToken } from '@/data/push';
 import * as tokenStore from '@/data/tokenStore';
 import type { Db, User } from '@/data/types';
 import { buildSeed, SEED_VERSION } from '@/demo/seed';
@@ -167,12 +168,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setSessionId(null);
       save(KEYS.session, null);
     } else {
+      // This phone stops receiving the account's notifications. Best effort:
+      // if it fails (offline, token already refused), the next sign-in on this
+      // phone moves the token to whoever signs in.
+      const pushToken = lastPushToken();
+      if (API_URL && apiSession && pushToken) {
+        createApiBackend({ baseUrl: API_URL, token: apiSession.token, onUnauthorized: () => {} })
+          .unregisterPushToken(pushToken)
+          .catch(() => {});
+      }
+      forgetPushToken();
       setApiSession(null);
       save(KEYS.apiUser, null);
       tokenStore.clearToken();
     }
     queryClient.clear();
-  }, [mode, queryClient]);
+  }, [mode, apiSession, queryClient]);
 
   // The server refused the token (expired, or the account was deleted elsewhere).
   const onUnauthorized = useCallback(() => {
@@ -192,6 +203,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (mode === 'demo') return createDemoBackend(store, meId);
     return API_URL && token ? createApiBackend({ baseUrl: API_URL, token, onUnauthorized }) : null;
   }, [mode, meId, token, store, onUnauthorized]);
+
+  // Signed in to the server: ask permission and tell the server where this
+  // phone's notifications go, in the app's language. Runs again after a new
+  // sign-in or a language change.
+  const notificationsChannel = STRINGS[lang].notifications.channel;
+  useEffect(() => {
+    if (mode !== 'api' || !backend) return;
+    let cancelled = false;
+    getPushToken(notificationsChannel).then((pushToken) => {
+      if (pushToken && !cancelled) backend.registerPushToken(pushToken, lang).catch(() => {});
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, backend, lang, notificationsChannel]);
 
   const value = useMemo<AppState>(
     () => ({

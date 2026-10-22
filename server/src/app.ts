@@ -9,6 +9,7 @@ import { cors } from 'hono/cors';
 import type { ErrorBody } from '../../shared/api';
 import { type AppDeps, type AppEnv, errorResponse } from './http';
 import { closeDueAndNotify } from './notify';
+import { adminRoutes } from './routes/admin';
 import { authRoutes } from './routes/auth';
 import { eventRoutes } from './routes/events';
 import { attendanceRoutes, meRoutes } from './routes/me';
@@ -30,6 +31,7 @@ export function createApp(deps: AppDeps) {
   app.route('/events', eventRoutes);
   app.route('/me', meRoutes);
   app.route('/attendance', attendanceRoutes);
+  app.route('/admin', adminRoutes);
 
   // For an outside scheduler (e.g. Vercel Cron). On a VPS, src/node.ts runs the same job on a timer.
   if (deps.cronSecret) {

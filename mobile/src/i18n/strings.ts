@@ -16,6 +16,7 @@ const ar = {
   retry: 'أعد المحاولة',
   errorTitle: 'تعذّر إتمام العملية',
   loading: 'جارٍ التحميل…',
+  notifications: { channel: 'إشعارات الأعمال الصالحة' },
 
   onboarding: {
     next: 'التالي',
@@ -276,6 +277,7 @@ const en: Strings = {
   retry: 'Try again',
   errorTitle: "Couldn't complete that",
   loading: 'Loading…',
+  notifications: { channel: 'Good Deeds notifications' },
 
   onboarding: {
     next: 'Next',

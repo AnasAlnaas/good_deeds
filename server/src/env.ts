@@ -32,6 +32,8 @@ export const env = {
   pushDelivery: (process.env.PUSH_DELIVERY ?? (isProduction ? 'expo' : 'console')) as 'expo' | 'console' | 'none',
   /** Only needed if "enhanced push security" is on in the EAS dashboard. */
   expoAccessToken: process.env.EXPO_ACCESS_TOKEN || undefined,
+  /** Times in notifications are written in this zone, wherever the server runs. */
+  timeZone: process.env.TIME_ZONE || 'Africa/Tripoli',
   /** Lets an outside scheduler call POST /api/internal/tick. Empty = that endpoint is off. */
   cronSecret: process.env.CRON_SECRET || undefined,
   /**

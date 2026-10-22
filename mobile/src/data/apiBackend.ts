@@ -76,5 +76,7 @@ export function createApiBackend(opts: { baseUrl: string; token: string; onUnaut
     confirmAttendance: (id) => send('POST', `/attendance/${enc(id)}/confirm`),
     disputeAttendance: (id) => send('POST', `/attendance/${enc(id)}/dispute`),
     deleteAccount: () => send('DELETE', '/me'),
+    registerPushToken: (token, lang) => call(opts.baseUrl, 'PUT', '/me/push-token', { ...opts, body: { token, lang } }),
+    unregisterPushToken: (token) => send('DELETE', '/me/push-token', { token }),
   };
 }

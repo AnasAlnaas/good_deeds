@@ -28,6 +28,7 @@ const deps: AppDeps = {
       ? async (phone, code) => console.log(`[sign-in code] ${phone}: ${code}`)
       : null,
   sendPush: env.pushDelivery === 'expo' ? expoPush(env.expoAccessToken) : env.pushDelivery === 'console' ? consolePush : null,
+  timeZone: env.timeZone,
   runLater: (task) => void task().catch((err) => console.error('background task failed', err)),
   cronSecret: env.cronSecret,
   corsOrigins: env.corsOrigins,

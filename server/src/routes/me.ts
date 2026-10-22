@@ -8,10 +8,10 @@ import { z } from 'zod';
 import type { AttendanceItem, AttendanceResponse, ConfirmResponse, MeResponse } from '../../../shared/api';
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
-import { type Attendance, PILLARS } from '../../../shared/types';
+import type { Attendance } from '../../../shared/types';
 import { requireUser } from '../auth';
 import type { Database } from '../db/client';
-import { allLevels, attendanceById, findEvent, ledgerOf, newId, pillarWeights, publicUser } from '../db/queries';
+import { allLevels, attendanceById, creditPoints, findEvent, ledgerOf, pillarWeights, publicUser } from '../db/queries';
 import { iso } from '../db/rows';
 import * as s from '../db/schema';
 import { type AppEnv, readBody } from '../http';
@@ -133,19 +133,13 @@ export const attendanceRoutes = new Hono<AppEnv>()
         .update(s.attendance)
         .set({ participant_status: 'confirmed', participant_acted_at: new Date(t) })
         .where(eq(s.attendance.id, id));
-      const credited = PILLARS.filter((p) => earned[p] > 0).map((p) => ({
-        id: newId(),
-        user_id: me.id,
-        event_id: event.id,
-        pillar: p,
-        points: earned[p],
+      const { total, level } = await creditPoints(tx, {
+        userId: me.id,
+        eventId: event.id,
+        earned,
         reason: 'attendance_confirmed',
-        created_at: new Date(t),
-      }));
-      if (credited.length) await tx.insert(s.points_ledger).values(credited);
-      const total = rules.totalOf(rules.pointsByPillar(await ledgerOf(tx, me.id)));
-      const level = rules.levelFor(await allLevels(tx), total);
-      await tx.update(s.users).set({ total_points: total, level: level.level }).where(eq(s.users.id, me.id));
+        at: new Date(t),
+      });
       return { attendance: (await attendanceById(tx, id))!, points_earned: earned, total_points: total, level };
     });
     return c.json<ConfirmResponse>(result);

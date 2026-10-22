@@ -3,10 +3,12 @@ import { Redirect } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
 
 import { useApp } from '@/state/app';
+import { useNotificationTaps } from '@/state/useNotificationTaps';
 import { colors, fonts } from '@/theme/tokens';
 
 export default function TabsLayout() {
   const { s, me } = useApp();
+  useNotificationTaps();
   if (!me) return <Redirect href="/login" />;
 
   return (

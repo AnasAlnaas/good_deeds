@@ -53,4 +53,8 @@ export interface Backend {
   confirmAttendance(id: string): Promise<ConfirmResponse>;
   disputeAttendance(id: string): Promise<AttendanceResponse>;
   deleteAccount(): Promise<void>;
+  /** This phone signed in: send this account's notifications to it. */
+  registerPushToken(token: string, lang: 'ar' | 'en'): Promise<void>;
+  /** This phone signed out: stop sending this account's notifications to it. */
+  unregisterPushToken(token: string): Promise<void>;
 }

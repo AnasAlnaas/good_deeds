@@ -8,89 +8,12 @@
 import { eq } from 'drizzle-orm';
 
 import type { EventDetail } from '../../shared/api';
-import { buildSeed } from '../../shared/demo-seed';
-import { createApp } from '../src/app';
-import { openDatabase } from '../src/db/client';
 import * as s from '../src/db/schema';
-import { seedDemo } from '../src/db/seed';
-import type { PushMessage } from '../src/push';
+import { startHarness } from './harness';
 
 const NOW = new Date('2026-10-21T12:00:00').getTime();
-let clock = NOW;
-const sentCodes = new Map<string, string>();
-// Notifications are captured instead of sent; a token with "gone" in it acts like an uninstalled app.
-const pushes: PushMessage[] = [];
-const background: Promise<void>[] = [];
-const settle = () => Promise.all(background.splice(0));
-
-const conn = openDatabase({});
-await conn.migrate();
-await seedDemo(conn.db, NOW);
-const seed = buildSeed(NOW);
-const app = createApp({
-  db: conn.db,
-  now: () => clock,
-  jwtSecret: 'check-api-secret',
-  sendLoginCode: async (phone, code) => void sentCodes.set(phone, code),
-  sendPush: async (messages) => {
-    pushes.push(...messages);
-    return messages.map((m) => (m.to.includes('gone') ? 'device_not_registered' : 'ok'));
-  },
-  runLater: (task) => void background.push(task()),
-  corsOrigins: [],
-});
-
-let failed = 0;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Res = { status: number; body: any };
-
-async function call(method: string, path: string, token?: string, body?: unknown): Promise<Res> {
-  const headers: Record<string, string> = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const res = await app.request(`/api${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
-  const text = await res.text();
-  return { status: res.status, body: text ? JSON.parse(text) : null };
-}
-
-async function expectError(name: string, code: string, request: Promise<Res>) {
-  const r = await request;
-  if (r.body?.error === code) console.log(`✓ ${name} → ${r.status} ${code}`);
-  else {
-    console.log(`✗ ${name}: got ${r.status} ${JSON.stringify(r.body)}, expected ${code}`);
-    failed++;
-  }
-}
-
-async function expectOk(name: string, request: Promise<Res>) {
-  const r = await request;
-  if (r.status < 300) console.log(`✓ ${name} → ${r.status}`);
-  else {
-    console.log(`✗ ${name}: got ${r.status} ${JSON.stringify(r.body)}`);
-    failed++;
-  }
-  return r.body;
-}
-
-function expectEqual(name: string, actual: unknown, expected: unknown) {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) console.log(`✓ ${name} = ${JSON.stringify(actual)}`);
-  else {
-    console.log(`✗ ${name}: got ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)}`);
-    failed++;
-  }
-}
-
-const tokens = new Map<string, string>();
-async function login(userId: string) {
-  if (!tokens.has(userId)) {
-    const phone = seed.users.find((u) => u.id === userId)!.phone;
-    await call('POST', '/auth/request-code', undefined, { phone });
-    const r = await call('POST', '/auth/verify-code', undefined, { phone, code: sentCodes.get(phone) });
-    if (r.status !== 200) throw new Error(`sign-in for ${userId} failed: ${JSON.stringify(r.body)}`);
-    tokens.set(userId, r.body.token);
-  }
-  return tokens.get(userId)!;
-}
+const h = await startHarness(NOW);
+const { conn, seed, sentCodes, pushes, call, login, expectError, expectOk, expectEqual, settle } = h;
 
 async function joinFully(token: string, eventId: string) {
   const start = await call('POST', `/events/${eventId}/join`, token);
@@ -232,7 +155,7 @@ expectEqual('disputed hours earn nothing', await totalOf(ahmad), afterConfirm);
 console.log('\n— scheduled auto-close');
 const f1 = await login('u_f1');
 await call('PUT', '/me/push-token', f1, { token: TOKEN_F1, lang: 'en' });
-clock = new Date(running.ends_at).getTime() + 1000;
+h.setClock(new Date(running.ends_at).getTime() + 1000);
 const closed = (await call('GET', '/me/attendance', f1)).body.find((x: { event: { id: string } }) => x.event.id === 'e01').attendance;
 expectEqual('open attendance closed at event end', [closed.end_source, closed.ended_at], ['auto_closed', running.ends_at]);
 await expectError('record a finish after auto-close', 'already_ended', call('POST', '/events/e01/attendance/u_f1/end', khaled));
@@ -247,10 +170,8 @@ await call('PUT', '/me/push-token', signup.token, { token: TOKEN_NEW, lang: 'ar'
 await expectOk('delete my account', call('DELETE', '/me', signup.token));
 expectEqual("the account's phones are forgotten", await tokenOwner(TOKEN_NEW), null);
 await expectError('old token stops working', 'unauthorized', call('GET', '/me', signup.token));
-clock += 2 * 60_000;
+h.setClock(h.clock() + 2 * 60_000);
 await call('POST', '/auth/request-code', undefined, { phone: phoneB });
 await expectError('the phone can sign up again', 'profile_required', call('POST', '/auth/verify-code', undefined, { phone: phoneB, code: sentCodes.get(phoneB) }));
 
-await conn.close();
-console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');
-process.exit(failed ? 1 : 0);
+await h.done();

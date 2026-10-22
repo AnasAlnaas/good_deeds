@@ -4,7 +4,7 @@
 // request, 401 not signed in, 403 not allowed, 404 not found, 409 a rule
 // refused it, 429 too soon, 503 not configured.
 
-import type { ApiErrorCode } from './errors';
+import type { AdminErrorCode, ApiErrorCode } from './errors';
 import type {
   AppEvent,
   Attendance,
@@ -32,7 +32,7 @@ export type ServerErrorCode =
   | 'internal_error';
 
 export interface ErrorBody {
-  error: ApiErrorCode | ServerErrorCode;
+  error: ApiErrorCode | ServerErrorCode | AdminErrorCode;
 }
 
 /** What other people may see about a user: no phone, no email. Gender sets the Arabic wording (حاضر / حاضرة). */

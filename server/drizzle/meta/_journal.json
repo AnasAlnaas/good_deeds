@@ -15,6 +15,13 @@
       "when": 1792659909083,
       "tag": "0001_push_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792675504502,
+      "tag": "0002_admin_actions",
+      "breakpoints": true
     }
   ]
 }
