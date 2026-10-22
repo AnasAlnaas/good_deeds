@@ -78,6 +78,11 @@ export function screenFor(data: Record<string, unknown> | undefined): string | n
       return str('event_id') ? `/event/${str('event_id')}` : null;
     case 'photo_removed':
       return '/profile';
+    case 'warning_given':
+    case 'warning_decided':
+      return str('warning_id') ? `/warnings/${str('warning_id')}` : null;
+    case 'report_handled':
+      return '/reports';
     default:
       return null;
   }

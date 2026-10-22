@@ -2,13 +2,13 @@
 // (src/demo/server.ts → shared/rules.ts) on the data kept on the phone, and
 // builds the same responses the server builds (server/src/routes/).
 
-import type { AppEvent, Attendance, Db, User } from '@/data/types';
-import { PILLARS } from '@/data/types';
+import type { AppEvent, Attendance, Db, Report, User, Warning } from '@/data/types';
+import { PILLARS, REPORT_CATEGORIES } from '@/data/types';
 import { BASE_POINTS_BY_SUBTYPE } from '@/demo/placeholders';
 import * as server from '@/demo/server';
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
-import type { AttendanceItem, EventDetail, EventSummary, PublicUser } from './api';
+import type { AttendanceItem, EventDetail, EventSummary, MyReport, MyWarning, PublicUser, ReportFormMeta } from './api';
 import { type Backend, BackendError } from './backend';
 
 export interface DemoStore {
@@ -56,6 +56,48 @@ function item(db: Db, me: User, a: Attendance): AttendanceItem {
     recorded_by: recorder ? publicUser(me, recorder) : null,
     points: server.pointsForAttendance(db, a),
   };
+}
+
+/** A report as its author sees it: without who handled it or the admin's note (as the server sends it). */
+function myReport(db: Db, me: User, r: Report): MyReport {
+  const e = r.event_id ? db.events.find((x) => x.id === r.event_id) : undefined;
+  const subject = r.subject_id ? server.getUser(db, r.subject_id) : undefined;
+  return {
+    report: { id: r.id, category: r.category, note: r.note, status: r.status, created_at: r.created_at, handled_at: r.handled_at },
+    event: e ? { id: e.id, title: e.title } : null,
+    subject: subject ? publicUser(me, subject) : null,
+  };
+}
+
+/** A warning as the member it was given to sees it: without which admin decided. */
+function myWarning(db: Db, me: User, { decided_by, ...warning }: Warning): MyWarning {
+  const e = db.events.find((x) => x.id === warning.event_id)!;
+  const issuer = server.getUser(db, warning.issued_by);
+  return { warning, event: { id: e.id, title: e.title, starts_at: e.starts_at }, issued_by: issuer ? publicUser(me, issuer) : null };
+}
+
+/** The events `me` was at, latest first, with the other people there (server/src/routes/reports.ts, GET /form). */
+function reportableEvents(db: Db, me: User): ReportFormMeta['events'] {
+  return db.events
+    .filter((e) => !rules.isHidden(e) && server.wasAtEvent(db, e.id, me.id))
+    .sort((a, b) => rules.toMs(b.starts_at) - rules.toMs(a.starts_at))
+    .slice(0, rules.REPORT_FORM_EVENTS)
+    .map((e) => {
+      const supervisors = db.event_organizers
+        .filter((o) => o.event_id === e.id)
+        .map((o) => server.getUser(db, o.user_id))
+        .filter((u): u is User => !!u && !u.deleted_at);
+      const participants = server.joinedUsers(db, e.id).filter((u) => !supervisors.some((x) => x.id === u.id));
+      return {
+        event: { id: e.id, title: e.title, starts_at: e.starts_at, ends_at: e.ends_at },
+        people: [
+          ...supervisors.map((u) => ({ user: u, supervisor: true })),
+          ...participants.map((u) => ({ user: u, supervisor: false })),
+        ]
+          .filter((p) => p.user.id !== me.id)
+          .map((p) => ({ user: publicUser(me, p.user), supervisor: p.supervisor })),
+      };
+    });
 }
 
 export function createDemoBackend(store: DemoStore, meId: string): Backend {
@@ -170,11 +212,13 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
         const { db, now, me } = read();
         const e = server.getEvent(db, eventId);
         if (!server.isOrganizer(db, eventId, me.id)) throw new ApiError('not_organizer');
+        const warned = server.warnedBy(db, eventId, me.id);
         return {
           event: summary(db, me, e, now),
           participants: server.joinedUsers(db, eventId).map((u) => ({
             user: publicUser(me, u),
             attendance: server.attendanceOf(db, eventId, u.id) ?? null,
+            i_warned: warned.has(u.id),
           })),
         };
       }),
@@ -189,6 +233,80 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
       async(() => {
         const { db } = change((d, t) => server.recordEnd(d, meId, { eventId, userId, endedAt: at }, t));
         return { attendance: server.attendanceOf(db, eventId, userId)! };
+      }),
+
+    warn: (eventId, userId, reason) =>
+      async(() => {
+        // The server's request check (server/src/routes/events.ts), briefly.
+        if (reason.length > rules.REASON_MAX) throw new BackendError('invalid_request');
+        let warning: Warning | undefined;
+        change((d, t) => {
+          const result = server.warn(d, meId, { eventId, userId, reason }, t);
+          warning = result.warning;
+          return result.db;
+        });
+        return { warning: warning! };
+      }),
+
+    reportForm: () =>
+      async((): ReportFormMeta => {
+        const { db, me } = read();
+        if (!server.canReport(db, me)) throw new ApiError('cannot_report');
+        return {
+          categories: REPORT_CATEGORIES,
+          events: reportableEvents(db, me),
+          open: server.openReports(db, me.id),
+          max_open: rules.MAX_OPEN_REPORTS,
+        };
+      }),
+
+    report: (body) =>
+      async(() => {
+        // The server's request checks (server/src/routes/reports.ts), briefly.
+        if (!REPORT_CATEGORIES.includes(body.category) || (body.note?.length ?? 0) > rules.REPORT_NOTE_MAX) {
+          throw new BackendError('invalid_request');
+        }
+        let created: Report | undefined;
+        const { db, me } = change((d, t) => {
+          const result = server.fileReport(d, meId, body, t);
+          created = result.report;
+          return result.db;
+        });
+        return myReport(db, me, created!);
+      }),
+
+    myReports: () =>
+      async(() => {
+        const { db, me } = read();
+        return db.reports
+          .filter((r) => r.reporter_id === me.id)
+          .sort((a, b) => rules.toMs(b.created_at) - rules.toMs(a.created_at))
+          .map((r) => myReport(db, me, r));
+      }),
+
+    myWarnings: () =>
+      async(() => {
+        const { db, me } = read();
+        return db.warnings
+          .filter((w) => w.user_id === me.id)
+          .sort((a, b) => rules.toMs(b.created_at) - rules.toMs(a.created_at))
+          .map((w) => myWarning(db, me, w));
+      }),
+
+    warning: (id) =>
+      async(() => {
+        const { db, me } = read();
+        const w = db.warnings.find((x) => x.id === id);
+        if (!w) throw new ApiError('not_found');
+        if (w.user_id !== me.id) throw new ApiError('not_your_warning');
+        return myWarning(db, me, w);
+      }),
+
+    appealWarning: (id, reason) =>
+      async(() => {
+        if (reason.length > rules.REASON_MAX) throw new BackendError('invalid_request');
+        const { db, me } = change((d, t) => server.appealWarning(d, meId, id, reason, t));
+        return myWarning(db, me, db.warnings.find((x) => x.id === id)!);
       }),
 
     me: () =>
@@ -206,6 +324,8 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
           confirmed_hours: server.confirmedHours(db, me.id),
           can_create_events: rules.canCreateEvents(me, level),
           create_events_level: db.levels.find((l) => l.can_create_events)?.level ?? null,
+          can_report: rules.canReport(me, level),
+          warnings: db.warnings.filter((w) => w.user_id === me.id).length,
         };
       }),
 

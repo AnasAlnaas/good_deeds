@@ -33,6 +33,10 @@ export const useEventForm = () => useBackendQuery(['eventForm'], (b) => b.eventF
 export const useRoster = (eventId: string) => useBackendQuery(['roster', eventId], (b) => b.roster(eventId));
 export const useMyAttendance = () => useBackendQuery(['myAttendance'], (b) => b.myAttendance());
 export const useAttendance = (id: string) => useBackendQuery(['attendance', id], (b) => b.attendance(id));
+export const useReportForm = () => useBackendQuery(['reportForm'], (b) => b.reportForm());
+export const useMyReports = () => useBackendQuery(['myReports'], (b) => b.myReports());
+export const useMyWarnings = () => useBackendQuery(['myWarnings'], (b) => b.myWarnings());
+export const useWarning = (id: string) => useBackendQuery(['warning', id], (b) => b.warning(id));
 
 /** Points, level and hours. Also keeps the stored profile current in server mode. */
 export function useMeSummary() {

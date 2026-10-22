@@ -6,17 +6,22 @@ import type {
   AdminEventRow,
   AdminMeta,
   AdminOverview,
+  AdminReportRow,
   AdminUserRow,
+  AdminWarningRow,
   AuditEntry,
   ChangeRoleBody,
   CreateEventBody,
+  DecideWarningBody,
   DisputeRow,
   EventInput,
+  HandleReportBody,
   HoursReportRow,
   ResolveDisputeBody,
   StatusChangeBody,
 } from '../../shared/admin-api';
 import type { LoginResponse, RequestCodeResponse, VerifyCodeBody } from '../../shared/api';
+import type { ReportStatus, WarningStatus } from '../../shared/types';
 import type { ErrorCode } from './strings';
 
 export const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000').replace(/\/+$/, '');
@@ -88,6 +93,15 @@ export const api = {
   disputes: () => call<DisputeRow[]>('GET', '/admin/disputes'),
   resolveDispute: (attendanceId: string, body: ResolveDisputeBody) =>
     call<void>('POST', `/admin/disputes/${enc(attendanceId)}/resolve`, body),
+
+  /** Members' reports (بلاغ); every one without `status`. */
+  reports: (status?: ReportStatus) => call<AdminReportRow[]>('GET', `/admin/reports${status ? `?status=${status}` : ''}`),
+  handleReport: (id: string, body: HandleReportBody) => call<void>('POST', `/admin/reports/${enc(id)}/handle`, body),
+  warnings: (filter: { status?: WarningStatus; user_id?: string }) => {
+    const query = new URLSearchParams(Object.entries(filter).filter((e): e is [string, string] => !!e[1])).toString();
+    return call<AdminWarningRow[]>('GET', `/admin/warnings${query ? `?${query}` : ''}`);
+  },
+  decideWarning: (id: string, body: DecideWarningBody) => call<void>('POST', `/admin/warnings/${enc(id)}/decide`, body),
 
   hoursReport: (from: string, to: string) => call<HoursReportRow[]>('GET', `/admin/reports/hours?from=${enc(from)}&to=${enc(to)}`),
   audit: () => call<AuditEntry[]>('GET', '/admin/audit'),

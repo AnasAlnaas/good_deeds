@@ -4,7 +4,17 @@
 import type { AdminAction } from '../../shared/admin-api';
 import type { ServerErrorCode } from '../../shared/api';
 import type { AdminErrorCode, ApiErrorCode } from '../../shared/errors';
-import type { EventStatus, GenderCategory, ParticipantStatus, Pillar, RegistrationStatus, Role } from '../../shared/types';
+import type {
+  EventStatus,
+  GenderCategory,
+  ParticipantStatus,
+  Pillar,
+  RegistrationStatus,
+  ReportCategory,
+  ReportStatus,
+  Role,
+  WarningStatus,
+} from '../../shared/types';
 
 export type ErrorCode = ApiErrorCode | ServerErrorCode | AdminErrorCode | 'network';
 
@@ -23,6 +33,8 @@ export const t = {
     overview: 'نظرة عامة',
     events: 'الفعاليات',
     disputes: 'الاعتراضات',
+    reports: 'البلاغات',
+    warnings: 'الإنذارات',
     users: 'الأعضاء',
     report: 'تقرير الساعات',
     audit: 'سجل الإجراءات',
@@ -53,6 +65,10 @@ export const t = {
     proposals: 'فعالية مقترحة بانتظار قرارك',
     reviewDisputes: 'راجع الاعتراضات',
     reviewProposals: 'راجع الفعاليات المقترحة',
+    reports: 'بلاغ لم يُغلق',
+    appeals: 'تظلّم من إنذار بانتظار قرارك',
+    reviewReports: 'راجع البلاغات',
+    reviewAppeals: 'راجع التظلّمات',
     newEvent: 'فعالية جديدة',
   },
 
@@ -168,6 +184,48 @@ export const t = {
     done: 'نُفّذ القرار وأُبلغ العضو.',
   },
 
+  // Members' reports (بلاغ). Kept apart from supervisors' warnings, as the master file decides.
+  reports: {
+    title: 'البلاغات',
+    body: 'ما أبلغ عنه الأعضاء من التطبيق. لا يُخبَر من ذُكر في بلاغ ولا يراه.',
+    status: { open: 'مفتوح', handled: 'مُغلق' } satisfies Record<ReportStatus, string>,
+    all: 'الكل',
+    empty: 'لا بلاغات هنا.',
+    from: 'من {name}',
+    about: 'عن {name}',
+    subjectWarnings: 'إنذاراته',
+    noNote: 'بلا وصف.',
+    note: 'ما الذي فعلته؟',
+    notePlaceholder: 'يُحفظ في سجل الإجراءات. لا يصل إلى صاحب البلاغ؛ يصله أن بلاغه رُوجع.',
+    close: 'أغلق البلاغ',
+    done: 'أُغلق البلاغ، وأُبلغ صاحبه بأنه رُوجع.',
+    closedBy: 'أغلقه {name} {when}',
+  },
+
+  // Supervisors' warnings (إنذار): seen by the member and the admins only.
+  warnings: {
+    title: 'الإنذارات',
+    body: 'إنذارات المشرفين للأعضاء، يراها العضو وإدارة الجمعية فقط، ولا تنقص من نقاطه. للعضو أن يتظلّم مرة، فتُبقي الإنذار أو تسحبه.',
+    of: 'إنذارات {name}',
+    noneFor: 'لا إنذارات لهذا العضو.',
+    showAll: 'اعرض كل الإنذارات',
+    status: { active: 'قائم', appealed: 'تظلّم منه', upheld: 'أُبقي بعد التظلّم', withdrawn: 'سُحب' } satisfies Record<WarningStatus, string>,
+    all: 'الكل',
+    empty: 'لا إنذارات هنا.',
+    by: 'سجّله {name}',
+    reason: 'السبب',
+    appeal: 'تظلّمه',
+    decision: 'القرار',
+    decidedBy: 'قرّره {name} {when}',
+    note: 'سبب القرار',
+    notePlaceholder: 'يقرؤه العضو في التطبيق، ويُحفظ في سجل الإجراءات.',
+    uphold: 'أبقِ الإنذار',
+    withdraw: 'اسحب الإنذار',
+    withdrawOpen: 'اسحب الإنذار…',
+    upheld: 'أُبقي الإنذار، وأُبلغ العضو.',
+    withdrawn: 'سُحب الإنذار، وأُبلغ العضو.',
+  },
+
   users: {
     title: 'الأعضاء',
     search: 'ابحث بالاسم أو الهاتف',
@@ -179,6 +237,7 @@ export const t = {
     level: 'المستوى',
     points: 'النقاط',
     hours: 'الساعات المؤكدة',
+    warnings: 'الإنذارات',
     you: 'أنت',
     roleConfirm: 'غيّر دور {name} من «{from}» إلى «{to}»؟',
     photo: 'الصورة',
@@ -225,6 +284,9 @@ export const t = {
       reject_event: 'رفض فعالية مقترحة',
       remove_photo: 'حذف صورة عضو',
       resolve_dispute: 'قرار في اعتراض',
+      handle_report: 'إغلاق بلاغ',
+      uphold_warning: 'إبقاء إنذار بعد التظلّم',
+      withdraw_warning: 'سحب إنذار',
     } satisfies Record<AdminAction, string>,
     decisions: { accept: 'اعتُمدت كما سُجّلت', correct: 'عُدّلت', reject: 'لم تُحتسب' } as Record<string, string>,
     fields: {
@@ -257,6 +319,13 @@ export const t = {
   category: { male: 'للذكور', female: 'للإناث', mixed: 'مختلط' } satisfies Record<GenderCategory, string>,
   gender: { male: 'ذكر', female: 'أنثى' },
   pillar: { spiritual: 'روحي', mental: 'عقلي', physical: 'بدني' } satisfies Record<Pillar, string>,
+  reportCategory: {
+    behaviour: 'سلوك شخص',
+    safety: 'خطر أو مكان غير آمن',
+    event: 'فعالية لا تطابق وصفها',
+    app: 'مشكلة في التطبيق',
+    other: 'شيء آخر',
+  } satisfies Record<ReportCategory, string>,
 
   // Event types (shared/placeholders.ts → BASE_POINTS_BY_SUBTYPE).
   subtype: {
@@ -301,6 +370,18 @@ export const t = {
     category_not_allowed: 'لا يقترح العضو إلا فعالية مختلطة أو لفئته.',
     starts_in_past: 'موعد الفعالية مضى.',
     too_many_proposals: 'لهذا العضو مقترحات كثيرة بانتظار القرار.',
+    cannot_report: 'لم يبلغ هذا العضو المستوى الذي يُفتح فيه الإبلاغ.',
+    note_required: 'البلاغ عن «شيء آخر» يحتاج وصفاً.',
+    cannot_report_self: 'لا يبلغ العضو عن نفسه.',
+    not_at_event: 'لم يكن العضو في هذه الفعالية.',
+    person_not_at_event: 'لم يكن المذكور في هذه الفعالية.',
+    too_many_reports: 'لهذا العضو بلاغات كثيرة مفتوحة.',
+    cannot_warn_self: 'لا يُنذر المشرف نفسه.',
+    already_warned: 'سجّل هذا المشرف إنذاراً لهذا العضو في الفعالية من قبل.',
+    reason_required: 'السبب مطلوب.',
+    not_your_warning: 'هذا الإنذار لعضو آخر.',
+    already_appealed: 'تظلّم العضو من هذا الإنذار من قبل.',
+    warning_withdrawn: 'سُحب هذا الإنذار.',
     photo_invalid: 'الصورة غير صالحة.',
     invalid_request: 'تحقّق مما أدخلته.',
     unauthorized: 'انتهت جلستك. ادخل من جديد.',
@@ -324,5 +405,8 @@ export const t = {
     not_disputed: 'لم يعد هذا السجل معترضاً عليه؛ ربما بُتّ فيه.',
     still_open: 'لم يُسجَّل انتهاء هذا النشاط بعد. يُبتّ فيه بعد انتهائه.',
     hours_out_of_range: 'الساعات بين صفر ومدة الفعالية.',
+    already_handled: 'أُغلق هذا البلاغ من قبل.',
+    not_appealed: 'لم يتظلّم العضو من هذا الإنذار؛ يُبقى الإنذار بعد تظلّم فقط، ويمكنك سحبه.',
+    already_withdrawn: 'سُحب هذا الإنذار من قبل.',
   } satisfies Record<ErrorCode, string>,
 };

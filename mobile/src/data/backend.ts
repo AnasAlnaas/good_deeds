@@ -14,11 +14,16 @@ import type {
   EventProposal,
   EventSummary,
   MeResponse,
+  MyReport,
+  MyWarning,
   PhotoResponse,
   ProposeEventResponse,
   RegistrationResponse,
+  ReportBody,
+  ReportFormMeta,
   RosterResponse,
   ServerErrorCode,
+  WarningResponse,
 } from './api';
 
 export type Mode = 'demo' | 'api';
@@ -54,6 +59,15 @@ export interface Backend {
   /** `at` absent = now (the server's now). */
   recordStart(eventId: string, userId: string, at?: number): Promise<AttendanceResponse>;
   recordEnd(eventId: string, userId: string, at?: number): Promise<AttendanceResponse>;
+  /** A supervisor of the event warns someone who joined it. */
+  warn(eventId: string, userId: string, reason: string): Promise<WarningResponse>;
+  /** What the report screen offers; refused for someone whose level does not allow reporting. */
+  reportForm(): Promise<ReportFormMeta>;
+  report(body: ReportBody): Promise<MyReport>;
+  myReports(): Promise<MyReport[]>;
+  myWarnings(): Promise<MyWarning[]>;
+  warning(id: string): Promise<MyWarning>;
+  appealWarning(id: string, reason: string): Promise<MyWarning>;
   me(): Promise<MeResponse>;
   myAttendance(): Promise<AttendanceItem[]>;
   attendance(id: string): Promise<AttendanceItem>;

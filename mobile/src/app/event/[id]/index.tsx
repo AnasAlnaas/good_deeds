@@ -7,7 +7,7 @@ import { PillarBar } from '@/components/PillarBar';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
 import { Badge, Card, InfoRow, QueryState, Row, SectionTitle } from '@/components/ui';
-import { useEvent } from '@/data/queries';
+import { useEvent, useMeSummary } from '@/data/queries';
 import { dayTimeRange, fmt } from '@/i18n/format';
 import { useApp } from '@/state/app';
 import { useAction } from '@/state/useAction';
@@ -18,6 +18,7 @@ export default function EventDetail() {
   const { s, lang, now } = useApp();
   const { run, busy } = useAction();
   const query = useEvent(id);
+  const summary = useMeSummary();
   if (!query.data) {
     return (
       <Screen back>
@@ -35,6 +36,9 @@ export default function EventDetail() {
   const organizer = event.i_organize;
   const forMe = event.can_join_category;
   const open = status === 'published' || status === 'running';
+  // Someone who was at the event may report a problem there (a report about anything else starts from the profile).
+  const canReport =
+    !!summary.data?.can_report && (organizer || reg?.status === 'joined') && status !== 'draft' && status !== 'rejected';
 
   const join = async () => {
     if (await run((b) => b.startJoin(event.id))) router.push(`/event/${event.id}/terms`);
@@ -138,6 +142,15 @@ export default function EventDetail() {
             </View>
           ))}
         </View>
+      )}
+
+      {canReport && (
+        <Button
+          variant="quiet"
+          icon="flag-outline"
+          label={s.event.report}
+          onPress={() => router.push({ pathname: '/reports/new', params: { eventId: event.id } })}
+        />
       )}
     </Screen>
   );

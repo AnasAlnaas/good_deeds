@@ -50,6 +50,8 @@ const RULE_STATUS: Partial<Record<ApiErrorCode, ContentfulStatusCode>> = {
   cannot_record_self: 403,
   not_your_attendance: 403,
   gender_not_allowed: 403,
+  cannot_warn_self: 403,
+  not_your_warning: 403,
 };
 
 const ADMIN_STATUS: Partial<Record<AdminErrorCode, ContentfulStatusCode>> = {

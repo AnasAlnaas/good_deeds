@@ -1,9 +1,10 @@
 // Tries to break the demo server's rules, as Build_Plan.md phase 5 asks:
 // record for someone absent, backdate before the event, record yourself,
-// confirm someone else's hours. Every cheat must be refused.
+// confirm someone else's hours, report below the allowed level, warn someone
+// who was not at your event. Every cheat must be refused.
 // Run: npm run check:rules
 
-import type { EventProposal } from '../src/data/api';
+import type { EventProposal, ReportBody } from '../src/data/api';
 import type { Db } from '../src/data/types';
 import { buildSeed } from '../src/demo/seed';
 import * as server from '../src/demo/server';
@@ -140,6 +141,52 @@ expectError('nobody joins it', 'not_found', () => server.startJoin(withDraft, 'u
 let three = withDraft;
 for (let i = 0; i < 2; i++) three = server.proposeEvent(three, 'u_khaled', proposal(), NOW).db;
 expectError('a fourth while three wait', 'too_many_proposals', () => server.proposeEvent(three, 'u_khaled', proposal(), NOW));
+
+console.log('\n— reports (بلاغ)');
+const report = (d: Db, userId: string, body: ReportBody) => server.fileReport(d, userId, body, NOW);
+const noReporting: Db = { ...db, levels: db.levels.map((l) => ({ ...l, can_report: false })) };
+expectError('a member reports below the level that allows it', 'cannot_report', () => report(noReporting, 'u_ahmad', { category: 'app' }));
+expectEqual('a supervisor may, whatever the level', report(noReporting, 'u_khaled', { category: 'app' }).report.status, 'open');
+expectError('"something else" without a word', 'note_required', () => report(db, 'u_ahmad', { category: 'other', note: '  ' }));
+expectError('about an event he was not at', 'not_at_event', () => report(db, 'u_ahmad', { category: 'safety', event_id: 'e04' }));
+expectError('naming someone who was not at that event', 'person_not_at_event', () =>
+  report(db, 'u_ahmad', { category: 'behaviour', event_id: 'e01', subject_id: 'u_f5' }),
+);
+expectError('naming someone without an event', 'person_not_at_event', () => report(db, 'u_ahmad', { category: 'behaviour', subject_id: 'u_f1' }));
+expectError('naming himself', 'cannot_report_self', () => report(db, 'u_ahmad', { category: 'behaviour', event_id: 'e01', subject_id: 'u_ahmad' }));
+const filed = report(db, 'u_ahmad', { category: 'behaviour', event_id: 'e01', subject_id: 'u_khaled', note: '  تأخر في فتح نقطة التجمع. ' });
+expectEqual('he may name the supervisor; it waits, the note trimmed', [filed.report.status, filed.report.subject_id, filed.report.note], [
+  'open',
+  'u_khaled',
+  'تأخر في فتح نقطة التجمع.',
+]);
+let five = filed.db;
+for (let i = 0; i < 4; i++) five = report(five, 'u_ahmad', { category: 'safety' }).db;
+expectError('a sixth while five wait', 'too_many_reports', () => report(five, 'u_ahmad', { category: 'safety' }));
+
+console.log('\n— warnings (إنذار)');
+const warn = (d: Db, actorId: string, eventId: string, userId: string, reason = 'غادر دون إبلاغ المشرف.', now = NOW) =>
+  server.warn(d, actorId, { eventId, userId, reason }, now);
+expectError('a member gives a warning', 'not_organizer', () => warn(db, 'u_ahmad', 'e01', 'u_f1'));
+expectError('a supervisor of ANOTHER event', 'not_organizer', () => warn(db, 'u_fatima', 'e01', 'u_ahmad'));
+expectError('a supervisor warns someone not at his event', 'not_joined', () => warn(db, 'u_khaled', 'e01', 'u_f5'));
+expectError('a supervisor warns himself', 'cannot_warn_self', () => warn(db, 'u_khaled', 'e01', 'u_khaled'));
+expectError('before the event starts', 'event_not_started', () => warn(db, 'u_khaled', 'e02', 'u_f3'));
+expectError('more than a week after it ended', 'event_closed', () => warn(db, 'u_khaled', 'e13', 'u_ahmad'));
+expectError('without a reason', 'reason_required', () => warn(db, 'u_khaled', 'e01', 'u_ahmad', '   '));
+const given = warn(db, 'u_khaled', 'e01', 'u_ahmad');
+expectEqual('recorded only: no points taken', server.totalPoints(given.db, 'u_ahmad'), server.totalPoints(db, 'u_ahmad'));
+expectEqual('his roster shows it', server.warnedBy(given.db, 'e01', 'u_khaled').has('u_ahmad'), true);
+expectError('the same supervisor, twice', 'already_warned', () => warn(given.db, 'u_khaled', 'e01', 'u_ahmad'));
+expectEqual('it blocks nothing: he still joins an event', server.registrationOf(joinFully(given.db, 'u_ahmad', 'e02', NOW), 'e02', 'u_ahmad')?.status, 'joined');
+
+console.log('\n— appealing a warning');
+const w = given.warning;
+expectError('someone else appeals it', 'not_your_warning', () => server.appealWarning(given.db, 'u_mariam', w.id, 'ظُلم.', NOW));
+expectError('an appeal without a reason', 'reason_required', () => server.appealWarning(given.db, 'u_ahmad', w.id, ' ', NOW));
+const appealed = server.appealWarning(given.db, 'u_ahmad', w.id, 'أبلغت المشرف المساعد.', NOW);
+expectEqual('it waits for an admin', appealed.warnings.find((x) => x.id === w.id)?.status, 'appealed');
+expectError('appeal twice', 'already_appealed', () => server.appealWarning(appealed, 'u_ahmad', w.id, 'مرة أخرى.', NOW));
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');
 process.exit(failed ? 1 : 0);

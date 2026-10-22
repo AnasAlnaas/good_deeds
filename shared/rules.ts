@@ -19,7 +19,9 @@ import type {
   Pillar,
   PointsLedgerEntry,
   Registration,
+  ReportCategory,
   User,
+  Warning,
 } from './types';
 import { PILLARS } from './types';
 
@@ -317,4 +319,102 @@ export function levelFor(levels: Level[], points: number): Level {
 
 export function nextLevel(levels: Level[], points: number): Level | undefined {
   return [...levels].sort((a, b) => a.min_points - b.min_points).find((l) => l.min_points > points);
+}
+
+// ---------- reports (بلاغ): a member tells the association ----------
+//
+// Kept apart from warnings, as the master file decides ("فصل البلاغ (عضو) عن
+// الإنذار (مشرف)"). Owner's decision (2026-10-22): a report may be about
+// anything, by category, with an optional note. It may be tied to an event the
+// reporter was at, and name someone at that event. Only admins read reports;
+// the person named is never told and never sees it.
+
+export const REPORT_NOTE_MAX = 1000;
+/** How many of the events a person was at the report screen offers, latest first. */
+export const REPORT_FORM_EVENTS = 20;
+// ⚠️ ASSUMPTION: how many of one person's reports may wait for an admin at once, so a flood cannot bury the others.
+export const MAX_OPEN_REPORTS = 5;
+
+/** Text someone typed, trimmed; null when nothing is left. */
+export const cleanText = (text: string | null | undefined) => text?.trim() || null;
+
+// ⚠️ ASSUMPTION: like proposing events, supervisors and admins may report whatever their level.
+export function canReport(user: Pick<User, 'role'>, level: Pick<Level, 'can_report'>) {
+  return level.can_report || user.role === 'supervisor' || user.role === 'admin';
+}
+
+/** Someone "at" an event: they joined it or they supervise it. */
+export function wasAtEvent(registration: Pick<Registration, 'status'> | undefined, isOrganizer: boolean) {
+  return isOrganizer || registration?.status === 'joined';
+}
+
+export function assertCanReport(args: {
+  user: Pick<User, 'id' | 'role'>;
+  level: Pick<Level, 'can_report'>;
+  category: ReportCategory;
+  /** Already cleaned (cleanText). */
+  note: string | null;
+  /** The event it is about (null = none), and which of the two people were at it. */
+  event: { reporterWasThere: boolean; subjectWasThere: boolean } | null;
+  subjectId: string | null;
+  /** The reporter's reports still waiting for an admin. */
+  openCount: number;
+}) {
+  if (!canReport(args.user, args.level)) throw new ApiError('cannot_report');
+  // ⚠️ ASSUMPTION: the note is optional, except for "something else", which says nothing without one.
+  if (args.category === 'other' && !args.note) throw new ApiError('note_required');
+  if (args.subjectId === args.user.id) throw new ApiError('cannot_report_self');
+  if (args.event && !args.event.reporterWasThere) throw new ApiError('not_at_event');
+  // Someone is named only as one of the people at that event.
+  if (args.subjectId && !args.event?.subjectWasThere) throw new ApiError('person_not_at_event');
+  if (args.openCount >= MAX_OPEN_REPORTS) throw new ApiError('too_many_reports');
+}
+
+// ---------- warnings (إنذار): a supervisor records one ----------
+//
+// Owner's decisions (2026-10-22/23): a supervisor of an event warns someone who
+// joined that event, with a reason. A warning is recorded only: it takes no
+// points and blocks nothing; admins decide what to do about it. The member is
+// told and sees it, and so do admins, nobody else (Superseded_Decisions.md: a
+// warning stays between the association and the member). One kind, no severity.
+// The member may appeal once; an admin keeps the warning or withdraws it.
+// (Build_Plan.md said "the primary supervisor only"; the owner chose any supervisor of the event.)
+
+export const REASON_MAX = 500;
+// ⚠️ ASSUMPTION: a warning can be given from the event's start until this many days after it ends.
+export const WARN_DAYS_AFTER_EVENT = 7;
+
+export function assertCanWarn(args: {
+  actorId: string;
+  memberId: string;
+  actorIsOrganizer: boolean;
+  event: Pick<AppEvent, 'status' | 'starts_at' | 'ends_at'>;
+  registration: Pick<Registration, 'status'> | undefined;
+  /** This supervisor already warned this person at this event (a withdrawn warning does not count). */
+  alreadyWarned: boolean;
+  /** Already cleaned (cleanText). */
+  reason: string | null;
+  now: number;
+}) {
+  const { event, now } = args;
+  if (!args.actorIsOrganizer) throw new ApiError('not_organizer');
+  if (args.actorId === args.memberId) throw new ApiError('cannot_warn_self');
+  if (now < toMs(event.starts_at)) throw new ApiError('event_not_started');
+  if (event.status === 'cancelled' || now > toMs(event.ends_at) + WARN_DAYS_AFTER_EVENT * 24 * MS_HOUR) {
+    throw new ApiError('event_closed');
+  }
+  if (args.registration?.status !== 'joined') throw new ApiError('not_joined');
+  // ⚠️ ASSUMPTION: one warning per supervisor, person and event, so a second tap does not give two.
+  // Kept per supervisor so one supervisor's refusal never tells another that a warning exists.
+  if (args.alreadyWarned) throw new ApiError('already_warned');
+  if (!args.reason) throw new ApiError('reason_required');
+}
+
+/** The member appeals their own warning, once, with a reason. */
+export function assertCanAppeal(w: Warning | undefined, userId: string, reason: string | null): asserts w is Warning {
+  if (!w) throw new ApiError('not_found');
+  if (w.user_id !== userId) throw new ApiError('not_your_warning');
+  if (w.status === 'withdrawn') throw new ApiError('warning_withdrawn');
+  if (w.status !== 'active') throw new ApiError('already_appealed');
+  if (!reason) throw new ApiError('reason_required');
 }

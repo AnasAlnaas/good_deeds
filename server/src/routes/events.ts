@@ -1,5 +1,5 @@
 // Events, proposing one in the app, joining (with the terms one by one) and
-// the supervisor's roster.
+// the supervisor's roster, where they record attendance and give warnings.
 // Every change runs in a transaction: the rows are read (and locked), the
 // shared rule decides, and the result is written, or nothing is.
 
@@ -16,6 +16,7 @@ import type {
   ProposeEventResponse,
   RegistrationResponse,
   RosterResponse,
+  WarningResponse,
 } from '../../../shared/api';
 import { ApiError } from '../../../shared/errors';
 import { BASE_POINTS_BY_SUBTYPE } from '../../../shared/placeholders';
@@ -39,14 +40,17 @@ import {
   shownTo,
   termsOf,
   waitingProposals,
+  warnedBy,
 } from '../db/queries';
 import { iso } from '../db/rows';
 import * as s from '../db/schema';
 import { type AppEnv, readBody } from '../http';
-import { notifyHoursToConfirm } from '../notify';
+import { notifyHoursToConfirm, notifyWarningGiven } from '../notify';
 import { assertIdsExist, proposalInput, writeLinks, writeTerms } from './event-input';
 
 const recordTimeBody = z.object({ at: z.iso.datetime({ offset: true }).optional() });
+// An empty reason is the rule's to refuse (reason_required), as in the offline demo.
+const warnBody = z.object({ reason: z.string().max(rules.REASON_MAX) });
 
 async function summarize(db: Database, me: User, events: AppEvent[], now: number): Promise<EventSummary[]> {
   const ids = events.map((e) => e.id);
@@ -287,10 +291,46 @@ export const eventRoutes = new Hono<AppEnv>()
     const people = await joinedUsers(db, id);
     const rows = await db.select().from(s.attendance).where(eq(s.attendance.event_id, id));
     const byUser = new Map(rows.map((r) => [r.user_id, iso(r)]));
+    const warned = await warnedBy(db, id, me.id);
     return c.json<RosterResponse>({
       event: summary,
-      participants: people.map((user) => ({ user: shownTo(me, user), attendance: byUser.get(user.id) ?? null })),
+      participants: people.map((user) => ({
+        user: shownTo(me, user),
+        attendance: byUser.get(user.id) ?? null,
+        i_warned: warned.has(user.id),
+      })),
     });
+  })
+
+  // A supervisor of this event warns someone who joined it. Only that member and admins see it.
+  .post('/:id/warnings/:userId', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const { id, userId } = c.req.param();
+    const reason = rules.cleanText((await readBody(c, warnBody)).reason);
+    const t = now();
+    const warning = await db.transaction(async (tx) => {
+      const event = await findEvent(tx, id);
+      // Locking the registration makes a second tap wait, so it finds the first warning.
+      const registration = await registrationOf(tx, id, userId, { lock: true });
+      rules.assertCanWarn({
+        actorId: me.id,
+        memberId: userId,
+        actorIsOrganizer: await isOrganizer(tx, id, me.id),
+        event,
+        registration,
+        alreadyWarned: (await warnedBy(tx, id, me.id)).has(userId),
+        reason,
+        now: t,
+      });
+      const [row] = await tx
+        .insert(s.warnings)
+        .values({ id: newId(), user_id: userId, issued_by: me.id, event_id: id, reason: reason!, status: 'active', created_at: new Date(t) })
+        .returning();
+      return iso(row);
+    });
+    notifyWarningGiven(c.var.deps, warning.id);
+    return c.json<WarningResponse>({ warning }, 201);
   })
 
   .post('/:id/attendance/:userId/start', async (c) => {

@@ -12,7 +12,9 @@ import type {
   AdminEventRow,
   AdminMeta,
   AdminOverview,
+  AdminReportRow,
   AdminUserRow,
+  AdminWarningRow,
   AuditEntry,
   DisputeRow,
   HoursReportRow,
@@ -24,11 +26,19 @@ import * as rules from '../../../shared/rules';
 import { type AppEvent, type Attendance, PILLARS, type Pillar } from '../../../shared/types';
 import { requireUser } from '../auth';
 import type { Database } from '../db/client';
-import { activeBranches, creditPoints, joinedCounts, newId, pillarWeights, publicUser } from '../db/queries';
+import { activeBranches, creditPoints, joinedCounts, newId, pillarWeights, publicUser, warningById } from '../db/queries';
 import { iso } from '../db/rows';
 import * as s from '../db/schema';
 import { type AppEnv, HttpError, readBody } from '../http';
-import { notifyDisputeSettled, notifyEventCancelled, notifyEventChanged, notifyPhotoRemoved, notifyProposalDecided } from '../notify';
+import {
+  notifyDisputeSettled,
+  notifyEventCancelled,
+  notifyEventChanged,
+  notifyPhotoRemoved,
+  notifyProposalDecided,
+  notifyReportHandled,
+  notifyWarningDecided,
+} from '../notify';
 import { assertIdsExist, eventInput, isoTime, writeLinks, writeTerms } from './event-input';
 
 const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
@@ -46,6 +56,10 @@ const resolveBody = z.object({
   hours: z.number().optional(),
   note: z.string().trim().min(1).max(500),
 });
+const handleReportBody = z.object({ note: z.string().trim().min(1).max(500) });
+const decideWarningBody = z.object({ decision: z.enum(['uphold', 'withdraw']), note: z.string().trim().min(1).max(500) });
+const reportQuery = z.object({ status: z.enum(['open', 'handled']).optional() });
+const warningQuery = z.object({ status: z.enum(['active', 'appealed', 'upheld', 'withdrawn']).optional(), user_id: z.string().min(1).optional() });
 
 // ---------- helpers ----------
 
@@ -110,6 +124,30 @@ async function termTexts(q: Database, eventId: string) {
 
 const escapeLike = (text: string) => text.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 
+/** The people and events that reports and warnings point at, looked up once for a whole list. */
+async function lookup(q: Database, userIds: (string | null)[], eventIds: (string | null)[]) {
+  const uIds = [...new Set(userIds.filter((x): x is string => !!x))];
+  const eIds = [...new Set(eventIds.filter((x): x is string => !!x))];
+  const people = uIds.length ? await q.select({ ...publicUser, phone: s.users.phone }).from(s.users).where(inArray(s.users.id, uIds)) : [];
+  const events = eIds.length
+    ? await q.select({ id: s.events.id, title: s.events.title, starts_at: s.events.starts_at }).from(s.events).where(inArray(s.events.id, eIds))
+    : [];
+  return {
+    withPhone: (id: string | null) => {
+      const p = people.find((u) => u.id === id);
+      return p ? { ...toPublic(p), phone: p.phone } : null;
+    },
+    person: (id: string | null) => {
+      const p = people.find((u) => u.id === id);
+      return p ? toPublic(p) : null;
+    },
+    event: (id: string | null) => {
+      const e = events.find((x) => x.id === id);
+      return e ? { id: e.id, title: e.title, starts_at: e.starts_at.toISOString() } : null;
+    },
+  };
+}
+
 // ---------- routes ----------
 
 export const adminRoutes = new Hono<AppEnv>()
@@ -131,6 +169,8 @@ export const adminRoutes = new Hono<AppEnv>()
       .from(s.events)
       .innerJoin(s.users, eq(s.users.id, s.events.created_by))
       .where(and(eq(s.events.status, 'draft'), ne(s.users.role, 'admin')));
+    const [reports] = await db.select({ n: count() }).from(s.reports).where(eq(s.reports.status, 'open'));
+    const [appeals] = await db.select({ n: count() }).from(s.warnings).where(eq(s.warnings.status, 'appealed'));
     return c.json<AdminOverview>({
       users: users.n,
       upcoming_events: statuses.filter((x) => x === 'published').length,
@@ -139,6 +179,8 @@ export const adminRoutes = new Hono<AppEnv>()
       awaiting_confirmation: awaiting.n,
       open_disputes: disputes.n,
       proposals_waiting: proposals.n,
+      open_reports: reports.n,
+      appealed_warnings: appeals.n,
     });
   })
 
@@ -175,6 +217,13 @@ export const adminRoutes = new Hono<AppEnv>()
           .from(s.attendance)
           .where(and(inArray(s.attendance.user_id, ids), eq(s.attendance.participant_status, 'confirmed')))
       : [];
+    const warnings = ids.length
+      ? await db
+          .select({ user_id: s.warnings.user_id, n: count() })
+          .from(s.warnings)
+          .where(and(inArray(s.warnings.user_id, ids), ne(s.warnings.status, 'withdrawn')))
+          .groupBy(s.warnings.user_id)
+      : [];
     return c.json<AdminUserRow[]>(
       users.map((u) => ({
         id: u.id,
@@ -189,6 +238,7 @@ export const adminRoutes = new Hono<AppEnv>()
         is_association_member: u.is_association_member,
         created_at: u.created_at.toISOString(),
         confirmed_hours: rules.round2(hours.filter((h) => h.user_id === u.id).reduce((sum, h) => sum + (h.hours ?? 0), 0)),
+        warnings: warnings.find((w) => w.user_id === u.id)?.n ?? 0,
       })),
     );
   })
@@ -466,6 +516,117 @@ export const adminRoutes = new Hono<AppEnv>()
       return { hours };
     });
     notifyDisputeSettled(c.var.deps, id, body.decision, result.hours);
+    return c.body(null, 204);
+  })
+
+  // ---------- members' reports (not the hours report below) ----------
+
+  .get('/reports', async (c) => {
+    const { db } = c.var.deps;
+    const query = reportQuery.safeParse(c.req.query());
+    if (!query.success) throw new HttpError(400, 'invalid_request');
+    const status = query.data.status;
+    const rows = (
+      await db
+        .select()
+        .from(s.reports)
+        .where(status ? eq(s.reports.status, status) : undefined)
+        .orderBy(desc(s.reports.created_at))
+        .limit(500)
+    ).map(iso);
+    const found = await lookup(db, rows.flatMap((r) => [r.reporter_id, r.subject_id, r.handled_by]), rows.map((r) => r.event_id));
+    return c.json<AdminReportRow[]>(
+      rows.map((report) => ({
+        report,
+        reporter: found.withPhone(report.reporter_id),
+        event: found.event(report.event_id),
+        subject: found.withPhone(report.subject_id),
+        handled_by: found.person(report.handled_by),
+      })),
+    );
+  })
+
+  // The note says what was done; the reporter is told only that it was looked at.
+  .post('/reports/:id/handle', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    const { note } = await readBody(c, handleReportBody);
+    const t = new Date(now());
+    await db.transaction(async (tx) => {
+      const [report] = await tx.select().from(s.reports).where(eq(s.reports.id, id)).for('update');
+      if (!report) throw new ApiError('not_found');
+      adminRules.assertCanHandleReport(report);
+      const [reporter] = await tx.select({ full_name: s.users.full_name }).from(s.users).where(eq(s.users.id, report.reporter_id));
+      await tx.update(s.reports).set({ status: 'handled', handled_by: me.id, handled_at: t, handled_note: note }).where(eq(s.reports.id, id));
+      await audit(tx, {
+        actorId: me.id,
+        action: 'handle_report',
+        targetId: id,
+        details: { category: report.category, reporter: reporter?.full_name ?? null, note },
+        at: t,
+      });
+    });
+    notifyReportHandled(c.var.deps, id);
+    return c.body(null, 204);
+  })
+
+  // ---------- warnings ----------
+
+  .get('/warnings', async (c) => {
+    const { db } = c.var.deps;
+    const query = warningQuery.safeParse(c.req.query());
+    if (!query.success) throw new HttpError(400, 'invalid_request');
+    const { status, user_id } = query.data;
+    const rows = (
+      await db
+        .select()
+        .from(s.warnings)
+        .where(and(status ? eq(s.warnings.status, status) : undefined, user_id ? eq(s.warnings.user_id, user_id) : undefined))
+        .orderBy(desc(s.warnings.created_at))
+        .limit(500)
+    ).map(iso);
+    const found = await lookup(db, rows.flatMap((w) => [w.user_id, w.issued_by, w.decided_by]), rows.map((w) => w.event_id));
+    return c.json<AdminWarningRow[]>(
+      rows.map((warning) => ({
+        warning,
+        user: found.withPhone(warning.user_id)!,
+        event: found.event(warning.event_id)!,
+        issued_by: found.person(warning.issued_by),
+        decided_by: found.person(warning.decided_by),
+      })),
+    );
+  })
+
+  // Keep a warning the member appealed, or withdraw one. The member is told, and reads the note in the app.
+  .post('/warnings/:id/decide', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    const body = await readBody(c, decideWarningBody);
+    const t = new Date(now());
+    const status = await db.transaction(async (tx) => {
+      const warning = await warningById(tx, id, { lock: true });
+      if (!warning) throw new ApiError('not_found');
+      const next = adminRules.decideWarning(warning, body.decision);
+      await tx.update(s.warnings).set({ status: next, decided_by: me.id, decided_at: t, decision_note: body.note }).where(eq(s.warnings.id, id));
+      const found = await lookup(tx, [warning.user_id], [warning.event_id]);
+      await audit(tx, {
+        actorId: me.id,
+        action: next === 'upheld' ? 'uphold_warning' : 'withdraw_warning',
+        targetId: id,
+        details: {
+          name: found.person(warning.user_id)?.full_name ?? null,
+          user_id: warning.user_id,
+          event_title: found.event(warning.event_id)?.title ?? null,
+          appealed: warning.status === 'appealed',
+          note: body.note,
+        },
+        at: t,
+      });
+      return next;
+    });
+    notifyWarningDecided(c.var.deps, id, status);
     return c.body(null, 204);
   })
 

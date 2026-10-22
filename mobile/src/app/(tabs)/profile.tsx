@@ -121,6 +121,17 @@ export default function ProfileScreen() {
         <InfoRow icon="business-outline" label={s.profile.city} value={me.city} />
       </Card>
 
+      {summary.data.warnings > 0 && (
+        <Button
+          variant="secondary"
+          icon="alert-circle-outline"
+          label={fmt(s.profile.warnings, { n: summary.data.warnings })}
+          onPress={() => router.push('/warnings')}
+        />
+      )}
+      {summary.data.can_report && (
+        <Button variant="secondary" icon="flag-outline" label={s.profile.reports} onPress={() => router.push('/reports')} />
+      )}
       <Button variant="secondary" icon="settings-outline" label={s.profile.settings} onPress={() => router.push('/settings')} />
     </Screen>
   );

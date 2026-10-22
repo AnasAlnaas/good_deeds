@@ -5,7 +5,9 @@
 // - "an event was cancelled" / "its time or place changed", to the members
 //   who joined it and its supervisors;
 // - "your event was approved" / "was not approved", to whoever proposed it in the app;
-// - "your photo was removed", when an admin removes an unsuitable profile photo.
+// - "your photo was removed", when an admin removes an unsuitable profile photo;
+// - "a supervisor gave you a warning", and "your appeal was decided" / "the warning was withdrawn";
+// - "your report was reviewed", to whoever reported, when an admin handles it.
 
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 
@@ -242,4 +244,75 @@ const PHOTO_REMOVED = {
 
 export function notifyPhotoRemoved(deps: AppDeps, userId: string) {
   send(deps, async () => [{ userId, text: (lang: Lang) => PHOTO_REMOVED[lang], data: { type: 'photo_removed' } }]);
+}
+
+// ---------- warnings ----------
+
+// The reason stays out of the notification: it shows on a locked screen, and a
+// warning is between the association and the member. The app shows it.
+const WARNING = {
+  ar: {
+    givenTitle: 'إنذار من مشرف',
+    given: 'سجّل لك مشرف «{event}» إنذاراً. افتح التطبيق لتقرأ سببه، ولك أن تتظلّم منه.',
+    upheldTitle: 'رُوجع تظلّمك',
+    upheld: 'راجعت إدارة الجمعية تظلّمك من إنذار «{event}» وأبقته. افتح التطبيق لتقرأ السبب.',
+    withdrawnTitle: 'سُحب إنذار',
+    withdrawn: 'سحبت إدارة الجمعية الإنذار الذي سُجّل لك في «{event}».',
+  },
+  en: {
+    givenTitle: 'A warning from a supervisor',
+    given: 'A supervisor of "{event}" gave you a warning. Open the app to read why; you may appeal it.',
+    upheldTitle: 'Your appeal was reviewed',
+    upheld: 'The association reviewed your appeal against the warning at "{event}" and kept it. Open the app to read why.',
+    withdrawnTitle: 'A warning was withdrawn',
+    withdrawn: 'The association withdrew the warning you were given at "{event}".',
+  },
+};
+
+async function warningWithEvent(deps: AppDeps, warningId: string) {
+  return deps.db
+    .select({ id: s.warnings.id, user_id: s.warnings.user_id, event_title: s.events.title })
+    .from(s.warnings)
+    .innerJoin(s.events, eq(s.events.id, s.warnings.event_id))
+    .where(eq(s.warnings.id, warningId));
+}
+
+export function notifyWarningGiven(deps: AppDeps, warningId: string) {
+  send(deps, async () =>
+    (await warningWithEvent(deps, warningId)).map((r) => ({
+      userId: r.user_id,
+      text: (lang) => ({ title: WARNING[lang].givenTitle, body: WARNING[lang].given.replace('{event}', r.event_title) }),
+      data: { type: 'warning_given', warning_id: r.id },
+    })),
+  );
+}
+
+export function notifyWarningDecided(deps: AppDeps, warningId: string, decision: 'upheld' | 'withdrawn') {
+  send(deps, async () =>
+    (await warningWithEvent(deps, warningId)).map((r) => ({
+      userId: r.user_id,
+      text: (lang) => {
+        const w = WARNING[lang];
+        return { title: decision === 'upheld' ? w.upheldTitle : w.withdrawnTitle, body: w[decision].replace('{event}', r.event_title) };
+      },
+      data: { type: 'warning_decided', warning_id: r.id },
+    })),
+  );
+}
+
+// ---------- a report reviewed ----------
+
+// ⚠️ ASSUMPTION: whoever reported is told it was looked at, but not what was done,
+// which may be about someone else.
+const REPORT_HANDLED = {
+  ar: { title: 'رُوجع بلاغك', body: 'راجعت إدارة الجمعية بلاغك. جزاك الله خيراً على حرصك.' },
+  en: { title: 'Your report was reviewed', body: 'The association reviewed your report. Thank you for looking out for others.' },
+};
+
+export function notifyReportHandled(deps: AppDeps, reportId: string) {
+  send(deps, async () => {
+    const [report] = await deps.db.select({ reporter_id: s.reports.reporter_id }).from(s.reports).where(eq(s.reports.id, reportId));
+    if (!report) return [];
+    return [{ userId: report.reporter_id, text: (lang: Lang) => REPORT_HANDLED[lang], data: { type: 'report_handled', report_id: reportId } }];
+  });
 }

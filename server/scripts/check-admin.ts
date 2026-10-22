@@ -1,11 +1,22 @@
 // Tries to break the admin panel's rules through the API: non-admins knocking,
 // an admin changing their own role, edits that would change what people
-// already agreed to, settling a dispute twice. Every attempt must be refused,
+// already agreed to, settling a dispute twice, a supervisor closing a report,
+// keeping a warning nobody appealed. Every attempt must be refused,
 // and every decision must land in the audit log.
 // Run: npm run check:api (runs this after check-api.ts)
 
-import type { EventDetail, EventSummary } from '../../shared/api';
-import type { AdminEventDetail, AdminEventRow, AdminOverview, AdminUserRow, AuditEntry, CreateEventBody, EventInput } from '../../shared/admin-api';
+import type { EventDetail, EventSummary, MyReport, MyWarning } from '../../shared/api';
+import type {
+  AdminEventDetail,
+  AdminEventRow,
+  AdminOverview,
+  AdminReportRow,
+  AdminUserRow,
+  AdminWarningRow,
+  AuditEntry,
+  CreateEventBody,
+  EventInput,
+} from '../../shared/admin-api';
 import type { PushMessage } from '../src/push';
 import { startHarness } from './harness';
 
@@ -299,5 +310,74 @@ expectEqual('she is told, in her phone\'s language', pushes.filter((p) => p.data
 const removal = ((await call('GET', '/admin/audit', admin)).body as AuditEntry[])[0];
 expectEqual('the removal is in the audit log', [removal.action, removal.target_id, removal.details.name], ['remove_photo', 'u_mariam', 'مريم علي']);
 await expectOk('she can add another', call('PUT', '/me/photo', mariam, { jpeg_base64: jpeg.toString('base64') }));
+
+// ---------------------------------------------------------------------------
+console.log("\n— members' reports");
+const overviewNow = async (): Promise<AdminOverview> => (await call('GET', '/admin/overview', admin)).body;
+const filed: MyReport = (await call('POST', '/reports', ahmad, { category: 'safety', event_id: 'e01', subject_id: 'u_khaled', note: 'لا قفازات تكفي الجميع.' })).body;
+await expectError('a supervisor opens the reports', 'forbidden', call('GET', '/admin/reports', khaled));
+const open: AdminReportRow[] = (await call('GET', '/admin/reports?status=open', admin)).body;
+expectEqual('the admin sees it: who sent it, about which event, who is named', open.map((r) => [r.report.id, r.reporter?.id, r.reporter?.phone, r.event?.id, r.subject?.id]), [
+  [filed.report.id, 'u_ahmad', '+218911000000', 'e01', 'u_khaled'],
+]);
+expectEqual('the overview counts it', (await overviewNow()).open_reports, 1);
+await expectError('a status that does not exist', 'invalid_request', call('GET', '/admin/reports?status=lost', admin));
+const handle = (token: string, note: string) => call('POST', `/admin/reports/${filed.report.id}/handle`, token, { note });
+await expectError('a non-admin closes a report', 'forbidden', handle(khaled, 'تم.'));
+await expectError('closed without a note', 'invalid_request', handle(admin, '  '));
+await expectOk('an admin marks it handled, with what was done', handle(admin, 'كلّمنا المشرف ووفّرنا قفازات إضافية.'));
+await expectError('handled twice', 'already_handled', handle(admin, 'مكرر.'));
+await settle();
+expectEqual('the reporter is told it was looked at, not what was done', pushes.filter((p) => p.data.type === 'report_handled').map((p) => [p.to, p.body]), [
+  ['ExponentPushToken[ahmad]', 'راجعت إدارة الجمعية بلاغك. جزاك الله خيراً على حرصك.'],
+]);
+expectEqual('the supervisor he named is told nothing', pushes.some((p) => p.to === 'ExponentPushToken[khaled]' && !!p.data.report_id), false);
+const seenByReporter = ((await call('GET', '/me/reports', ahmad)).body as MyReport[])[0];
+expectEqual('he sees it reviewed, without the admin note', [seenByReporter.report.status, 'handled_note' in seenByReporter.report], ['handled', false]);
+const handled: AdminReportRow[] = (await call('GET', '/admin/reports?status=handled', admin)).body;
+expectEqual('the admin sees who handled it and how', handled.map((r) => [r.handled_by?.id, r.report.handled_note]), [['u_admin', 'كلّمنا المشرف ووفّرنا قفازات إضافية.']]);
+expectEqual('none open now', (await overviewNow()).open_reports, 0);
+
+// ---------------------------------------------------------------------------
+console.log('\n— warnings and appeals');
+const w1 = (await call('POST', '/events/e01/warnings/u_ahmad', khaled, { reason: 'غادر دون إبلاغ المشرف.' })).body.warning;
+const w2 = (await call('POST', '/events/e01/warnings/u_mariam', khaled, { reason: 'تأخرت ساعة.' })).body.warning;
+await expectError('a supervisor reads the warnings list', 'forbidden', call('GET', '/admin/warnings', khaled));
+const hisWarnings: AdminWarningRow[] = (await call('GET', '/admin/warnings?user_id=u_ahmad', admin)).body;
+expectEqual("one member's warnings, with who gave them and where", hisWarnings.map((r) => [r.warning.id, r.user.id, r.issued_by?.id, r.event.id]), [[w1.id, 'u_ahmad', 'u_khaled', 'e01']]);
+const warningsOf = async (q: string) => ((await call('GET', `/admin/users?q=${encodeURIComponent(q)}`, admin)).body as AdminUserRow[])[0]?.warnings;
+expectEqual('the members list counts them', [await warningsOf('أحمد'), await warningsOf('مريم')], [1, 1]);
+const decide = (id: string, decision: 'uphold' | 'withdraw', note = 'رُوجع.') => call('POST', `/admin/warnings/${id}/decide`, admin, { decision, note });
+await expectError('keep a warning nobody appealed', 'not_appealed', decide(w1.id, 'uphold'));
+await expectOk('he appeals', call('POST', `/warnings/${w1.id}/appeal`, ahmad, { reason: 'أبلغت المشرف المساعد قبل أن أغادر.' }));
+expectEqual('the overview counts the appeal', (await overviewNow()).appealed_warnings, 1);
+const appeals: AdminWarningRow[] = (await call('GET', '/admin/warnings?status=appealed', admin)).body;
+expectEqual('with his reason', appeals.map((r) => [r.warning.id, r.warning.appeal_reason]), [[w1.id, 'أبلغت المشرف المساعد قبل أن أغادر.']]);
+await expectError('a decision without a note', 'invalid_request', decide(w1.id, 'uphold', ''));
+await expectError('a supervisor decides', 'forbidden', call('POST', `/admin/warnings/${w1.id}/decide`, khaled, { decision: 'withdraw', note: 'سحبته.' }));
+await expectOk('an admin keeps it', decide(w1.id, 'uphold', 'لم يكن في الفعالية مشرف مساعد.'));
+await expectError('he appeals again', 'already_appealed', call('POST', `/warnings/${w1.id}/appeal`, ahmad, { reason: 'مرة أخرى.' }));
+await expectOk('an admin withdraws the other, unasked', decide(w2.id, 'withdraw', 'سُجّل بالخطأ.'));
+await expectError('withdraw it twice', 'already_withdrawn', decide(w2.id, 'withdraw'));
+await expectError('she appeals a withdrawn warning', 'warning_withdrawn', call('POST', `/warnings/${w2.id}/appeal`, mariam, { reason: 'لم أتأخر.' }));
+await settle();
+expectEqual("each is told, in their phone's language", pushes.filter((p) => p.data.type === 'warning_decided').map((p) => [p.to, p.title]), [
+  ['ExponentPushToken[ahmad]', 'رُوجع تظلّمك'],
+  ['ExponentPushToken[mariam]', 'A warning was withdrawn'],
+]);
+const kept: MyWarning = (await call('GET', `/warnings/${w1.id}`, ahmad)).body;
+expectEqual('he reads why in the app, not which admin decided', [kept.warning.status, kept.warning.decision_note, 'decided_by' in kept.warning], [
+  'upheld',
+  'لم يكن في الفعالية مشرف مساعد.',
+  false,
+]);
+expectEqual('the members list counts only warnings that stand', [await warningsOf('أحمد'), await warningsOf('مريم')], [1, 0]);
+await expectOk('a withdrawn warning may be given again', call('POST', '/events/e01/warnings/u_mariam', khaled, { reason: 'تأخرت ساعتين.' }));
+const decisions: AuditEntry[] = (await call('GET', '/admin/audit', admin)).body;
+expectEqual('every decision is in the audit log', decisions.slice(0, 3).map((e) => [e.action, e.details.note]), [
+  ['withdraw_warning', 'سُجّل بالخطأ.'],
+  ['uphold_warning', 'لم يكن في الفعالية مشرف مساعد.'],
+  ['handle_report', 'كلّمنا المشرف ووفّرنا قفازات إضافية.'],
+]);
 
 await h.done();

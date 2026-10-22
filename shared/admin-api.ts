@@ -11,8 +11,10 @@ import type {
   EventTerm,
   Pillar,
   Registration,
+  Report,
   Role,
   User,
+  Warning,
 } from './types';
 
 /** GET /api/admin/overview */
@@ -26,6 +28,10 @@ export interface AdminOverview {
   open_disputes: number;
   /** Drafts made in the app by members and supervisors, waiting for an admin to publish or turn them down. */
   proposals_waiting: number;
+  /** Members' reports nobody has handled yet. */
+  open_reports: number;
+  /** Warnings the member appealed, waiting for an admin to keep or withdraw them. */
+  appealed_warnings: number;
 }
 
 /** GET /api/admin/meta: what the event form offers. */
@@ -46,6 +52,8 @@ export interface AdminUserRow
     'id' | 'full_name' | 'phone' | 'gender' | 'city' | 'avatar_url' | 'role' | 'level' | 'total_points' | 'is_association_member' | 'created_at'
   > {
   confirmed_hours: number;
+  /** Warnings that stand (not withdrawn). */
+  warnings: number;
 }
 
 /** PATCH /api/admin/users/:id */
@@ -128,6 +136,48 @@ export interface HoursReportRow extends Pick<User, 'full_name' | 'phone' | 'city
   total_points: number;
 }
 
+// ---------- members' reports (بلاغ) ----------
+// (Not to be confused with the hours report above: /reports/hours.)
+
+/** GET /api/admin/reports?status=open|handled (latest first; every report without `status`) */
+export interface AdminReportRow {
+  report: Report;
+  reporter: (PublicUser & Pick<User, 'phone'>) | null;
+  event: Pick<AppEvent, 'id' | 'title' | 'starts_at'> | null;
+  /** The person named. They are never told. */
+  subject: (PublicUser & Pick<User, 'phone'>) | null;
+  handled_by: PublicUser | null;
+}
+
+/**
+ * POST /api/admin/reports/:id/handle. The note (required) says what was done; it
+ * goes to the audit log. The reporter is told their report was looked at, not the note.
+ */
+export interface HandleReportBody {
+  note: string;
+}
+
+// ---------- warnings (إنذار) ----------
+
+/** GET /api/admin/warnings?status=&user_id= (latest first) */
+export interface AdminWarningRow {
+  warning: Warning;
+  user: PublicUser & Pick<User, 'phone'>;
+  event: Pick<AppEvent, 'id' | 'title' | 'starts_at'>;
+  issued_by: PublicUser | null;
+  decided_by: PublicUser | null;
+}
+
+/**
+ * POST /api/admin/warnings/:id/decide
+ * uphold: answers an appeal; the warning stands · withdraw: it is taken back, with or without an appeal.
+ * The note is required: the member reads it in the app, and the audit log keeps it.
+ */
+export interface DecideWarningBody {
+  decision: 'uphold' | 'withdraw';
+  note: string;
+}
+
 // ---------- audit log ----------
 
 export type AdminAction =
@@ -138,7 +188,10 @@ export type AdminAction =
   | 'cancel_event'
   | 'reject_event'
   | 'resolve_dispute'
-  | 'remove_photo';
+  | 'remove_photo'
+  | 'handle_report'
+  | 'uphold_warning'
+  | 'withdraw_warning';
 
 /** GET /api/admin/audit (newest first) */
 export interface AuditEntry {

@@ -68,11 +68,30 @@ The app follows the planning notes (`DESIGN.md`, `Screens.md`, `Data_Model.md`,
   per person), who approves or turns it down from the admin panel; the creator is
   notified either way. Until then only the creator sees it, under "أنظّمها".
   An admin's own event made in the app is published at once.
+- **Reports (بلاغ) and warnings (إنذار)**, kept apart as the master file decides:
+  a member reports, a supervisor warns.
+  - *Report*: from the event page ("أبلغ عن مشكلة") or Profile → "بلاغاتك".
+    A category (someone's behaviour, something unsafe, an event not as described,
+    the app, something else) and an optional note (needed for "something else").
+    It may be tied to an event the member was at, and name someone who was at
+    that event. Only admins read it; the person named is never told. Who may
+    report is `levels.can_report` (supervisors and admins always may); at most 5
+    may wait at once. The reporter is told when an admin has looked at it.
+  - *Warning*: a supervisor of the event, from its roster ("سجّل إنذاراً"),
+    gives one to someone who joined it, with a reason, from the event's start
+    until 7 days after it ends. It is recorded only: it takes no points and
+    blocks nothing. The member is told (without the reason, which can show on a
+    locked screen) and sees it under Profile → "إنذاراتك"; nobody but the member
+    and the admins sees it. The member may appeal once with a reason; an admin
+    keeps it or withdraws it, and the member reads the admin's note in the app.
 
 Try the full loop: sign in as **خالد منصور** (supervisor), open **حملة نظافة السراج**
 (happening now) → roster → record start and finish for **أحمد سالم**. Then switch
 account to أحمد → My activity → confirm the hours. As خالد you can also propose
 an event (Events → اقترح فعالية); the demo has no admin, so it stays waiting.
+On the same roster, "سجّل إنذاراً" warns أحمد; as أحمد, Profile → إنذاراتك shows it
+and lets him appeal, and the event page's "أبلغ عن مشكلة" sends a report. With no
+admin in the demo, reports and appeals stay waiting.
 
 `src/demo/server.ts` stands in for the backend. It calls the same rules as the
 real server (`shared/rules.ts`), and the screens never compute hours or points.
@@ -129,6 +148,16 @@ not in `Data_Model.md` yet and need a decision. Decided by the owner
 (2026-10-22, in `shared/rules.ts`): events may be proposed from level 5 or by
 supervisors and admins ("level + direct nomination"), at most 3 may wait at
 once, and a proposal is mixed or for the proposer's own men/women category.
+Decided by the owner (2026-10-22/23, in `shared/rules.ts`): a report is about
+anything, by category, with an optional note, and may name someone at its event;
+a warning is given by a supervisor of the event, recorded only, seen by the
+member (who is notified) and admins, has no severity, and may be appealed once.
+Still `⚠️ ASSUMPTION` there: the 5 reports waiting at once, the 7 days after an
+event for warnings, one warning per supervisor, person and event, a note being
+needed for "something else", and supervisors reporting whatever their level.
+`reports` and `warnings` differ from `Data_Model.md` (see `shared/types.ts`):
+a report has an event and a person instead of one target, and a warning has
+no severity but records its event, the appeal and the decision.
 
 ## API
 
@@ -169,7 +198,13 @@ How it fits together:
   through Expo's push service in production and prints to the server log in
   development. Times are written in `TIME_ZONE` (default Africa/Tripoli).
   Whoever proposed an event in the app is told when it is approved or turned
-  down (with the admin's reason, if given).
+  down (with the admin's reason, if given). A member is told when a supervisor
+  gives them a warning and when an admin decides on it, and whoever reported
+  something is told when an admin has looked at it.
+- Reports and warnings: `POST /api/reports` (with `GET /api/reports/form` for
+  what the screen offers), `POST /api/events/:id/warnings/:userId` from the
+  roster, `POST /api/warnings/:id/appeal`, and the member's own lists under
+  `/api/me/reports` and `/api/me/warnings`. Nobody else's warnings reach the app.
 - Profile photos are kept in the database (`user_photos`), so the server needs no
   file storage. `GET /api/users/:id/photo` serves one only to those allowed to
   see it (`rules.canSeePhoto`), and answers 404 to anyone else.
@@ -194,8 +229,9 @@ npm run dev        # http://localhost:5173 (the server must be running)
 Sign in with an admin's phone number. In development the code appears in the
 server log, and the development database has an admin: **0910000000**.
 
-- **Overview**: disputes and proposed events waiting, events running and
-  upcoming, drafts, hours waiting for their owners to confirm.
+- **Overview**: disputes, proposed events, open reports and appealed warnings
+  waiting, events running and upcoming, drafts, hours waiting for their owners
+  to confirm.
 - **Events**: create (as a draft or published), edit, publish, cancel. Choose
   the type (it sets the points), branches of faith, supervisors and terms.
   What people already agreed to is protected: terms lock at the first
@@ -205,7 +241,13 @@ server log, and the development database has an admin: **0910000000**.
   to them. An admin's own draft can be discarded the same way.
 - **Disputes**: accept the recorded hours, correct them, or count none, with a
   reason. Points are credited like a confirmation and the member is notified.
-- **Members**: search, change roles (member, supervisor, admin). Each member's
+- **Reports**: what members reported, open or closed, with who sent it, the
+  event and the person named. Close one with a note saying what was done (kept
+  in the audit log); the reporter is told only that it was looked at.
+- **Warnings**: every supervisor's warning, or one member's (from the members
+  list). Keep an appealed warning or withdraw one, with a note the member reads.
+- **Members**: search, change roles (member, supervisor, admin), see how many
+  warnings stand against each one. Each member's
   photo is shown (click to open it full size); an unsuitable one can be removed,
   and the member is told and may add another.
 - **Hours report**: confirmed hours and points per member for a period;

@@ -3,8 +3,8 @@
 // in the on-phone database, calls the rule, and writes what the rule decided.
 // The screens never compute hours or points themselves.
 
-import type { EventProposal } from '@/data/api';
-import type { AppEvent, Attendance, Db, EventStatus, EventTerm, Pillar, Registration, User } from '@/data/types';
+import type { EventProposal, ReportBody } from '@/data/api';
+import type { AppEvent, Attendance, Db, EventStatus, EventTerm, Pillar, Registration, Report, User, Warning } from '@/data/types';
 import { PILLARS } from '@/data/types';
 import { BASE_POINTS_BY_SUBTYPE } from './placeholders';
 import { ApiError } from '../../../shared/errors';
@@ -356,6 +356,114 @@ export function disputeAttendance(db: Db, userId: string, attendanceId: string, 
   const row = next.attendance.find((x) => x.id === attendanceId)!;
   row.participant_status = 'disputed';
   row.participant_acted_at = new Date(now).toISOString();
+  return next;
+}
+
+// ---------- reports (بلاغ): a member tells the association ----------
+
+/** Joined the event or supervises it (rules.wasAtEvent), as on the server. A deleted account was at nothing. */
+export function wasAtEvent(db: Db, eventId: string, userId: string) {
+  const u = getUser(db, userId);
+  if (!u || u.deleted_at) return false;
+  return rules.wasAtEvent(registrationOf(db, eventId, userId), isOrganizer(db, eventId, userId));
+}
+
+export function openReports(db: Db, userId: string) {
+  return db.reports.filter((r) => r.reporter_id === userId && r.status === 'open').length;
+}
+
+export function canReport(db: Db, user: User) {
+  return rules.canReport(user, levelFor(db, totalPoints(db, user.id)));
+}
+
+/**
+ * A member's report. The demo has no admin, so it stays waiting. The fields
+ * are checked before this (demoBackend.ts), as the server's request checks do.
+ */
+export function fileReport(db: Db, userId: string, input: ReportBody, now: number): { db: Db; report: Report } {
+  const event = input.event_id ? getEvent(db, input.event_id) : null;
+  const note = rules.cleanText(input.note);
+  const subjectId = input.subject_id ?? null;
+  rules.assertCanReport({
+    user: getUser(db, userId)!,
+    level: levelFor(db, totalPoints(db, userId)),
+    category: input.category,
+    note,
+    event: event && {
+      reporterWasThere: wasAtEvent(db, event.id, userId),
+      subjectWasThere: !!subjectId && wasAtEvent(db, event.id, subjectId),
+    },
+    subjectId,
+    openCount: openReports(db, userId),
+  });
+  const report: Report = {
+    id: newId('rep'),
+    reporter_id: userId,
+    category: input.category,
+    event_id: event?.id ?? null,
+    subject_id: subjectId,
+    note,
+    status: 'open',
+    created_at: new Date(now).toISOString(),
+    handled_by: null,
+    handled_at: null,
+    handled_note: null,
+  };
+  const next = clone(db);
+  next.reports.push(report);
+  return { db: next, report };
+}
+
+// ---------- warnings (إنذار): a supervisor records one, the member may appeal ----------
+
+/** The people one supervisor warned at one event (withdrawn warnings left out). */
+export function warnedBy(db: Db, eventId: string, issuerId: string): Set<string> {
+  return new Set(
+    db.warnings.filter((w) => w.event_id === eventId && w.issued_by === issuerId && w.status !== 'withdrawn').map((w) => w.user_id),
+  );
+}
+
+export function warn(db: Db, actorId: string, args: { eventId: string; userId: string; reason: string }, now: number): { db: Db; warning: Warning } {
+  const event = getEvent(db, args.eventId);
+  const reason = rules.cleanText(args.reason);
+  rules.assertCanWarn({
+    actorId,
+    memberId: args.userId,
+    actorIsOrganizer: isOrganizer(db, event.id, actorId),
+    event,
+    registration: registrationOf(db, event.id, args.userId),
+    alreadyWarned: warnedBy(db, event.id, actorId).has(args.userId),
+    reason,
+    now,
+  });
+  const warning: Warning = {
+    id: newId('warn'),
+    user_id: args.userId,
+    issued_by: actorId,
+    event_id: event.id,
+    reason: reason!,
+    status: 'active',
+    created_at: new Date(now).toISOString(),
+    appealed_at: null,
+    appeal_reason: null,
+    decided_by: null,
+    decided_at: null,
+    decision_note: null,
+  };
+  const next = clone(db);
+  next.warnings.push(warning);
+  return { db: next, warning };
+}
+
+/** The member appeals their warning. The demo has no admin, so the appeal stays waiting. */
+export function appealWarning(db: Db, userId: string, warningId: string, reason: string, now: number): Db {
+  const cleaned = rules.cleanText(reason);
+  rules.assertCanAppeal(db.warnings.find((w) => w.id === warningId), userId, cleaned);
+  const next = clone(db);
+  const w = next.warnings.find((x) => x.id === warningId)!;
+  w.status = 'appealed';
+  w.appealed_at = new Date(now).toISOString();
+  w.appeal_reason = cleaned;
   return next;
 }
 

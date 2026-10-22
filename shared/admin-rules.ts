@@ -7,7 +7,7 @@
 
 import { AdminError } from './errors';
 import { MS_HOUR, effectiveStatus, round2, toMs } from './rules';
-import type { AppEvent, Attendance, EventStatus, Role } from './types';
+import type { AppEvent, Attendance, EventStatus, Report, Role, Warning } from './types';
 
 // ---------- roles ----------
 
@@ -104,4 +104,23 @@ export function decideResolution(args: {
   const hours = args.hours ?? -1;
   if (!(hours >= 0 && hours <= max)) throw new AdminError('hours_out_of_range');
   return { hours: round2(hours) };
+}
+
+// ---------- reports and warnings ----------
+
+/** A report is handled once. The admin's note says what was done; it stays with the association. */
+export function assertCanHandleReport(report: Pick<Report, 'status'>) {
+  if (report.status !== 'open') throw new AdminError('already_handled');
+}
+
+/**
+ * An admin's decision on a warning. `uphold` answers an appeal: the warning
+ * stands and cannot be appealed again. `withdraw` takes it back, after an
+ * appeal or on the admin's own (given by mistake, say). Returns the new status.
+ */
+export function decideWarning(warning: Pick<Warning, 'status'>, decision: 'uphold' | 'withdraw'): 'upheld' | 'withdrawn' {
+  if (warning.status === 'withdrawn') throw new AdminError('already_withdrawn');
+  if (decision === 'withdraw') return 'withdrawn';
+  if (warning.status !== 'appealed') throw new AdminError('not_appealed');
+  return 'upheld';
 }

@@ -4,11 +4,22 @@
 
 import { randomUUID } from 'node:crypto';
 
-import { and, asc, count, eq, inArray, isNull, lte } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNull, lte, ne } from 'drizzle-orm';
 
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
-import { type AppEvent, type Attendance, type Branch, type EventTerm, type Level, PILLARS, type Pillar, type Registration, type User } from '../../../shared/types';
+import {
+  type AppEvent,
+  type Attendance,
+  type Branch,
+  type EventTerm,
+  type Level,
+  PILLARS,
+  type Pillar,
+  type Registration,
+  type User,
+  type Warning,
+} from '../../../shared/types';
 import type { PublicUser } from '../../../shared/api';
 import type { Database } from './client';
 import { iso } from './rows';
@@ -97,6 +108,37 @@ export async function isOrganizer(q: Database, eventId: string, userId: string) 
     .from(s.event_organizers)
     .where(and(eq(s.event_organizers.event_id, eventId), eq(s.event_organizers.user_id, userId)));
   return rows.length > 0;
+}
+
+/** Joined the event or supervises it (rules.wasAtEvent). A deleted account was at nothing. */
+export async function wasAtEvent(q: Database, eventId: string, userId: string) {
+  const user = await findUser(q, userId);
+  if (!user || user.deleted_at) return false;
+  return rules.wasAtEvent(await registrationOf(q, eventId, userId), await isOrganizer(q, eventId, userId));
+}
+
+/** How many of a person's reports still wait for an admin. */
+export async function openReports(q: Database, userId: string) {
+  const [row] = await q
+    .select({ n: count() })
+    .from(s.reports)
+    .where(and(eq(s.reports.reporter_id, userId), eq(s.reports.status, 'open')));
+  return row.n;
+}
+
+export async function warningById(q: Database, id: string, opts: Lock = {}): Promise<Warning | undefined> {
+  const query = q.select().from(s.warnings).where(eq(s.warnings.id, id));
+  const [row] = opts.lock ? await query.for('update') : await query;
+  return row && iso(row);
+}
+
+/** The people one supervisor warned at one event (withdrawn warnings left out). */
+export async function warnedBy(q: Database, eventId: string, issuerId: string): Promise<Set<string>> {
+  const rows = await q
+    .select({ user_id: s.warnings.user_id })
+    .from(s.warnings)
+    .where(and(eq(s.warnings.event_id, eventId), eq(s.warnings.issued_by, issuerId), ne(s.warnings.status, 'withdrawn')));
+  return new Set(rows.map((r) => r.user_id));
 }
 
 /** People with a `joined` registration, deleted accounts left out. */

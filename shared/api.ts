@@ -17,7 +17,10 @@ import type {
   Pillar,
   Registration,
   RegistrationStatus,
+  Report,
+  ReportCategory,
   User,
+  Warning,
 } from './types';
 
 /** Errors that come from sign-in and request handling rather than from the app's rules. */
@@ -146,7 +149,12 @@ export interface AcceptTermResponse {
 /** GET /api/events/:id/roster (supervisors of the event only) */
 export interface RosterResponse {
   event: EventSummary;
-  participants: { user: PublicUser; attendance: Attendance | null }[];
+  participants: {
+    user: PublicUser;
+    attendance: Attendance | null;
+    /** The signed-in supervisor warned them at this event (another supervisor's warnings are not shown). */
+    i_warned: boolean;
+  }[];
 }
 
 /** POST /api/events/:id/attendance/:userId/start and /end. `at` absent = now. */
@@ -195,6 +203,10 @@ export interface MeResponse {
   can_create_events: boolean;
   /** The first level that opens event creation, for "reach level N" (null if none does). */
   create_events_level: number | null;
+  /** By level or by role (rules.canReport). */
+  can_report: boolean;
+  /** How many warnings the person was given, withdrawn ones included, so the profile shows the way to them. */
+  warnings: number;
 }
 
 /**
@@ -207,4 +219,68 @@ export interface PhotoBody {
 }
 export interface PhotoResponse {
   avatar_url: string;
+}
+
+// ---------- reports (بلاغ): a member tells the association ----------
+
+/**
+ * GET /api/reports/form: what the report screen offers. Refused (`cannot_report`)
+ * to someone whose level does not allow reporting (rules.canReport).
+ */
+export interface ReportFormMeta {
+  categories: ReportCategory[];
+  /**
+   * The events the person was at (joined or supervised), latest first, at most
+   * 20, each with the other people there: those a report may name.
+   */
+  events: {
+    event: Pick<AppEvent, 'id' | 'title' | 'starts_at' | 'ends_at'>;
+    people: { user: PublicUser; supervisor: boolean }[];
+  }[];
+  /** The person's reports still waiting for an admin, and how many may wait at once. */
+  open: number;
+  max_open: number;
+}
+
+/** POST /api/reports. `subject_id` only with `event_id`: someone who was at that event. */
+export interface ReportBody {
+  category: ReportCategory;
+  event_id?: string;
+  subject_id?: string;
+  note?: string;
+}
+
+/**
+ * A report as its author sees it: POST /api/reports answers with it, and
+ * GET /api/me/reports lists them (latest first). The admin's note is not in it.
+ */
+export interface MyReport {
+  report: Pick<Report, 'id' | 'category' | 'note' | 'status' | 'created_at' | 'handled_at'>;
+  event: Pick<AppEvent, 'id' | 'title'> | null;
+  subject: PublicUser | null;
+}
+
+// ---------- warnings (إنذار): from a supervisor, seen by the member and admins only ----------
+
+/** POST /api/events/:id/warnings/:userId (supervisors of the event only) */
+export interface WarnBody {
+  reason: string;
+}
+export interface WarningResponse {
+  warning: Warning;
+}
+
+/**
+ * A warning as the member it was given to sees it: GET /api/me/warnings (latest
+ * first), GET /api/warnings/:id. Nobody else's warnings ever reach the app.
+ */
+export interface MyWarning {
+  warning: Omit<Warning, 'decided_by'>;
+  event: Pick<AppEvent, 'id' | 'title' | 'starts_at'>;
+  issued_by: PublicUser | null;
+}
+
+/** POST /api/warnings/:id/appeal: once, while the warning is active. Answers with the MyWarning. */
+export interface AppealBody {
+  reason: string;
 }

@@ -140,6 +140,59 @@ export interface Level {
   can_report: boolean;
 }
 
+// ---------- reports (بلاغ) and warnings (إنذار) ----------
+// Kept apart, as the master file decides: a member reports, a supervisor warns.
+
+// Data_Model.md has `reports: id · reporter_id · target_type · target_id · note · status`.
+// Owner's decision (2026-10-22): a report is about anything, by category, with an
+// optional note; it may be tied to an event the reporter was at, and name someone
+// at that event. So it has an optional event and an optional person in place of
+// the one target. Not in Data_Model.md yet: category, event_id and subject_id
+// (instead of target_type · target_id), created_at, and who handled it, when and how.
+export type ReportCategory = 'behaviour' | 'safety' | 'event' | 'app' | 'other';
+export const REPORT_CATEGORIES: ReportCategory[] = ['behaviour', 'safety', 'event', 'app', 'other'];
+export type ReportStatus = 'open' | 'handled';
+
+export interface Report {
+  id: string;
+  reporter_id: string;
+  category: ReportCategory;
+  event_id: string | null;
+  /** The person named, someone at that event. They are never told. */
+  subject_id: string | null;
+  note: string | null;
+  status: ReportStatus;
+  created_at: string;
+  handled_by: string | null;
+  handled_at: string | null;
+  /** What the admin did about it. Kept for the association; the reporter does not see it. */
+  handled_note: string | null;
+}
+
+// Data_Model.md has `warnings: id · user_id · issued_by · reason · severity · status · appealed_at · created_at`.
+// Owner's decisions (2026-10-23): one kind of warning, so no severity; the member
+// may appeal once and an admin keeps the warning or withdraws it. Not in
+// Data_Model.md yet: event_id (the event it was given at), the appeal's reason,
+// and who decided, when and why.
+// active → appealed → upheld | withdrawn; an admin may also withdraw an active or upheld one.
+export type WarningStatus = 'active' | 'appealed' | 'upheld' | 'withdrawn';
+
+export interface Warning {
+  id: string;
+  user_id: string;
+  issued_by: string;
+  event_id: string;
+  reason: string;
+  status: WarningStatus;
+  created_at: string;
+  appealed_at: string | null;
+  appeal_reason: string | null;
+  decided_by: string | null;
+  decided_at: string | null;
+  /** The admin's reason for keeping or withdrawing it, shown to the member. */
+  decision_note: string | null;
+}
+
 export interface Db {
   version: number;
   users: User[];
@@ -154,4 +207,6 @@ export interface Db {
   attendance: Attendance[];
   points_ledger: PointsLedgerEntry[];
   levels: Level[];
+  reports: Report[];
+  warnings: Warning[];
 }

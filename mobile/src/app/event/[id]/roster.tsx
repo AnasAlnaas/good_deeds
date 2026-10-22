@@ -11,8 +11,10 @@ import { END_GRACE_MINUTES } from '@/demo/placeholders';
 import { count, fmt, time } from '@/i18n/format';
 import { useApp, useMe } from '@/state/app';
 import { colors, space } from '@/theme/tokens';
+import { WARN_DAYS_AFTER_EVENT } from '../../../../../shared/rules';
 
 // Screen 14: the supervisor's list of joined participants and each one's state.
+// From here the supervisor also records a warning for someone, once the event has started.
 export default function RosterScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { s, now } = useApp();
@@ -29,9 +31,15 @@ export default function RosterScreen() {
   const status = event.status;
   const canStart = status === 'running';
   const canEnd = now >= new Date(event.starts_at).getTime() && now <= new Date(event.ends_at).getTime() + END_GRACE_MINUTES * 60_000;
+  // The same window as rules.assertCanWarn; the server decides.
+  const canWarn =
+    status !== 'cancelled' &&
+    now >= new Date(event.starts_at).getTime() &&
+    now <= new Date(event.ends_at).getTime() + WARN_DAYS_AFTER_EVENT * 24 * 3_600_000;
 
   const open = (userId: string, mode: 'start' | 'end') =>
     router.push({ pathname: '/event/[id]/record', params: { id, userId, mode } });
+  const warn = (userId: string) => router.push({ pathname: '/event/[id]/warn', params: { id, userId } });
 
   return (
     <Screen back title={s.roster.title}>
@@ -42,7 +50,7 @@ export default function RosterScreen() {
         </Card>
       )}
       {participants.length === 0 && <EmptyState icon="people-outline" text={s.roster.empty} />}
-      {participants.map(({ user: u, attendance: a }) => {
+      {participants.map(({ user: u, attendance: a, i_warned }) => {
         const state = !a ? 'notStarted' : a.ended_at ? 'done' : 'working';
         const self = u.id === me.id;
         return (
@@ -74,6 +82,13 @@ export default function RosterScreen() {
             ) : a && !a.ended_at && canEnd ? (
               <Button variant="secondary" icon="stop" label={s.roster.recordEnd} onPress={() => open(u.id, 'end')} />
             ) : null}
+            {i_warned ? (
+              <Txt variant="caption" color={colors.danger}>
+                {u.gender === 'female' ? s.roster.warnedFemale : s.roster.warned}
+              </Txt>
+            ) : (
+              !self && canWarn && <Button variant="quiet" icon="alert-circle-outline" label={s.roster.warn} onPress={() => warn(u.id)} />
+            )}
           </Card>
         );
       })}

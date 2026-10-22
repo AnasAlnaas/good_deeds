@@ -1,12 +1,13 @@
 // The signed-in person: profile and photo, points and level, their attendance
-// records, confirming or disputing recorded hours, and deleting the account.
+// records, confirming or disputing recorded hours, their reports and warnings,
+// and deleting the account.
 // Also other people's photos, for those allowed to see them.
 
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, count, desc, eq, inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-import type { AttendanceItem, AttendanceResponse, ConfirmResponse, MeResponse, PhotoResponse } from '../../../shared/api';
+import type { AttendanceItem, AttendanceResponse, ConfirmResponse, MeResponse, MyReport, MyWarning, PhotoResponse } from '../../../shared/api';
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
 import type { Attendance, User } from '../../../shared/types';
@@ -17,6 +18,7 @@ import { iso } from '../db/rows';
 import * as s from '../db/schema';
 import { type AppEnv, HttpError, readBody } from '../http';
 import { photoUrl, readPhoto } from '../photo';
+import { asMyReports, asMyWarnings } from './reports';
 
 const pushToken = z.string().regex(/^Expo(nent)?PushToken\[[^\]]+\]$/);
 const pushTokenBody = z.object({ token: pushToken, lang: z.enum(['ar', 'en']) });
@@ -58,6 +60,7 @@ export const meRoutes = new Hono<AppEnv>()
       .select({ hours: s.attendance.hours })
       .from(s.attendance)
       .where(and(eq(s.attendance.user_id, user.id), eq(s.attendance.participant_status, 'confirmed')));
+    const [warnings] = await db.select({ n: count() }).from(s.warnings).where(eq(s.warnings.user_id, user.id));
     return c.json<MeResponse>({
       user,
       points_by_pillar: byPillar,
@@ -67,6 +70,8 @@ export const meRoutes = new Hono<AppEnv>()
       confirmed_hours: rules.round2(confirmed.reduce((sum, r) => sum + (r.hours ?? 0), 0)),
       can_create_events: rules.canCreateEvents(user, level),
       create_events_level: levels.find((l) => l.can_create_events)?.level ?? null,
+      can_report: rules.canReport(user, level),
+      warnings: warnings.n,
     });
   })
 
@@ -78,6 +83,20 @@ export const meRoutes = new Hono<AppEnv>()
       .where(eq(s.attendance.user_id, c.var.user.id))
       .orderBy(desc(s.attendance.started_at));
     return c.json<AttendanceItem[]>(await toItems(db, c.var.user, rows.map((r) => iso(r) as Attendance)));
+  })
+
+  // The reports this person made, and whether an admin has looked at them.
+  .get('/reports', async (c) => {
+    const { db } = c.var.deps;
+    const rows = await db.select().from(s.reports).where(eq(s.reports.reporter_id, c.var.user.id)).orderBy(desc(s.reports.created_at));
+    return c.json<MyReport[]>(await asMyReports(db, c.var.user, rows.map(iso)));
+  })
+
+  // The warnings this person was given. Nobody else's are ever sent to the app.
+  .get('/warnings', async (c) => {
+    const { db } = c.var.deps;
+    const rows = await db.select().from(s.warnings).where(eq(s.warnings.user_id, c.var.user.id)).orderBy(desc(s.warnings.created_at));
+    return c.json<MyWarning[]>(await asMyWarnings(db, c.var.user, rows.map(iso)));
   })
 
   // A new profile photo replaces the old one. Its metadata is removed (src/photo.ts).

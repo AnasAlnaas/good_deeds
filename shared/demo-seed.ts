@@ -9,7 +9,8 @@ import type { AppEvent, Attendance, Branch, BranchPillar, Db, GenderCategory, Pi
 import { BASE_POINTS_BY_SUBTYPE, LEVELS } from './placeholders';
 import { pillarWeights, pointsForAttendance } from './rules';
 
-export const SEED_VERSION = 1;
+// 2: reports and warnings were added; phones holding version 1 start again from this seed.
+export const SEED_VERSION = 2;
 
 export const DEMO_ACCOUNTS = {
   participant: 'u_ahmad',
@@ -254,6 +255,8 @@ export function buildSeed(nowMs: number): Db {
     attendance: [],
     points_ledger: [],
     levels: LEVELS,
+    reports: [],
+    warnings: [],
   };
 
   for (const s of events) {

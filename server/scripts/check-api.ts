@@ -1,13 +1,23 @@
 // Tries to break the rules through the API, as mobile/scripts/check-rules.ts
 // does with the offline demo: the same cheats, sent as HTTP requests to the
 // server running on a fresh in-memory database with a fixed clock. Every cheat
-// must be refused with the same error code. Sign-in, notifications and
-// account deletion are checked too.
+// must be refused with the same error code. Sign-in, notifications, reports,
+// warnings and account deletion are checked too.
 // Run: npm run check:api
 
 import { eq } from 'drizzle-orm';
 
-import type { EventDetail, EventFormMeta, EventProposal, EventSummary, MeResponse } from '../../shared/api';
+import type {
+  EventDetail,
+  EventFormMeta,
+  EventProposal,
+  EventSummary,
+  MeResponse,
+  MyReport,
+  MyWarning,
+  ReportFormMeta,
+  RosterResponse,
+} from '../../shared/api';
 import { PHOTO_MAX_BYTES } from '../../shared/rules';
 import * as s from '../src/db/schema';
 import { startHarness } from './harness';
@@ -243,6 +253,83 @@ const renewed = (await call('PUT', '/me/photo', ahmad, b64(jpeg))).body.avatar_u
 expectEqual('a new photo gets a new address, so no phone shows the old one', renewed !== avatar_url, true);
 await expectOk('remove the photo', call('DELETE', '/me/photo', ahmad));
 expectEqual('gone from the profile and the server', [(await meOf(ahmad)).user.avatar_url, (await h.raw(renewed, khaled)).status], [null, 404]);
+
+// ---------------------------------------------------------------------------
+console.log('\n— reports (بلاغ)');
+const reportForm: ReportFormMeta = await expectOk('the report form', call('GET', '/reports/form', ahmad));
+const atE01 = reportForm.events.find((x) => x.event.id === 'e01');
+expectEqual('it offers the events he was at, with the people there but not himself', [
+  reportForm.events.some((x) => x.event.id === 'e04'),
+  !!atE01,
+  atE01?.people.some((p) => p.user.id === 'u_ahmad'),
+  atE01?.people.find((p) => p.user.id === 'u_khaled')?.supervisor,
+], [false, true, false, true]);
+const report = (body: object) => call('POST', '/reports', ahmad, body);
+await expectError('a category that does not exist', 'invalid_request', report({ category: 'gossip' }));
+await expectError('"something else" without a word', 'note_required', report({ category: 'other', note: '   ' }));
+await expectError('about an event he was not at', 'not_at_event', report({ category: 'safety', event_id: 'e04' }));
+await expectError('naming someone who was not at that event', 'person_not_at_event', report({ category: 'behaviour', event_id: 'e01', subject_id: 'u_f5' }));
+await expectError('naming someone without an event', 'person_not_at_event', report({ category: 'behaviour', subject_id: 'u_f1' }));
+await expectError('naming himself', 'cannot_report_self', report({ category: 'behaviour', event_id: 'e01', subject_id: 'u_ahmad' }));
+await expectError('about a proposal nobody else may see', 'not_found', report({ category: 'event', event_id: proposed.id }));
+const filed: MyReport = await expectOk(
+  'report someone at his event',
+  report({ category: 'behaviour', event_id: 'e01', subject_id: 'u_f1', note: '  رمى المخلفات في الطريق.  ' }),
+);
+expectEqual('it waits for an admin, the note trimmed', [filed.report.status, filed.report.note, filed.event?.id, filed.subject?.id], [
+  'open',
+  'رمى المخلفات في الطريق.',
+  'e01',
+  'u_f1',
+]);
+h.setClock(h.clock() + 1000);
+await expectOk('report a problem in the app: no event, no note', report({ category: 'app' }));
+expectEqual('he sees his reports, latest first', ((await call('GET', '/me/reports', ahmad)).body as MyReport[]).map((r) => r.report.category), ['app', 'behaviour']);
+expectEqual("nobody else sees them, not even the one named", (await call('GET', '/me/reports', f1)).body, []);
+for (let i = 0; i < 3; i++) await report({ category: 'safety' });
+await expectError('a sixth while five wait', 'too_many_reports', report({ category: 'safety' }));
+await conn.db.update(s.levels).set({ can_report: false });
+await expectError('reporting below the level that allows it', 'cannot_report', call('POST', '/reports', mariam, { category: 'app' }));
+await expectError('or opening the form', 'cannot_report', call('GET', '/reports/form', mariam));
+expectEqual('her profile says so; a supervisor may still', [(await meOf(mariam)).can_report, (await meOf(khaled)).can_report], [false, true]);
+await conn.db.update(s.levels).set({ can_report: true });
+
+// ---------------------------------------------------------------------------
+console.log('\n— warnings (إنذار)');
+const TOKEN_MARIAM = 'ExponentPushToken[mariam-phone]';
+await call('PUT', '/me/push-token', mariam, { token: TOKEN_MARIAM, lang: 'ar' });
+const warn = (token: string, eventId: string, userId: string, reason = 'تأخر ساعة دون إبلاغ.') =>
+  call('POST', `/events/${eventId}/warnings/${userId}`, token, { reason });
+await expectError('a member gives a warning', 'not_organizer', warn(ahmad, 'e01', 'u_f1'));
+await expectError('a supervisor of ANOTHER event', 'not_organizer', warn(fatima, 'e01', 'u_mariam'));
+await expectError('a supervisor warns someone not at his event', 'not_joined', warn(khaled, 'e01', 'u_f5'));
+await expectError('a supervisor warns himself', 'cannot_warn_self', warn(khaled, 'e01', 'u_khaled'));
+await expectError('before the event starts', 'event_not_started', warn(khaled, 'e02', 'u_f3'));
+await expectError('more than a week after it ended', 'event_closed', warn(khaled, 'e13', 'u_ahmad'));
+await expectError('without a reason', 'reason_required', warn(khaled, 'e01', 'u_mariam', '   '));
+const mariamPoints = await totalOf(mariam);
+const given = (await expectOk('a supervisor warns someone at his event', warn(khaled, 'e01', 'u_mariam', 'صوّرت المشاركين دون إذنهم.'))).warning;
+await expectError('the same supervisor, twice', 'already_warned', warn(khaled, 'e01', 'u_mariam'));
+await settle();
+expectEqual('she is told, without the reason (it shows on a locked screen)', pushesTo(TOKEN_MARIAM).map((p) => [p.data.type, p.data.warning_id, p.body]), [
+  ['warning_given', given.id, 'سجّل لك مشرف «حملة نظافة السراج» إنذاراً. افتح التطبيق لتقرأ سببه، ولك أن تتظلّم منه.'],
+]);
+const warnedRoster: RosterResponse = (await call('GET', '/events/e01/roster', khaled)).body;
+expectEqual('his roster shows whom he warned', warnedRoster.participants.filter((p) => p.i_warned).map((p) => p.user.id), ['u_mariam']);
+const hers: MyWarning[] = (await call('GET', '/me/warnings', mariam)).body;
+expectEqual('she sees it, with who gave it', hers.map((w) => [w.warning.id, w.warning.reason, w.warning.status, w.issued_by?.id]), [
+  [given.id, 'صوّرت المشاركين دون إذنهم.', 'active', 'u_khaled'],
+]);
+expectEqual('her profile counts it', (await meOf(mariam)).warnings, 1);
+expectEqual('nobody else sees it', (await call('GET', '/me/warnings', ahmad)).body, []);
+await expectError('another member opens it', 'not_your_warning', call('GET', `/warnings/${given.id}`, ahmad));
+await expectError('or appeals it', 'not_your_warning', call('POST', `/warnings/${given.id}/appeal`, ahmad, { reason: 'ظُلمت.' }));
+expectEqual('a warning takes no points', await totalOf(mariam), mariamPoints);
+await expectOk('and blocks nothing: she still joins an event', joinFully(mariam, 'e02'));
+await expectError('an appeal without a reason', 'reason_required', call('POST', `/warnings/${given.id}/appeal`, mariam, { reason: '' }));
+const appealed: MyWarning = await expectOk('she appeals', call('POST', `/warnings/${given.id}/appeal`, mariam, { reason: 'استأذنتهم قبل التصوير.' }));
+expectEqual('it waits for an admin', [appealed.warning.status, appealed.warning.appeal_reason], ['appealed', 'استأذنتهم قبل التصوير.']);
+await expectError('appeal twice', 'already_appealed', call('POST', `/warnings/${given.id}/appeal`, mariam, { reason: 'مرة أخرى.' }));
 
 // ---------------------------------------------------------------------------
 console.log('\n— deleting an account');

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router';
 
 import type { AdminUserRow } from '../../../shared/admin-api';
 import type { Role } from '../../../shared/types';
@@ -50,6 +51,7 @@ export function Users() {
                 <th className="num">{t.users.level}</th>
                 <th className="num">{t.users.points}</th>
                 <th className="num">{t.users.hours}</th>
+                <th className="num">{t.users.warnings}</th>
               </tr>
             </thead>
             <tbody>
@@ -90,6 +92,10 @@ export function Users() {
                     <td className="num">{u.level}</td>
                     <td className="num">{num(u.total_points)}</td>
                     <td className="num">{num(u.confirmed_hours)}</td>
+                    <td className="num">
+                      {/* Withdrawn warnings are not counted, but the member's page lists them too. */}
+                      <Link to={`/warnings?user=${u.id}`}>{u.warnings}</Link>
+                    </td>
                   </tr>
                 );
               })}

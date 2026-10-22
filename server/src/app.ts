@@ -13,6 +13,7 @@ import { adminRoutes } from './routes/admin';
 import { authRoutes } from './routes/auth';
 import { eventRoutes } from './routes/events';
 import { attendanceRoutes, meRoutes, userRoutes } from './routes/me';
+import { reportRoutes, warningRoutes } from './routes/reports';
 
 export function createApp(deps: AppDeps) {
   const app = new Hono<AppEnv>().basePath('/api');
@@ -32,6 +33,8 @@ export function createApp(deps: AppDeps) {
   app.route('/me', meRoutes);
   app.route('/attendance', attendanceRoutes);
   app.route('/users', userRoutes);
+  app.route('/reports', reportRoutes);
+  app.route('/warnings', warningRoutes);
   app.route('/admin', adminRoutes);
 
   // For an outside scheduler (e.g. Vercel Cron). On a VPS, src/node.ts runs the same job on a timer.

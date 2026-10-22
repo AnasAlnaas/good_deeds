@@ -11,7 +11,9 @@ import { Events } from './pages/Events';
 import { Login } from './pages/Login';
 import { Overview } from './pages/Overview';
 import { Report } from './pages/Report';
+import { Reports } from './pages/Reports';
 import { Users } from './pages/Users';
+import { Warnings } from './pages/Warnings';
 import { t } from './strings';
 import { Button } from './ui';
 
@@ -27,6 +29,8 @@ export function App() {
           <Route path="events/:id" element={<EventPage />} />
           <Route path="events/:id/edit" element={<EventForm />} />
           <Route path="disputes" element={<Disputes />} />
+          <Route path="reports" element={<Reports />} />
+          <Route path="warnings" element={<Warnings />} />
           <Route path="users" element={<Users />} />
           <Route path="report" element={<Report />} />
           <Route path="audit" element={<Audit />} />
@@ -39,10 +43,12 @@ export function App() {
 
 function Shell() {
   const { session, signOut } = useAuth();
-  // The overview's dispute count doubles as the badge on the menu.
+  // The overview's counts of what waits for a decision double as the badges on the menu.
   const overview = useQuery({ queryKey: ['overview'], queryFn: api.overview, enabled: !!session });
   if (!session) return <Navigate to="/login" replace />;
   const disputes = overview.data?.open_disputes ?? 0;
+  const reports = overview.data?.open_reports ?? 0;
+  const appeals = overview.data?.appealed_warnings ?? 0;
 
   const link = (to: string, label: string, count = 0) => (
     <NavLink to={to} end={to === '/'} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
@@ -64,6 +70,8 @@ function Shell() {
         {link('/', t.nav.overview)}
         {link('/events', t.nav.events)}
         {link('/disputes', t.nav.disputes, disputes)}
+        {link('/reports', t.nav.reports, reports)}
+        {link('/warnings', t.nav.warnings, appeals)}
         {link('/users', t.nav.users)}
         {link('/report', t.nav.report)}
         {link('/audit', t.nav.audit)}

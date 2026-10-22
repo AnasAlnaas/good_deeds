@@ -26,7 +26,19 @@ export type ApiErrorCode =
   | 'cannot_create_events'
   | 'category_not_allowed'
   | 'starts_in_past'
-  | 'too_many_proposals';
+  | 'too_many_proposals'
+  | 'cannot_report'
+  | 'note_required'
+  | 'cannot_report_self'
+  | 'not_at_event'
+  | 'person_not_at_event'
+  | 'too_many_reports'
+  | 'cannot_warn_self'
+  | 'already_warned'
+  | 'reason_required'
+  | 'not_your_warning'
+  | 'already_appealed'
+  | 'warning_withdrawn';
 
 export class ApiError extends Error {
   readonly code: ApiErrorCode;
@@ -50,7 +62,10 @@ export type AdminErrorCode =
   | 'invalid_status_change'
   | 'not_disputed'
   | 'still_open'
-  | 'hours_out_of_range';
+  | 'hours_out_of_range'
+  | 'already_handled'
+  | 'not_appealed'
+  | 'already_withdrawn';
 
 export class AdminError extends Error {
   readonly code: AdminErrorCode;
