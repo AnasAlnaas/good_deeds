@@ -332,13 +332,13 @@ export function nextLevel(levels: Level[], points: number): Level | undefined {
 export const REPORT_NOTE_MAX = 1000;
 /** How many of the events a person was at the report screen offers, latest first. */
 export const REPORT_FORM_EVENTS = 20;
-// ⚠️ ASSUMPTION: how many of one person's reports may wait for an admin at once, so a flood cannot bury the others.
+// Owner's decision (2026-10-23): how many of one person's reports may wait for an admin at once, so a flood cannot bury the others.
 export const MAX_OPEN_REPORTS = 5;
 
 /** Text someone typed, trimmed; null when nothing is left. */
 export const cleanText = (text: string | null | undefined) => text?.trim() || null;
 
-// ⚠️ ASSUMPTION: like proposing events, supervisors and admins may report whatever their level.
+// Owner's decision (2026-10-23): like proposing events, supervisors and admins may report whatever their level.
 export function canReport(user: Pick<User, 'role'>, level: Pick<Level, 'can_report'>) {
   return level.can_report || user.role === 'supervisor' || user.role === 'admin';
 }
@@ -361,7 +361,7 @@ export function assertCanReport(args: {
   openCount: number;
 }) {
   if (!canReport(args.user, args.level)) throw new ApiError('cannot_report');
-  // ⚠️ ASSUMPTION: the note is optional, except for "something else", which says nothing without one.
+  // Owner's decision (2026-10-23): the note is optional, except for "something else", which says nothing without one.
   if (args.category === 'other' && !args.note) throw new ApiError('note_required');
   if (args.subjectId === args.user.id) throw new ApiError('cannot_report_self');
   if (args.event && !args.event.reporterWasThere) throw new ApiError('not_at_event');
@@ -381,7 +381,7 @@ export function assertCanReport(args: {
 // (Build_Plan.md said "the primary supervisor only"; the owner chose any supervisor of the event.)
 
 export const REASON_MAX = 500;
-// ⚠️ ASSUMPTION: a warning can be given from the event's start until this many days after it ends.
+// Owner's decision (2026-10-23): a warning can be given from the event's start until this many days after it ends.
 export const WARN_DAYS_AFTER_EVENT = 7;
 
 export function assertCanWarn(args: {
@@ -404,7 +404,7 @@ export function assertCanWarn(args: {
     throw new ApiError('event_closed');
   }
   if (args.registration?.status !== 'joined') throw new ApiError('not_joined');
-  // ⚠️ ASSUMPTION: one warning per supervisor, person and event, so a second tap does not give two.
+  // Owner's decision (2026-10-23): one warning per supervisor, person and event, so a second tap does not give two.
   // Kept per supervisor so one supervisor's refusal never tells another that a warning exists.
   if (args.alreadyWarned) throw new ApiError('already_warned');
   if (!args.reason) throw new ApiError('reason_required');

@@ -152,9 +152,10 @@ Decided by the owner (2026-10-22/23, in `shared/rules.ts`): a report is about
 anything, by category, with an optional note, and may name someone at its event;
 a warning is given by a supervisor of the event, recorded only, seen by the
 member (who is notified) and admins, has no severity, and may be appealed once.
-Still `⚠️ ASSUMPTION` there: the 5 reports waiting at once, the 7 days after an
-event for warnings, one warning per supervisor, person and event, a note being
-needed for "something else", and supervisors reporting whatever their level.
+Also decided: at most 5 reports waiting at once, warnings up to 7 days after an
+event, one warning per supervisor, person and event, a note needed for
+"something else", supervisors reporting whatever their level, and the reporter
+told when their report has been looked at.
 `reports` and `warnings` differ from `Data_Model.md` (see `shared/types.ts`):
 a report has an event and a person instead of one target, and a warning has
 no severity but records its event, the appeal and the decision.

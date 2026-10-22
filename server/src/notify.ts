@@ -302,7 +302,7 @@ export function notifyWarningDecided(deps: AppDeps, warningId: string, decision:
 
 // ---------- a report reviewed ----------
 
-// ⚠️ ASSUMPTION: whoever reported is told it was looked at, but not what was done,
+// Owner's decision (2026-10-23): whoever reported is told it was looked at, but not what was done,
 // which may be about someone else.
 const REPORT_HANDLED = {
   ar: { title: 'رُوجع بلاغك', body: 'راجعت إدارة الجمعية بلاغك. جزاك الله خيراً على حرصك.' },
