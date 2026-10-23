@@ -1,4 +1,4 @@
-// npm run db:seed              → empties the development database and loads the demo data
+// npm run db:seed              → empties the development (PGlite) database and loads the demo data
 // npm run db:seed -- --reference → adds only branches, pillars and levels (safe in production)
 // Stop `npm run dev` first when using PGlite: only one process may open its folder.
 
@@ -7,8 +7,9 @@ import { clearAll, seedDemo, seedReference } from '../src/db/seed';
 import { env } from '../src/env';
 
 const referenceOnly = process.argv.includes('--reference');
-if (env.isProduction && !referenceOnly) {
-  console.error('Refusing to load demo data in production. Use --reference.');
+// The demo data empties the database first and adds an admin whose phone is in the code.
+if (!env.mayLoadDemoData && !referenceOnly) {
+  console.error('Refusing to load demo data into a DATABASE_URL or production database. Use --reference.');
   process.exit(1);
 }
 

@@ -31,9 +31,11 @@ export type ServerErrorCode =
   | 'code_expired'
   | 'too_many_attempts'
   | 'code_recently_sent'
+  | 'try_later'
   | 'profile_required'
   | 'delivery_not_configured'
   | 'photo_invalid'
+  | 'too_large'
   | 'internal_error';
 
 export interface ErrorBody {

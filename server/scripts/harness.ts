@@ -36,13 +36,15 @@ export async function startHarness(start: number) {
     timeZone: 'Africa/Tripoli',
     runLater: (task) => void background.push(task()),
     corsOrigins: [],
+    // A request says where it comes from with this header; without it, the limits per address are off.
+    clientIp: (c) => c.req.header('X-Check-Address'),
   });
 
-  async function call(method: string, path: string, token?: string, body?: unknown): Promise<Res> {
-    const headers: Record<string, string> = {};
+  async function call(method: string, path: string, token?: string, body?: unknown, extra: Record<string, string> = {}): Promise<Res> {
+    const headers: Record<string, string> = { ...extra };
     if (token) headers.Authorization = `Bearer ${token}`;
     if (body !== undefined) headers['Content-Type'] = 'application/json';
-    const res = await app.request(`/api${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    const res = await app.request(`/api${path}`, { method, headers, body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body) });
     const text = await res.text();
     return { status: res.status, body: text ? JSON.parse(text) : null };
   }

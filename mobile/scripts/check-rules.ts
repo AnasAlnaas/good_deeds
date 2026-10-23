@@ -108,6 +108,17 @@ expectError('confirm twice', 'already_acted', () => server.confirmAttendance(con
 const disputed = server.disputeAttendance(d, 'u_ahmad', a.id, NOW);
 expectEqual('disputed hours earn nothing', server.totalPoints(disputed, 'u_ahmad'), before);
 
+console.log('\n— a cancelled event');
+const cancelledEvent = (from: Db, eventId: string): Db => ({
+  ...from,
+  events: from.events.map((e) => (e.id === eventId ? { ...e, status: 'cancelled' as const } : e)),
+});
+expectError('a supervisor records a start at a cancelled event', 'event_closed', () =>
+  server.recordStart(cancelledEvent(db, 'e01'), 'u_khaled', { eventId: 'e01', userId: 'u_ahmad' }, NOW),
+);
+expectError('or a finish', 'event_closed', () => server.recordEnd(cancelledEvent(db, 'e01'), 'u_khaled', { eventId: 'e01', userId: 'u_f1' }, NOW));
+expectError('hours recorded there earn nothing', 'event_closed', () => server.confirmAttendance(cancelledEvent(d, 'e01'), 'u_ahmad', a.id, NOW));
+
 console.log('\n— scheduled auto-close');
 const later = server.tick(db, new Date(running.ends_at).getTime() + 1000);
 const closed = server.attendanceOf(later, 'e01', 'u_f1')!;
