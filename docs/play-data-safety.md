@@ -17,8 +17,6 @@ privacy policy (`privacy-en.md`, `privacy-ar.md`) together.
   can ask for deletion without the app. The "Deleting your account" section
   of the privacy policy can be that page (link to it with `#deleting-your-account`),
   once it has a real email address.
-- ⚠️ **Decide what deletion erases** (see "Data deletion" below) before
-  answering. Today's answer and the privacy policy must match.
 
 ## Section 1: Data collection and security
 
@@ -153,25 +151,26 @@ All **No**. The image picker plugin has `microphonePermission: false` (`mobile/a
 
 Play asks what is deleted, and whether some data is kept.
 
-What the app does today when someone deletes their account
-(`DELETE /api/me` in `server/src/routes/me.ts`):
+What happens when someone deletes their account (`DELETE /api/me` in
+`server/src/routes/me.ts`, checked by `npm run check:api`):
 
 - **Deleted:** the profile photo (`user_photos`), every push token
-  (`push_tokens`).
+  (`push_tokens`), the phone's sign-in code records (`login_codes`).
+- **Erased:** name, phone, email and city (`rules.erasedProfile` in
+  `shared/rules.ts`). The name becomes «حساب محذوف» ("deleted account"),
+  also where the admin log copied it (`admin_actions` details).
 - **Changed:** the account is marked deleted (`users.deleted_at`), so it can no
   longer sign in and drops out of every list; every registration is cancelled.
-- **Kept:** name, phone, gender and city in `users`; attendance, points,
-  reports, warnings; the admin log (`admin_actions`, which also stores names);
-  past sign-in code records (`login_codes`, phone and hash).
+- **Kept, without name or phone:** gender, attendance, hours, points, the
+  reports the person sent or was named in, and warnings, as written.
 
-⚠️ This is a soft delete. Play's account deletion policy expects the
-personal data of a deleted account to be deleted, unless you keep some for a
-stated reason (security, fraud prevention, legal duty) and say so. Also, the
-app's own delete screen says "Your personal data is deleted"
-(`mobile/src/i18n/strings.ts`, `settings.deleteBody`). Recommended follow-up:
-change `DELETE /api/me` to blank the name, phone and city (keep the anonymous
-hours for the association's totals), and clear old `login_codes`. Then
-answer: "Data is deleted; anonymous volunteer-hour totals are kept."
+Sign-in code records are also cleared a day after they expire
+(`server/src/routes/auth.ts`, `KEEP_EXPIRED_MS`).
+
+Answer in Play: data is deleted on request; volunteer hours and points are
+kept without the person's name or phone number, for the association's
+records, and reports and warnings are kept for safety. ⚠️ Say how long they
+are kept if you set a limit.
 
 ## Other Play Console declarations
 

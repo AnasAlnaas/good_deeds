@@ -418,3 +418,17 @@ export function assertCanAppeal(w: Warning | undefined, userId: string, reason: 
   if (w.status !== 'active') throw new ApiError('already_appealed');
   if (!reason) throw new ApiError('reason_required');
 }
+
+// ---------- deleting an account ----------
+
+/** The name a deleted account shows wherever its records remain (reports, warnings, the admin log). */
+export const DELETED_NAME = 'حساب محذوف';
+
+/**
+ * What a deleted account keeps of its profile: nothing personal. The row
+ * stays, so attendance, points, reports and warnings still add up, but they
+ * no longer say who it was. Gender stays: events and photos were decided by it.
+ */
+export function erasedProfile(): Pick<User, 'full_name' | 'phone' | 'email' | 'city' | 'avatar_url'> {
+  return { full_name: DELETED_NAME, phone: '', email: null, city: '', avatar_url: null };
+}

@@ -4,7 +4,7 @@
 
 import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
 
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNull, lt } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
@@ -18,6 +18,8 @@ import { type AppEnv, HttpError, readBody } from '../http';
 const CODE_MINUTES = 10;
 const MAX_ATTEMPTS = 5;
 const RESEND_AFTER_MS = 60_000;
+/** Spent and expired codes are deleted this long after they expire. */
+const KEEP_EXPIRED_MS = 24 * 60 * 60_000;
 
 const phone = z.string().regex(/^\+[1-9]\d{7,14}$/, 'international format, e.g. +218912345678');
 const requestCodeBody = z.object({ phone });
@@ -57,6 +59,8 @@ export const authRoutes = new Hono<AppEnv>()
     if (latest && !latest.consumed_at && t - latest.created_at.getTime() < RESEND_AFTER_MS) {
       throw new HttpError(429, 'code_recently_sent');
     }
+    // Old codes are of no use: clear them now and then, without a separate job.
+    await db.delete(s.login_codes).where(lt(s.login_codes.expires_at, new Date(t - KEEP_EXPIRED_MS)));
     const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
     await db.insert(s.login_codes).values({
       id: newId(),

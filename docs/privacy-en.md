@@ -139,10 +139,10 @@ We do not give your data to anyone else, unless the law requires it.
 - **Notification addresses** are deleted when you sign out on that phone,
   when you delete your account, or when the phone stops accepting
   notifications.
-- **After you delete your account**: ⚠️ see "Deleting your account" below.
-- **Sign-in codes** expire after 10 minutes. ⚠️ Today the expired records
-  (phone number and scrambled code) are not cleared. Decide a period, for
-  example 30 days, and we will add the clean-up to the server.
+- **After you delete your account**: see "Deleting your account" below.
+- **Sign-in codes** expire after 10 minutes. Their records (phone number and
+  scrambled code) are deleted a day after that, or at once when you delete
+  your account.
 - **The admin log** (who made which decision, and when) is kept ⚠️ [period].
 
 ## Deleting your account
@@ -153,24 +153,23 @@ undone. At once:
 - you are signed out and can no longer sign in to that account;
 - your photo is deleted;
 - you leave every event you joined;
-- your phone stops receiving notifications.
+- your phone stops receiving notifications;
+- your name, phone number and city are erased. Wherever a record of you
+  remains, it shows "deleted account" (حساب محذوف) instead of your name,
+  including in the association's admin log;
+- your sign-in code records are deleted.
+
+What stays, without your name or phone number: your attendance, hours and
+points (so the association's totals of volunteer hours stay right), whether
+the account was a man's or a woman's, and reports and warnings, as they were
+written. If a note in a report or warning mentions your name, that text is
+not changed.
+
+Your phone number is free again, so you can sign up with it as a new
+account.
 
 You can also ask us by email at ⚠️ [email], from the phone number on the
 account. We answer within ⚠️ [e.g. 30] days.
-
-⚠️ **Decide before publishing.** Today the server marks the account as
-deleted but keeps your name, phone number, gender and city in the database,
-together with your attendance, points, reports and warnings. The phone number
-is freed, so you can sign up again with it. The delete screen in the app says
-"your personal data is deleted", and Google Play expects deleted accounts to
-lose their personal data. Choose one:
-
-1. **Recommended:** change the server so deleting an account also erases the
-   name, phone number and city (keeping the hours as anonymous totals for
-   the association's records). Then this section can say "your personal data
-   is erased; we keep only anonymous totals of hours".
-2. Keep the data for a stated time and reason (for example, to answer a
-   report about you), and write that period and reason here.
 
 ## Notifications
 

@@ -18,7 +18,7 @@ import type {
   ReportFormMeta,
   RosterResponse,
 } from '../../shared/api';
-import { PHOTO_MAX_BYTES } from '../../shared/rules';
+import { DELETED_NAME, PHOTO_MAX_BYTES } from '../../shared/rules';
 import * as s from '../src/db/schema';
 import { startHarness } from './harness';
 
@@ -335,12 +335,21 @@ await expectError('appeal twice', 'already_appealed', call('POST', `/warnings/${
 console.log('\n— deleting an account');
 await call('PUT', '/me/push-token', signup.token, { token: TOKEN_NEW, lang: 'ar' });
 const newPhoto = (await call('PUT', '/me/photo', signup.token, b64(jpeg))).body.avatar_url;
+await expectOk('an admin makes them a supervisor (the admin log names them)', call('PATCH', `/admin/users/${signup.user.id}`, admin, { role: 'supervisor' }));
 await expectOk('delete my account', call('DELETE', '/me', signup.token));
+const [gone] = await conn.db.select().from(s.users).where(eq(s.users.id, signup.user.id));
+expectEqual('name, phone and city are erased', [gone.full_name, gone.phone, gone.city], [DELETED_NAME, '', '']);
+const roleChange = (await call('GET', '/admin/audit', admin)).body.find((e: { action: string; target_id: string }) => e.action === 'change_role' && e.target_id === signup.user.id);
+expectEqual('the admin log forgets the name too', roleChange?.details.name, DELETED_NAME);
+expectEqual('its sign-in codes are deleted', (await conn.db.select().from(s.login_codes).where(eq(s.login_codes.phone, phoneB))).length, 0);
 expectEqual("the account's phones are forgotten", await tokenOwner(TOKEN_NEW), null);
 expectEqual('and its photo', (await h.raw(newPhoto, admin)).status, 404);
 await expectError('old token stops working', 'unauthorized', call('GET', '/me', signup.token));
 h.setClock(h.clock() + 2 * 60_000);
 await call('POST', '/auth/request-code', undefined, { phone: phoneB });
 await expectError('the phone can sign up again', 'profile_required', call('POST', '/auth/verify-code', undefined, { phone: phoneB, code: sentCodes.get(phoneB) }));
+h.setClock(h.clock() + 25 * 60 * 60_000);
+await call('POST', '/auth/request-code', undefined, { phone: phoneB });
+expectEqual('codes expired over a day ago are cleared', (await conn.db.select().from(s.login_codes).where(eq(s.login_codes.phone, phoneA))).length, 0);
 
 await h.done();
