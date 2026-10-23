@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { ConfirmedMotion } from '@/components/brand';
 import { Button } from '@/components/Button';
@@ -11,6 +11,7 @@ import { Badge, Card, InfoRow, QueryState } from '@/components/ui';
 import { useAttendance, useMeSummary } from '@/data/queries';
 import { PILLARS, type Pillar } from '@/data/types';
 import { count, day, fmt, num, time } from '@/i18n/format';
+import * as dialog from '@/lib/dialog';
 import { useApp } from '@/state/app';
 import { useAction } from '@/state/useAction';
 import { colors, pillarColor, space } from '@/theme/tokens';
@@ -67,10 +68,14 @@ export default function ConfirmHours() {
     if (done) setReward({ before, earned: done.value.points_earned });
   };
   const dispute = () =>
-    Alert.alert(s.confirm.disputeTitle, s.confirm.disputeBody, [
-      { text: s.cancel, style: 'cancel' },
-      { text: s.confirm.dispute, style: 'destructive', onPress: () => run((b) => b.disputeAttendance(a.id)) },
-    ]);
+    dialog.confirm({
+      title: s.confirm.disputeTitle,
+      message: s.confirm.disputeBody,
+      cancel: s.cancel,
+      action: s.confirm.dispute,
+      destructive: true,
+      onConfirm: () => run((b) => b.disputeAttendance(a.id)),
+    });
 
   const pending = a.participant_status === 'pending' && !!a.ended_at;
 

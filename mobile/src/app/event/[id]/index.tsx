@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { Alert, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/components/Avatar';
 import { Button } from '@/components/Button';
@@ -9,6 +9,8 @@ import { Txt } from '@/components/Txt';
 import { Badge, Card, InfoRow, QueryState, Row, SectionTitle } from '@/components/ui';
 import { useEvent, useMeSummary } from '@/data/queries';
 import { dayTimeRange, fmt } from '@/i18n/format';
+import * as dialog from '@/lib/dialog';
+import { goBack } from '@/lib/goBack';
 import { useApp } from '@/state/app';
 import { useAction } from '@/state/useAction';
 import { colors, pillarColor, space } from '@/theme/tokens';
@@ -44,22 +46,26 @@ export default function EventDetail() {
     if (await run((b) => b.startJoin(event.id))) router.push(`/event/${event.id}/terms`);
   };
   const cancel = () =>
-    Alert.alert(s.event.cancelJoinTitle, s.event.cancelJoinBody, [
-      { text: s.cancel, style: 'cancel' },
-      { text: s.event.cancelJoin, style: 'destructive', onPress: () => run((b) => b.cancelJoin(event.id)) },
-    ]);
+    dialog.confirm({
+      title: s.event.cancelJoinTitle,
+      message: s.event.cancelJoinBody,
+      cancel: s.cancel,
+      action: s.event.cancelJoin,
+      destructive: true,
+      onConfirm: () => run((b) => b.cancelJoin(event.id)),
+    });
   // The proposer's own event, while it waits for an admin: deleted, so there is nothing left to show.
   const withdraw = () =>
-    Alert.alert(s.event.withdrawTitle, s.event.withdrawBody, [
-      { text: s.cancel, style: 'cancel' },
-      {
-        text: s.event.withdraw,
-        style: 'destructive',
-        onPress: async () => {
-          if (await run((b) => b.withdrawProposal(event.id))) router.back();
-        },
+    dialog.confirm({
+      title: s.event.withdrawTitle,
+      message: s.event.withdrawBody,
+      cancel: s.cancel,
+      action: s.event.withdraw,
+      destructive: true,
+      onConfirm: async () => {
+        if (await run((b) => b.withdrawProposal(event.id))) goBack('/events');
       },
-    ]);
+    });
 
   let footer;
   if (status === 'draft') {

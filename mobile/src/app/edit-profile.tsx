@@ -1,10 +1,10 @@
-import { router } from 'expo-router';
 import { useState } from 'react';
 
 import { Button } from '@/components/Button';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
 import { Card, Field, InfoRow } from '@/components/ui';
+import { goBack } from '@/lib/goBack';
 import { useApp, useMe } from '@/state/app';
 import { useAction } from '@/state/useAction';
 import { colors } from '@/theme/tokens';
@@ -32,7 +32,7 @@ export default function EditProfileScreen() {
       return;
     }
     setInvalid(false);
-    if (await run((b) => b.updateProfile(edit))) router.back();
+    if (await run((b) => b.updateProfile(edit))) goBack('/profile');
   };
 
   const footer = (

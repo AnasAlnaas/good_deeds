@@ -1,9 +1,9 @@
 import { router } from 'expo-router';
-import { Alert } from 'react-native';
 
 import { Button } from '@/components/Button';
 import { Screen } from '@/components/Screen';
 import { Chip, Row, SectionTitle } from '@/components/ui';
+import * as dialog from '@/lib/dialog';
 import { useApp } from '@/state/app';
 import { useAction } from '@/state/useAction';
 
@@ -18,26 +18,30 @@ export default function SettingsScreen() {
   };
 
   const reset = () =>
-    Alert.alert(s.settings.resetTitle, s.settings.resetBody, [
-      { text: s.cancel, style: 'cancel' },
-      { text: s.settings.reset, style: 'destructive', onPress: resetDemo },
-    ]);
+    dialog.confirm({
+      title: s.settings.resetTitle,
+      message: s.settings.resetBody,
+      cancel: s.cancel,
+      action: s.settings.reset,
+      destructive: true,
+      onConfirm: resetDemo,
+    });
 
   // App Store requires in-app account deletion (Data_Model.md: users.deleted_at).
   const deleteAccount = () =>
-    Alert.alert(s.settings.deleteTitle, s.settings.deleteBody, [
-      { text: s.cancel, style: 'cancel' },
-      {
-        text: s.settings.deleteAccount,
-        style: 'destructive',
-        onPress: async () => {
-          if (await run((b) => b.deleteAccount())) {
-            toLogin();
-            Alert.alert(s.settings.deleted);
-          }
-        },
+    dialog.confirm({
+      title: s.settings.deleteTitle,
+      message: s.settings.deleteBody,
+      cancel: s.cancel,
+      action: s.settings.deleteAccount,
+      destructive: true,
+      onConfirm: async () => {
+        if (await run((b) => b.deleteAccount())) {
+          toLogin();
+          dialog.notify(s.settings.deleted);
+        }
       },
-    ]);
+    });
 
   return (
     <Screen back title={s.settings.title}>

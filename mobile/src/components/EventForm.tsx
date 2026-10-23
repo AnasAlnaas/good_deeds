@@ -13,6 +13,7 @@ import { Card, Chip, Field, Row, SectionTitle } from '@/components/ui';
 import type { EventDetail, EventFormMeta, EventProposal, ProposeEventResponse } from '@/data/api';
 import type { GenderCategory } from '@/data/types';
 import { count, fmt } from '@/i18n/format';
+import { goBack } from '@/lib/goBack';
 import { useApp, useMe } from '@/state/app';
 import { useAction } from '@/state/useAction';
 import { colors, space, touch } from '@/theme/tokens';
@@ -119,7 +120,7 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
       terms: v.terms.map((x) => x.trim()),
     };
     if (editing) {
-      if (await run((b) => b.editProposal(editing.id, body))) router.back();
+      if (await run((b) => b.editProposal(editing.id, body))) goBack(`/event/${editing.id}`);
       return;
     }
     const result = await run((b) => b.proposeEvent(body));

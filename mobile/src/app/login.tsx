@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { AnimatedLogo } from '@/components/brand';
 import { Button } from '@/components/Button';
@@ -14,6 +14,7 @@ import { errorCode } from '@/data/backend';
 import type { Gender } from '@/data/types';
 import { DEMO_ACCOUNTS } from '@/demo/seed';
 import { fmt } from '@/i18n/format';
+import * as dialog from '@/lib/dialog';
 import { useApp } from '@/state/app';
 import { colors, space } from '@/theme/tokens';
 
@@ -131,7 +132,7 @@ function PhoneSignIn({ baseUrl }: { baseUrl: string }) {
       const c = errorCode(e);
       // A new phone: the code was right, the server needs the profile to create the account.
       if (c === 'profile_required') setStep('profile');
-      else Alert.alert(s.errorTitle, s.errors[c]);
+      else dialog.notify(s.errorTitle, s.errors[c]);
     } finally {
       setBusy(false);
     }

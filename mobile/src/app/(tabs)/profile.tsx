@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/components/Avatar';
 import { Button } from '@/components/Button';
@@ -9,6 +9,7 @@ import { Txt } from '@/components/Txt';
 import { Badge, Card, InfoRow, QueryState, SectionTitle } from '@/components/ui';
 import { useMeSummary } from '@/data/queries';
 import { count, fmt, num } from '@/i18n/format';
+import * as dialog from '@/lib/dialog';
 import { type PhotoSource, pickPhoto } from '@/lib/photo';
 import { useApp } from '@/state/app';
 import { useAction } from '@/state/useAction';
@@ -29,20 +30,28 @@ export default function ProfileScreen() {
     } catch {
       photo = null; // the picker or the resizing failed: nothing changes
     }
-    if (photo === 'denied') Alert.alert(s.profile.photoFrom, s.profile.cameraDenied);
+    if (photo === 'denied') dialog.notify(s.profile.photoFrom, s.profile.cameraDenied);
     else if (photo) await run((b) => b.setPhoto(photo));
   };
+  // Camera or photos is a choice of three buttons, which no browser dialog has (src/lib/dialog.web.ts).
+  // In a browser the file picker opens at once; on a phone it offers the camera too.
   const choosePhoto = () =>
-    Alert.alert(s.profile.photoFrom, s.profile.photoWho, [
-      { text: s.cancel, style: 'cancel' },
-      { text: s.profile.camera, onPress: () => applyPhoto('camera') },
-      { text: s.profile.library, onPress: () => applyPhoto('library') },
-    ]);
+    Platform.OS === 'web'
+      ? applyPhoto('library')
+      : Alert.alert(s.profile.photoFrom, s.profile.photoWho, [
+          { text: s.cancel, style: 'cancel' },
+          { text: s.profile.camera, onPress: () => applyPhoto('camera') },
+          { text: s.profile.library, onPress: () => applyPhoto('library') },
+        ]);
   const removePhoto = () =>
-    Alert.alert(s.profile.removeTitle, s.profile.removeBody, [
-      { text: s.cancel, style: 'cancel' },
-      { text: s.profile.removePhoto, style: 'destructive', onPress: () => run((b) => b.removePhoto()) },
-    ]);
+    dialog.confirm({
+      title: s.profile.removeTitle,
+      message: s.profile.removeBody,
+      cancel: s.cancel,
+      action: s.profile.removePhoto,
+      destructive: true,
+      onConfirm: () => run((b) => b.removePhoto()),
+    });
   if (!summary.data) {
     return (
       <Screen title={s.tabs.profile}>
