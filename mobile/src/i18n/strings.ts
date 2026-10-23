@@ -143,6 +143,9 @@ const ar = {
     doneBody: 'يصلك إشعار حين تقرر إدارة الجمعية. تجدها في تبويب الفعاليات تحت «أنظّمها».',
     doneBodyAdmin: 'تظهر الآن على الخريطة للجميع.',
     open: 'اعرض الفعالية',
+    editTitle: 'عدّل اقتراحك',
+    editIntro: 'تبقى فعاليتك بانتظار الاعتماد، وتراجعها إدارة الجمعية كما عدّلتها. ويبقى مشرفوها كما هم.',
+    save: 'احفظ تعديلاتك',
   },
 
   event: {
@@ -166,7 +169,11 @@ const ar = {
     finished: 'انتهت هذه الفعالية.',
     roster: 'كشف المشاركين',
     supervisor: 'أنت مشرف في هذه الفعالية',
-    waiting: 'تراجعها إدارة الجمعية. تظهر على الخريطة للجميع بعد اعتمادها.',
+    waiting: 'تراجعها إدارة الجمعية. تظهر على الخريطة للجميع بعد اعتمادها، ولك أن تعدّلها أو تسحبها قبل ذلك.',
+    edit: 'عدّل اقتراحك',
+    withdraw: 'اسحب اقتراحك',
+    withdrawTitle: 'سحب اقتراحك؟',
+    withdrawBody: 'تُحذف الفعالية ولا تراجعها إدارة الجمعية. تستطيع أن تقترحها من جديد.',
     rejected: 'لم تعتمد إدارة الجمعية هذه الفعالية، ولا يراها غيرك.',
     report: 'أبلغ عن مشكلة',
   },
@@ -276,6 +283,19 @@ const ar = {
     createUnlock: 'من المستوى {level} تستطيع اقتراح فعالياتك.',
     reports: 'بلاغاتك',
     warnings: 'إنذاراتك ({n})',
+    edit: 'عدّل بياناتك',
+  },
+
+  editProfile: {
+    title: 'بياناتك',
+    fullName: 'الاسم الكامل',
+    city: 'المدينة',
+    gender: 'الجنس',
+    genderFixed: 'لا يتغير الجنس بعد إنشاء الحساب، فهو يحدد الفعاليات التي تنضم إليها ومن يرى صورتك.',
+    phone: 'الهاتف',
+    phoneFixed: 'تدخل برقم هاتفك، فلا يتغير من هنا.',
+    invalid: 'اكتب اسمك (حرفان فأكثر) ومدينتك.',
+    save: 'احفظ بياناتك',
   },
 
   // What a report is about (shared/types.ts REPORT_CATEGORIES).
@@ -403,6 +423,7 @@ const ar = {
     category_not_allowed: 'اختر «مختلط» أو فئتك؛ فأنت مشرف الفعالية.',
     starts_in_past: 'اختر موعداً قادماً.',
     too_many_proposals: 'لك فعاليات كثيرة بانتظار الاعتماد. اقترح غيرها بعد أن يُبتّ فيها.',
+    proposal_not_waiting: 'تعدّل الفعالية أو تسحبها ما دامت اقتراحك بانتظار الاعتماد فقط. بعد ذلك تغيّرها إدارة الجمعية.',
     cannot_report: 'يُفتح الإبلاغ في مستوى أعلى.',
     note_required: 'اكتب ما حدث؛ لا يُفهم «شيء آخر» دون وصف.',
     cannot_report_self: 'لا تبلغ عن نفسك.',
@@ -565,6 +586,9 @@ const en: Strings = {
     doneBody: 'You get a notification when the association decides. Find it on the Events tab, under "Organising".',
     doneBodyAdmin: 'It is on the map for everyone now.',
     open: 'Open the event',
+    editTitle: 'Edit your proposal',
+    editIntro: 'Your event keeps waiting for approval, and the association reviews it as you change it. Its supervisors stay as they are.',
+    save: 'Save your changes',
   },
 
   event: {
@@ -588,7 +612,11 @@ const en: Strings = {
     finished: 'This event has finished.',
     roster: 'Participant roster',
     supervisor: "You're a supervisor at this event",
-    waiting: 'The association is reviewing it. It appears on the map for everyone once approved.',
+    waiting: 'The association is reviewing it. It appears on the map for everyone once approved; until then you can edit or withdraw it.',
+    edit: 'Edit your proposal',
+    withdraw: 'Withdraw your proposal',
+    withdrawTitle: 'Withdraw your proposal?',
+    withdrawBody: "The event is deleted and the association won't review it. You can propose it again.",
     rejected: "The association didn't approve this event. Only you can see it.",
     report: 'Report a problem',
   },
@@ -698,6 +726,19 @@ const en: Strings = {
     createUnlock: 'From level {level} you can propose your own events.',
     reports: 'Your reports',
     warnings: 'Your warnings ({n})',
+    edit: 'Edit your details',
+  },
+
+  editProfile: {
+    title: 'Your details',
+    fullName: 'Full name',
+    city: 'City',
+    gender: 'Gender',
+    genderFixed: "Gender can't be changed after sign-up: it decides which events you can join and who sees your photo.",
+    phone: 'Phone',
+    phoneFixed: "You sign in with your phone number, so it can't be changed here.",
+    invalid: 'Write your name (2 letters or more) and your city.',
+    save: 'Save your details',
   },
 
   reportCategory: {
@@ -821,6 +862,7 @@ const en: Strings = {
     category_not_allowed: 'Choose "Mixed" or your own group: you supervise the event.',
     starts_in_past: 'Choose a time in the future.',
     too_many_proposals: 'You have too many events waiting for approval. Propose more once they are decided.',
+    proposal_not_waiting: 'You can edit or withdraw an event only while it is your proposal waiting for approval. After that, the association changes it.',
     cannot_report: 'Reporting opens at a higher level.',
     note_required: 'Say what happened: "Something else" means nothing without it.',
     cannot_report_self: "You can't report yourself.",

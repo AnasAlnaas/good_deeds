@@ -48,13 +48,39 @@ export default function EventDetail() {
       { text: s.cancel, style: 'cancel' },
       { text: s.event.cancelJoin, style: 'destructive', onPress: () => run((b) => b.cancelJoin(event.id)) },
     ]);
+  // The proposer's own event, while it waits for an admin: deleted, so there is nothing left to show.
+  const withdraw = () =>
+    Alert.alert(s.event.withdrawTitle, s.event.withdrawBody, [
+      { text: s.cancel, style: 'cancel' },
+      {
+        text: s.event.withdraw,
+        style: 'destructive',
+        onPress: async () => {
+          if (await run((b) => b.withdrawProposal(event.id))) router.back();
+        },
+      },
+    ]);
 
   let footer;
-  if (status === 'draft' || status === 'rejected') {
-    // Only its creator sees an event that is not published.
+  if (status === 'draft') {
+    // Only its creator sees an event that is not published, and may change it until an admin decides.
     footer = (
-      <Txt color={status === 'draft' ? colors.inkMuted : colors.danger} align="center">
-        {status === 'draft' ? s.event.waiting : s.event.rejected}
+      <>
+        <Txt color={colors.inkMuted} align="center">
+          {s.event.waiting}
+        </Txt>
+        {event.i_created && (
+          <>
+            <Button variant="secondary" icon="create-outline" label={s.event.edit} disabled={busy} onPress={() => router.push(`/event/${event.id}/edit`)} />
+            <Button variant="danger" icon="trash-outline" label={s.event.withdraw} disabled={busy} onPress={withdraw} />
+          </>
+        )}
+      </>
+    );
+  } else if (status === 'rejected') {
+    footer = (
+      <Txt color={colors.danger} align="center">
+        {s.event.rejected}
       </Txt>
     );
   } else if (organizer) {

@@ -2,11 +2,12 @@
 // does with the offline demo: the same cheats, sent as HTTP requests to the
 // server running on a fresh in-memory database with a fixed clock. Every cheat
 // must be refused with the same error code. Sign-in, notifications, reports,
-// warnings and account deletion are checked too.
+// warnings, editing the profile and account deletion are checked too.
 // Run: npm run check:api
 
 import { eq } from 'drizzle-orm';
 
+import type { AdminEventDetail } from '../../shared/admin-api';
 import type {
   EventDetail,
   EventFormMeta,
@@ -15,6 +16,7 @@ import type {
   MeResponse,
   MyReport,
   MyWarning,
+  ProfileResponse,
   ReportFormMeta,
   RosterResponse,
 } from '../../shared/api';
@@ -213,12 +215,47 @@ expectEqual('nobody else sees it', ((await call('GET', '/events', ahmad)).body a
 await expectError('or opens it', 'not_found', call('GET', `/events/${proposed.id}`, ahmad));
 await expectError('or joins it', 'not_found', call('POST', `/events/${proposed.id}/join`, ahmad));
 expectEqual('its creator opens it, with its terms', (await call('GET', `/events/${proposed.id}`, khaled)).body.terms.length, 1);
-await expectOk('a second proposal', call('POST', '/events', khaled, proposal({ title: 'تشجير الطريق' })));
-await expectOk('a third', call('POST', '/events', khaled, proposal({ title: 'سقيا الماء' })));
+const second = await expectOk('a second proposal', call('POST', '/events', khaled, proposal({ title: 'تشجير الطريق' })));
+const third = await expectOk('a third', call('POST', '/events', khaled, proposal({ title: 'سقيا الماء' })));
 await expectError('a fourth while three wait', 'too_many_proposals', call('POST', '/events', khaled, proposal()));
 const admin = await login('u_admin');
 const byAdmin = await expectOk("an admin's event made in the app", call('POST', '/events', admin, proposal({ title: 'حملة الإدارة' })));
 expectEqual('is published at once', [byAdmin.status, ((await call('GET', '/events', ahmad)).body as EventSummary[]).some((e) => e.id === byAdmin.id)], ['published', true]);
+
+console.log('\n— the proposer edits or withdraws his waiting event');
+const edited = (over: Partial<EventProposal> = {}) =>
+  proposal({ title: 'حلقة تلاوة في الحديقة', subtype: 'quran_circle', branch_ids: ['b01'], terms: ['أحضر مصحفك.', 'احضر قبل الموعد بربع ساعة.'], ...over });
+const editDraft = (token: string, id: string, body = edited()) => call('PUT', `/events/${id}`, token, body);
+await expectError('a member edits his proposal', 'not_found', editDraft(ahmad, proposed.id));
+await expectError('or withdraws it', 'not_found', call('DELETE', `/events/${proposed.id}`, ahmad));
+await expectError('another supervisor edits it', 'not_found', editDraft(fatima, proposed.id));
+await expectError('he makes it women-only', 'category_not_allowed', editDraft(khaled, proposed.id, edited({ gender_category: 'female' })));
+await expectError('he moves it into the past', 'starts_in_past', editDraft(khaled, proposed.id, edited({ starts_at: iso(h.clock() - HOUR) })));
+await expectError('a type that does not exist', 'invalid_request', editDraft(khaled, proposed.id, edited({ subtype: 'party' })));
+await expectError('ending before it starts', 'invalid_request', editDraft(khaled, proposed.id, edited({ ends_at: iso(h.clock() + 71 * HOUR) })));
+await expectOk('an admin adds a supervisor to it in the panel', call('PUT', `/admin/events/${proposed.id}`, admin, { ...proposal(), organizer_ids: ['u_khaled', 'u_fatima'] }));
+await expectOk('he edits it while three wait (it does not count itself)', editDraft(khaled, proposed.id));
+const afterEdit: EventDetail = (await call('GET', `/events/${proposed.id}`, khaled)).body;
+expectEqual('the edit shows, with the points of its new type, still waiting', [afterEdit.title, afterEdit.status, afterEdit.base_points, afterEdit.branches.map((b) => b.id), afterEdit.terms.map((x) => x.text)], [
+  'حلقة تلاوة في الحديقة',
+  'draft',
+  20,
+  ['b01'],
+  ['أحضر مصحفك.', 'احضر قبل الموعد بربع ساعة.'],
+]);
+const draftOrganizers = ((await call('GET', `/admin/events/${proposed.id}`, admin)).body as AdminEventDetail).organizers.map((o) => o.id).sort();
+expectEqual('the supervisor the admin added stays', draftOrganizers, ['u_fatima', 'u_khaled']);
+await expectError('an admin edits a published event in the app', 'proposal_not_waiting', editDraft(admin, byAdmin.id));
+await expectError('a supervisor edits a published event he runs', 'proposal_not_waiting', editDraft(khaled, 'e02'));
+await expectError('or withdraws it', 'proposal_not_waiting', call('DELETE', '/events/e02', khaled));
+await expectOk('an admin turns one down', call('POST', `/admin/events/${second.id}/reject`, admin, {}));
+await expectError('he edits it after the decision', 'proposal_not_waiting', editDraft(khaled, second.id));
+await expectError('or withdraws it', 'proposal_not_waiting', call('DELETE', `/events/${second.id}`, khaled));
+await expectOk('he withdraws one still waiting', call('DELETE', `/events/${third.id}`, khaled));
+await expectError('it is gone, even for him', 'not_found', call('GET', `/events/${third.id}`, khaled));
+expectEqual('from his list too', ((await call('GET', '/events', khaled)).body as EventSummary[]).some((e) => e.id === third.id), false);
+await expectError('withdrawn twice', 'not_found', call('DELETE', `/events/${third.id}`, khaled));
+expectEqual('one waits now', ((await call('GET', '/events/form', khaled)).body as EventFormMeta).waiting, 1);
 
 // ---------------------------------------------------------------------------
 console.log('\n— profile photos');
@@ -253,6 +290,31 @@ const renewed = (await call('PUT', '/me/photo', ahmad, b64(jpeg))).body.avatar_u
 expectEqual('a new photo gets a new address, so no phone shows the old one', renewed !== avatar_url, true);
 await expectOk('remove the photo', call('DELETE', '/me/photo', ahmad));
 expectEqual('gone from the profile and the server', [(await meOf(ahmad)).user.avatar_url, (await h.raw(renewed, khaled)).status], [null, 404]);
+
+// ---------------------------------------------------------------------------
+console.log('\n— editing the profile');
+const editMe = (body: object) => call('PATCH', '/me', ahmad, body);
+const ahmadBefore = (await meOf(ahmad)).user;
+await expectError('signed out', 'unauthorized', call('PATCH', '/me', undefined, { city: 'مصراتة' }));
+await expectError('a name of one letter', 'invalid_request', editMe({ full_name: ' أ ' }));
+await expectError('a name too long', 'invalid_request', editMe({ full_name: 'أ'.repeat(101) }));
+await expectError('an empty city', 'invalid_request', editMe({ city: '   ' }));
+await expectError('nothing to change', 'invalid_request', editMe({}));
+await expectError('his gender', 'invalid_request', editMe({ full_name: 'أحمد', gender: 'female' }));
+await expectError('his phone', 'invalid_request', editMe({ phone: '+218910000000' }));
+await expectError('his role', 'invalid_request', editMe({ role: 'admin' }));
+const renamed: ProfileResponse = await expectOk('he changes his name and city', editMe({ full_name: '  أحمد سالم  ', city: ' مصراتة ' }));
+expectEqual('trimmed; gender, phone and role as they were', [renamed.user.full_name, renamed.user.city, renamed.user.gender, renamed.user.phone, renamed.user.role], [
+  'أحمد سالم',
+  'مصراتة',
+  ahmadBefore.gender,
+  ahmadBefore.phone,
+  ahmadBefore.role,
+]);
+await expectOk('only his city', editMe({ city: 'طرابلس' }));
+const ahmadAfter = (await meOf(ahmad)).user;
+expectEqual('his name stays', [ahmadAfter.full_name, ahmadAfter.city], ['أحمد سالم', 'طرابلس']);
+expectEqual('others see the new name', ((await call('GET', '/events/e10', khaled)).body as EventDetail).participants.find((p) => p.id === 'u_ahmad')?.full_name, 'أحمد سالم');
 
 // ---------------------------------------------------------------------------
 console.log('\n— reports (بلاغ)');

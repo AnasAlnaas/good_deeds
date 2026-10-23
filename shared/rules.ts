@@ -99,6 +99,49 @@ export function proposalStatus(user: Pick<User, 'role'>): 'draft' | 'published' 
   return user.role === 'admin' ? 'published' : 'draft';
 }
 
+/**
+ * The proposer editing or withdrawing their own event while it still waits for
+ * an admin. Someone else's draft is not found, as everywhere else. Once an admin
+ * has decided (published or turned down), only admins change it, in the panel.
+ * An edit is then checked like a new proposal (assertCanProposeEvent), with
+ * this draft left out of the waiting count.
+ */
+export function assertCanChangeProposal<E extends Pick<AppEvent, 'status' | 'created_by'>>(
+  user: Pick<User, 'id'>,
+  e: E | undefined,
+): asserts e is E {
+  if (!e || !canSeeEvent(user, e)) throw new ApiError('not_found');
+  if (e.created_by !== user.id || e.status !== 'draft') throw new ApiError('proposal_not_waiting');
+}
+
+// ---------- the profile ----------
+
+// Sign-up (server/src/routes/auth.ts) and a profile edit take a name and a city alike.
+export const NAME_MIN = 2;
+export const NAME_MAX = 100;
+export const CITY_MAX = 60;
+
+/**
+ * A profile edit, trimmed, keeping only what may change: the name and the city.
+ * Gender never changes (it decides which events a person may join and who sees
+ * their photo), nor does the phone (it is how they sign in).
+ * null = nothing to change, or a name or city that does not fit.
+ */
+export function cleanProfileEdit(edit: { full_name?: string; city?: string }): { full_name?: string; city?: string } | null {
+  const out: { full_name?: string; city?: string } = {};
+  if (edit.full_name !== undefined) {
+    const name = edit.full_name.trim();
+    if (name.length < NAME_MIN || name.length > NAME_MAX) return null;
+    out.full_name = name;
+  }
+  if (edit.city !== undefined) {
+    const city = edit.city.trim();
+    if (city.length < 1 || city.length > CITY_MAX) return null;
+    out.city = city;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 // ---------- profile photos ----------
 
 /** Owner's decision (2026-10-22): a photo is seen by its owner, by admins, and by people of the same gender. */

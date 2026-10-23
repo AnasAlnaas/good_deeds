@@ -27,6 +27,7 @@ export type ApiErrorCode =
   | 'category_not_allowed'
   | 'starts_in_past'
   | 'too_many_proposals'
+  | 'proposal_not_waiting'
   | 'cannot_report'
   | 'note_required'
   | 'cannot_report_self'

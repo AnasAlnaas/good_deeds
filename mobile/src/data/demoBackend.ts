@@ -8,7 +8,7 @@ import { BASE_POINTS_BY_SUBTYPE } from '@/demo/placeholders';
 import * as server from '@/demo/server';
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
-import type { AttendanceItem, EventDetail, EventSummary, MyReport, MyWarning, PublicUser, ReportFormMeta } from './api';
+import type { AttendanceItem, EventDetail, EventProposal, EventSummary, MyReport, MyWarning, PublicUser, ReportFormMeta } from './api';
 import { type Backend, BackendError } from './backend';
 
 export interface DemoStore {
@@ -100,6 +100,14 @@ function reportableEvents(db: Db, me: User): ReportFormMeta['events'] {
     });
 }
 
+/** The server's request checks on an event form (server/src/routes/event-input.ts), briefly. */
+function checkProposal(db: Db, body: EventProposal) {
+  const known = body.branch_ids.length > 0 && body.branch_ids.every((id) => db.branches.some((b) => b.id === id));
+  if (!(body.subtype in BASE_POINTS_BY_SUBTYPE) || !known || rules.toMs(body.ends_at) <= rules.toMs(body.starts_at)) {
+    throw new BackendError('invalid_request');
+  }
+}
+
 export function createDemoBackend(store: DemoStore, meId: string): Backend {
   // Like the server, the scheduled auto-close runs before every call.
   const read = () => {
@@ -168,11 +176,7 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
 
     proposeEvent: (body) =>
       async(() => {
-        // The server's request checks (server/src/routes/event-input.ts), briefly.
-        const known = body.branch_ids.length > 0 && body.branch_ids.every((id) => store.get().branches.some((b) => b.id === id));
-        if (!(body.subtype in BASE_POINTS_BY_SUBTYPE) || !known || rules.toMs(body.ends_at) <= rules.toMs(body.starts_at)) {
-          throw new BackendError('invalid_request');
-        }
+        checkProposal(store.get(), body);
         let created: AppEvent | undefined;
         change((d, t) => {
           const result = server.proposeEvent(d, meId, body, t);
@@ -180,6 +184,18 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
           return result.db;
         });
         return { id: created!.id, status: created!.status as 'draft' | 'published' };
+      }),
+
+    editProposal: (id, body) =>
+      async(() => {
+        checkProposal(store.get(), body);
+        change((d, t) => server.editProposal(d, meId, id, body, t));
+        return { id, status: 'draft' as const };
+      }),
+
+    withdrawProposal: (id) =>
+      async(() => {
+        change((d) => server.withdrawProposal(d, meId, id));
       }),
 
     startJoin: (eventId) =>
@@ -369,6 +385,15 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
     // The demo has no server to send notifications.
     registerPushToken: async () => {},
     unregisterPushToken: async () => {},
+
+    updateProfile: (edit) =>
+      async(() => {
+        // The server's check (server/src/routes/me.ts, PATCH /): the same shared rule.
+        const cleaned = rules.cleanProfileEdit(edit);
+        if (!cleaned) throw new BackendError('invalid_request');
+        const { me } = change((d) => server.updateProfile(d, meId, cleaned));
+        return { user: me };
+      }),
 
     setPhoto: (jpegBase64) =>
       async(() => {

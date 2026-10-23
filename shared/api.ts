@@ -110,6 +110,9 @@ export interface ProposeEventResponse {
   id: string;
   status: 'draft' | 'published';
 }
+// PUT /api/events/:id (the same body) and DELETE /api/events/:id: the proposer
+// edits or withdraws their own event while it waits for an admin
+// (rules.assertCanChangeProposal). PUT answers with a ProposeEventResponse.
 
 /** GET /api/events/form: what the event form offers. */
 export interface EventFormMeta {
@@ -207,6 +210,18 @@ export interface MeResponse {
   can_report: boolean;
   /** How many warnings the person was given, withdrawn ones included, so the profile shows the way to them. */
   warnings: number;
+}
+
+/**
+ * PATCH /api/me: the name, the city, or both, checked as at sign-up
+ * (rules.cleanProfileEdit). Gender and phone never change here.
+ */
+export interface ProfileEdit {
+  full_name?: string;
+  city?: string;
+}
+export interface ProfileResponse {
+  user: User;
 }
 
 /**

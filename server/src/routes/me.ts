@@ -1,4 +1,4 @@
-// The signed-in person: profile and photo, points and level, their attendance
+// The signed-in person: profile (name and city) and photo, points and level, their attendance
 // records, confirming or disputing recorded hours, their reports and warnings,
 // and deleting the account.
 // Also other people's photos, for those allowed to see them.
@@ -7,7 +7,16 @@ import { and, count, desc, eq, inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-import type { AttendanceItem, AttendanceResponse, ConfirmResponse, MeResponse, MyReport, MyWarning, PhotoResponse } from '../../../shared/api';
+import type {
+  AttendanceItem,
+  AttendanceResponse,
+  ConfirmResponse,
+  MeResponse,
+  MyReport,
+  MyWarning,
+  PhotoResponse,
+  ProfileResponse,
+} from '../../../shared/api';
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
 import type { Attendance, User } from '../../../shared/types';
@@ -23,6 +32,8 @@ import { asMyReports, asMyWarnings } from './reports';
 const pushToken = z.string().regex(/^Expo(nent)?PushToken\[[^\]]+\]$/);
 const pushTokenBody = z.object({ token: pushToken, lang: z.enum(['ar', 'en']) });
 const photoBody = z.object({ jpeg_base64: z.string().min(1) });
+// Anything else (gender, phone, role) is refused, not quietly dropped; the lengths are the rule's (rules.cleanProfileEdit).
+const profileBody = z.object({ full_name: z.string().optional(), city: z.string().optional() }).strict();
 
 async function toItems(db: Database, viewer: User, records: Attendance[]): Promise<AttendanceItem[]> {
   if (records.length === 0) return [];
@@ -97,6 +108,15 @@ export const meRoutes = new Hono<AppEnv>()
     const { db } = c.var.deps;
     const rows = await db.select().from(s.warnings).where(eq(s.warnings.user_id, c.var.user.id)).orderBy(desc(s.warnings.created_at));
     return c.json<MyWarning[]>(await asMyWarnings(db, c.var.user, rows.map(iso)));
+  })
+
+  // The name and the city, checked as at sign-up. Gender and phone stay as they are.
+  .patch('/', async (c) => {
+    const { db } = c.var.deps;
+    const edit = rules.cleanProfileEdit(await readBody(c, profileBody));
+    if (!edit) throw new HttpError(400, 'invalid_request');
+    const [row] = await db.update(s.users).set(edit).where(eq(s.users.id, c.var.user.id)).returning();
+    return c.json<ProfileResponse>({ user: iso(row) });
   })
 
   // A new profile photo replaces the old one. Its metadata is removed (src/photo.ts).

@@ -9,6 +9,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 
 import type { LoginResponse, RequestCodeResponse } from '../../../shared/api';
+import * as rules from '../../../shared/rules';
 import { signToken } from '../auth';
 import { newId } from '../db/queries';
 import { iso } from '../db/rows';
@@ -26,9 +27,9 @@ const verifyCodeBody = z.object({
   code: z.string().regex(/^\d{6}$/),
   profile: z
     .object({
-      full_name: z.string().trim().min(2).max(100),
+      full_name: z.string().trim().min(rules.NAME_MIN).max(rules.NAME_MAX),
       gender: z.enum(['male', 'female']),
-      city: z.string().trim().min(1).max(60),
+      city: z.string().trim().min(1).max(rules.CITY_MAX),
     })
     .optional(),
 });

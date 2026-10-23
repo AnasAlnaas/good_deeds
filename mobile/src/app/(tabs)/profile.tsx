@@ -120,6 +120,7 @@ export default function ProfileScreen() {
         <InfoRow icon="call-outline" label={s.profile.phone} value={ltr(me.phone)} />
         <InfoRow icon="business-outline" label={s.profile.city} value={me.city} />
       </Card>
+      <Button variant="secondary" icon="create-outline" label={s.profile.edit} onPress={() => router.push('/edit-profile')} />
 
       {summary.data.warnings > 0 && (
         <Button

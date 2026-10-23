@@ -17,6 +17,8 @@ import type {
   MyReport,
   MyWarning,
   PhotoResponse,
+  ProfileEdit,
+  ProfileResponse,
   ProposeEventResponse,
   RegistrationResponse,
   ReportBody,
@@ -51,6 +53,9 @@ export interface Backend {
   /** What the event form offers; refused for someone who may not create events. */
   eventForm(): Promise<EventFormMeta>;
   proposeEvent(body: EventProposal): Promise<ProposeEventResponse>;
+  /** The proposer's own event, only while it waits for an admin: edited with the same form, or withdrawn (deleted). */
+  editProposal(id: string, body: EventProposal): Promise<ProposeEventResponse>;
+  withdrawProposal(id: string): Promise<void>;
   startJoin(eventId: string): Promise<RegistrationResponse>;
   acceptTerm(eventId: string, termId: string): Promise<AcceptTermResponse>;
   completeJoin(eventId: string): Promise<RegistrationResponse>;
@@ -73,6 +78,8 @@ export interface Backend {
   attendance(id: string): Promise<AttendanceItem>;
   confirmAttendance(id: string): Promise<ConfirmResponse>;
   disputeAttendance(id: string): Promise<AttendanceResponse>;
+  /** The name, the city, or both. Gender and phone never change. */
+  updateProfile(edit: ProfileEdit): Promise<ProfileResponse>;
   /** A square JPEG, base64-encoded (src/lib/photo.ts makes it). */
   setPhoto(jpegBase64: string): Promise<PhotoResponse>;
   removePhoto(): Promise<void>;

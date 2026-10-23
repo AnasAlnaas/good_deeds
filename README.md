@@ -57,6 +57,10 @@ The app follows the planning notes (`DESIGN.md`, `Screens.md`, `Data_Model.md`,
 - Supervisor roster: record start and finish, with backdating limited to event start → now.
 - Participant confirms or disputes recorded hours; confirming credits points per pillar.
 - My activity, profile with level, account deletion.
+- **Editing the profile** (Profile → "عدّل بياناتك"): the name and the city,
+  checked as at sign-up. Gender stays as it was set at sign-up (it decides which
+  events a person may join and who sees their photo), and so does the phone
+  (sign-in is by phone); the screen says so.
 - **Profile photo**: from the phone's photos or the camera, made a small square
   JPEG on the phone; the server removes its metadata (EXIF: place, phone). Seen
   only by the owner, admins and people of the same gender (owner's decision);
@@ -66,8 +70,11 @@ The app follows the planning notes (`DESIGN.md`, `Screens.md`, `Data_Model.md`,
   supervisors and admins. The creator becomes its supervisor and may choose only
   mixed or their own men/women category. It waits for an admin (at most 3 waiting
   per person), who approves or turns it down from the admin panel; the creator is
-  notified either way. Until then only the creator sees it, under "أنظّمها".
-  An admin's own event made in the app is published at once.
+  notified either way. Until then only the creator sees it, under "أنظّمها",
+  and may edit it with the same form and checks ("عدّل اقتراحك") or withdraw it
+  ("اسحب اقتراحك"), which deletes it. Once it is approved or turned down, only
+  admins change it, in the panel. An admin's own event made in the app is
+  published at once.
 - **Reports (بلاغ) and warnings (إنذار)**, kept apart as the master file decides:
   a member reports, a supervisor warns.
   - *Report*: from the event page ("أبلغ عن مشكلة") or Profile → "بلاغاتك".
@@ -211,7 +218,13 @@ How it fits together:
   see it (`rules.canSeePhoto`), and answers 404 to anyone else.
 - Events proposed in the app are drafts (`events.status = 'draft'`) until an admin
   publishes them, or `rejected` if turned down: neither is listed for anyone but
-  their creator.
+  their creator. While it is a draft, its creator may `PUT /api/events/:id` (the
+  same body and checks as `POST /api/events`; its supervisors stay) or
+  `DELETE /api/events/:id`. A withdrawn draft is deleted rather than marked
+  `rejected`: nothing can point at a draft but its own branches, supervisors
+  and terms, and `rejected` would read as an admin's decision.
+- `PATCH /api/me` changes the name and/or the city (`rules.cleanProfileEdit`);
+  any other field, gender and phone included, is refused as `invalid_request`.
 
 Settings are environment variables; see `server/.env.example`. In production
 (`NODE_ENV=production`) `DATABASE_URL` and `JWT_SECRET` are required, and sign-in

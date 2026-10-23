@@ -56,7 +56,7 @@ export function verifyCode(baseUrl: string, body: VerifyCodeBody) {
 /** `onUnauthorized` runs when the server no longer accepts the token (expired, account deleted). */
 export function createApiBackend(opts: { baseUrl: string; token: string; onUnauthorized: () => void }): Backend {
   const get = <T>(path: string) => call<T>(opts.baseUrl, 'GET', path, opts);
-  const send = <T>(method: 'POST' | 'DELETE', path: string, body?: unknown) =>
+  const send = <T>(method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown) =>
     call<T>(opts.baseUrl, method, path, { ...opts, body });
   const atBody = (at?: number) => (at === undefined ? {} : { at: new Date(at).toISOString() });
 
@@ -65,6 +65,8 @@ export function createApiBackend(opts: { baseUrl: string; token: string; onUnaut
     event: (id) => get(`/events/${enc(id)}`),
     eventForm: () => get('/events/form'),
     proposeEvent: (body) => send('POST', '/events', body),
+    editProposal: (id, body) => send('PUT', `/events/${enc(id)}`, body),
+    withdrawProposal: (id) => send('DELETE', `/events/${enc(id)}`),
     startJoin: (eventId) => send('POST', `/events/${enc(eventId)}/join`),
     acceptTerm: (eventId, termId) => send('POST', `/events/${enc(eventId)}/terms/${enc(termId)}/accept`),
     completeJoin: (eventId) => send('POST', `/events/${enc(eventId)}/join/complete`),
@@ -84,10 +86,11 @@ export function createApiBackend(opts: { baseUrl: string; token: string; onUnaut
     attendance: (id) => get(`/attendance/${enc(id)}`),
     confirmAttendance: (id) => send('POST', `/attendance/${enc(id)}/confirm`),
     disputeAttendance: (id) => send('POST', `/attendance/${enc(id)}/dispute`),
-    setPhoto: (jpegBase64) => call(opts.baseUrl, 'PUT', '/me/photo', { ...opts, body: { jpeg_base64: jpegBase64 } }),
+    updateProfile: (edit) => send('PATCH', '/me', edit),
+    setPhoto: (jpegBase64) => send('PUT', '/me/photo', { jpeg_base64: jpegBase64 }),
     removePhoto: () => send('DELETE', '/me/photo'),
     deleteAccount: () => send('DELETE', '/me'),
-    registerPushToken: (token, lang) => call(opts.baseUrl, 'PUT', '/me/push-token', { ...opts, body: { token, lang } }),
+    registerPushToken: (token, lang) => send('PUT', '/me/push-token', { token, lang }),
     unregisterPushToken: (token) => send('DELETE', '/me/push-token', { token }),
   };
 }

@@ -3,7 +3,7 @@
 // in the on-phone database, calls the rule, and writes what the rule decided.
 // The screens never compute hours or points themselves.
 
-import type { EventProposal, ReportBody } from '@/data/api';
+import type { EventProposal, ProfileEdit, ReportBody } from '@/data/api';
 import type { AppEvent, Attendance, Db, EventStatus, EventTerm, Pillar, Registration, Report, User, Warning } from '@/data/types';
 import { PILLARS } from '@/data/types';
 import { BASE_POINTS_BY_SUBTYPE } from './placeholders';
@@ -172,11 +172,73 @@ export function proposeEvent(db: Db, userId: string, input: EventProposal, now: 
   };
   next.events.push(event);
   next.event_organizers.push({ event_id: event.id, user_id: userId });
-  for (const branch_id of new Set(input.branch_ids)) next.event_branches.push({ event_id: event.id, branch_id });
-  input.terms.forEach((text, i) =>
-    next.event_terms.push({ id: newId('term'), event_id: event.id, order_index: i + 1, text, image_url: null, audio_url: null, created_at: at }),
-  );
+  writeBranchesAndTerms(next, event.id, input, at);
   return { db: next, event };
+}
+
+/** Replaces an event's branches and terms (in `next`, already a copy). */
+function writeBranchesAndTerms(next: Db, eventId: string, input: EventProposal, at: string) {
+  next.event_branches = next.event_branches.filter((x) => x.event_id !== eventId);
+  next.event_terms = next.event_terms.filter((x) => x.event_id !== eventId);
+  for (const branch_id of new Set(input.branch_ids)) next.event_branches.push({ event_id: eventId, branch_id });
+  input.terms.forEach((text, i) =>
+    next.event_terms.push({ id: newId('term'), event_id: eventId, order_index: i + 1, text, image_url: null, audio_url: null, created_at: at }),
+  );
+}
+
+/**
+ * The proposer edits their event while it waits for an admin, checked like a
+ * new proposal. Its supervisors stay as they are. Fields checked as for proposeEvent.
+ */
+export function editProposal(db: Db, userId: string, eventId: string, input: EventProposal, now: number): Db {
+  const user = getUser(db, userId)!;
+  rules.assertCanChangeProposal(user, db.events.find((e) => e.id === eventId));
+  rules.assertCanProposeEvent({
+    user,
+    level: levelFor(db, totalPoints(db, userId)),
+    event: input,
+    // This draft is one of those waiting; editing it adds none.
+    waitingCount: waitingProposals(db, userId) - 1,
+    now,
+  });
+  const next = clone(db);
+  Object.assign(next.events.find((e) => e.id === eventId)!, {
+    title: input.title,
+    description: input.description,
+    subtype: input.subtype,
+    lat: input.lat,
+    lng: input.lng,
+    address_text: input.address_text,
+    starts_at: input.starts_at,
+    ends_at: input.ends_at,
+    capacity: input.capacity,
+    gender_category: input.gender_category,
+    base_points: BASE_POINTS_BY_SUBTYPE[input.subtype],
+  });
+  writeBranchesAndTerms(next, eventId, input, new Date(now).toISOString());
+  return next;
+}
+
+/** Withdrawn: deleted with its own rows, as on the server (server/src/routes/events.ts says why). */
+export function withdrawProposal(db: Db, userId: string, eventId: string): Db {
+  rules.assertCanChangeProposal(getUser(db, userId)!, db.events.find((e) => e.id === eventId));
+  const next = clone(db);
+  next.events = next.events.filter((e) => e.id !== eventId);
+  next.event_organizers = next.event_organizers.filter((x) => x.event_id !== eventId);
+  next.event_branches = next.event_branches.filter((x) => x.event_id !== eventId);
+  next.event_terms = next.event_terms.filter((x) => x.event_id !== eventId);
+  return next;
+}
+
+// ---------- the profile ----------
+
+/** The name and the city only (gender and phone never change). Checked before this with rules.cleanProfileEdit. */
+export function updateProfile(db: Db, userId: string, edit: ProfileEdit): Db {
+  const next = clone(db);
+  const u = next.users.find((x) => x.id === userId)!;
+  if (edit.full_name !== undefined) u.full_name = edit.full_name;
+  if (edit.city !== undefined) u.city = edit.city;
+  return next;
 }
 
 // ---------- profile photo ----------

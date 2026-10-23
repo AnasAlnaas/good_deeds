@@ -1,4 +1,5 @@
-// Events, proposing one in the app, joining (with the terms one by one) and
+// Events, proposing one in the app (and the proposer editing or withdrawing it
+// while it waits for an admin), joining (with the terms one by one) and
 // the supervisor's roster, where they record attendance and give warnings.
 // Every change runs in a transaction: the rows are read (and locked), the
 // shared rule decides, and the result is written, or nothing is.
@@ -153,6 +154,77 @@ export const eventRoutes = new Hono<AppEnv>()
       await writeTerms(tx, id, body.terms, new Date(t));
     });
     return c.json<ProposeEventResponse>({ id, status }, 201);
+  })
+
+  // ---------- the proposer's own event, while it waits for an admin ----------
+
+  // The same form and checks as proposing it. The supervisors stay as they are (an admin may have added some).
+  .put('/:id', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    const body = await readBody(c, proposalInput);
+    const t = now();
+    await db.transaction(async (tx) => {
+      // Locking the event makes an admin's decision on it wait for this edit, or this edit see the decision.
+      const [row] = await tx.select().from(s.events).where(eq(s.events.id, id)).for('update');
+      rules.assertCanChangeProposal(me, row);
+      rules.assertCanProposeEvent({
+        user: me,
+        level: await levelOf(tx, me.id),
+        event: body,
+        // This draft is one of those waiting; editing it adds none.
+        waitingCount: (await waitingProposals(tx, me.id)) - 1,
+        now: t,
+      });
+      const { branchIds } = await assertIdsExist(tx, { branch_ids: body.branch_ids, organizer_ids: [] });
+      const organizers = await tx
+        .select({ user_id: s.event_organizers.user_id })
+        .from(s.event_organizers)
+        .where(eq(s.event_organizers.event_id, id));
+      await tx
+        .update(s.events)
+        .set({
+          title: body.title,
+          description: body.description,
+          subtype: body.subtype,
+          lat: body.lat,
+          lng: body.lng,
+          address_text: body.address_text,
+          starts_at: new Date(body.starts_at),
+          ends_at: new Date(body.ends_at),
+          capacity: body.capacity,
+          gender_category: body.gender_category,
+          base_points: BASE_POINTS_BY_SUBTYPE[body.subtype],
+        })
+        .where(eq(s.events.id, id));
+      await writeLinks(tx, id, branchIds, organizers.map((o) => o.user_id));
+      // Nobody can join a draft, so nobody has accepted its terms yet.
+      await writeTerms(tx, id, body.terms, new Date(t));
+    });
+    return c.json<ProposeEventResponse>({ id, status: 'draft' });
+  })
+
+  // Withdrawn: the draft is deleted, with its own rows (branches, supervisors, terms).
+  // Nothing else can point at a draft: nobody can join it or be at it (findEvent
+  // hides it), so it has no registrations, attendance, points, reports or warnings;
+  // should anything ever, its foreign key refuses the delete and nothing changes.
+  // Marking it 'rejected' instead would tell its proposer "not approved", and
+  // admins of a decision nobody made. An admin's earlier edit of it stays in the
+  // audit log under its title (admin_actions.target_id is not a foreign key).
+  .delete('/:id', async (c) => {
+    const { db } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    await db.transaction(async (tx) => {
+      const [row] = await tx.select().from(s.events).where(eq(s.events.id, id)).for('update');
+      rules.assertCanChangeProposal(me, row);
+      await tx.delete(s.event_terms).where(eq(s.event_terms.event_id, id));
+      await tx.delete(s.event_branches).where(eq(s.event_branches.event_id, id));
+      await tx.delete(s.event_organizers).where(eq(s.event_organizers.event_id, id));
+      await tx.delete(s.events).where(eq(s.events.id, id));
+    });
+    return c.body(null, 204);
   })
 
   .get('/:id', async (c) => {

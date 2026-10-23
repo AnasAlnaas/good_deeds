@@ -1,13 +1,15 @@
 // Tries to break the demo server's rules, as Build_Plan.md phase 5 asks:
 // record for someone absent, backdate before the event, record yourself,
 // confirm someone else's hours, report below the allowed level, warn someone
-// who was not at your event. Every cheat must be refused.
+// who was not at your event, change someone else's proposal or your own gender.
+// Every cheat must be refused.
 // Run: npm run check:rules
 
-import type { EventProposal, ReportBody } from '../src/data/api';
+import type { EventProposal, ProfileEdit, ReportBody } from '../src/data/api';
 import type { Db } from '../src/data/types';
 import { buildSeed } from '../src/demo/seed';
 import * as server from '../src/demo/server';
+import * as rules from '../../shared/rules';
 
 const NOW = new Date('2026-10-21T12:00:00').getTime();
 let failed = 0;
@@ -141,6 +143,58 @@ expectError('nobody joins it', 'not_found', () => server.startJoin(withDraft, 'u
 let three = withDraft;
 for (let i = 0; i < 2; i++) three = server.proposeEvent(three, 'u_khaled', proposal(), NOW).db;
 expectError('a fourth while three wait', 'too_many_proposals', () => server.proposeEvent(three, 'u_khaled', proposal(), NOW));
+
+console.log('\n— the proposer edits or withdraws his waiting event');
+const edited = proposal({ title: 'حلقة تلاوة في الحديقة', subtype: 'quran_circle', terms: ['أحضر مصحفك.', 'احضر قبل الموعد بربع ساعة.'] });
+expectError('a member edits his proposal', 'not_found', () => server.editProposal(three, 'u_ahmad', draft.id, edited, NOW));
+expectError('another supervisor withdraws it', 'not_found', () => server.withdrawProposal(three, 'u_fatima', draft.id));
+expectError('he makes it women-only', 'category_not_allowed', () =>
+  server.editProposal(three, 'u_khaled', draft.id, { ...edited, gender_category: 'female' }, NOW),
+);
+expectError('he moves it into the past', 'starts_in_past', () =>
+  server.editProposal(three, 'u_khaled', draft.id, { ...edited, starts_at: new Date(NOW - HOUR).toISOString() }, NOW),
+);
+const afterEdit = server.editProposal(three, 'u_khaled', draft.id, edited, NOW);
+const editedEvent = afterEdit.events.find((e) => e.id === draft.id)!;
+expectEqual('he edits it while three wait; it still waits, with the points of its new type', [
+  editedEvent.title,
+  editedEvent.status,
+  editedEvent.base_points,
+  server.eventTerms(afterEdit, draft.id).map((x) => x.text),
+  server.isOrganizer(afterEdit, draft.id, 'u_khaled'),
+], ['حلقة تلاوة في الحديقة', 'draft', 20, ['أحضر مصحفك.', 'احضر قبل الموعد بربع ساعة.'], true]);
+const rejected: Db = { ...three, events: three.events.map((e) => (e.id === draft.id ? { ...e, status: 'rejected' as const } : e)) };
+expectError('he edits it after an admin turned it down', 'proposal_not_waiting', () => server.editProposal(rejected, 'u_khaled', draft.id, edited, NOW));
+expectError('a supervisor edits a published event he runs', 'proposal_not_waiting', () => server.editProposal(three, 'u_khaled', 'e02', edited, NOW));
+expectError('or withdraws it', 'proposal_not_waiting', () => server.withdrawProposal(three, 'u_khaled', 'e02'));
+const withdrawn = server.withdrawProposal(three, 'u_khaled', draft.id);
+expectEqual('he withdraws it: gone, with its terms, branches and supervisors', [
+  withdrawn.events.some((e) => e.id === draft.id),
+  withdrawn.event_terms.some((x) => x.event_id === draft.id),
+  withdrawn.event_branches.some((x) => x.event_id === draft.id),
+  withdrawn.event_organizers.some((x) => x.event_id === draft.id),
+  server.waitingProposals(withdrawn, 'u_khaled'),
+], [false, false, false, false, 2]);
+expectError('withdrawn twice', 'not_found', () => server.withdrawProposal(withdrawn, 'u_khaled', draft.id));
+
+console.log('\n— editing the profile');
+expectEqual('a name of one letter is refused', rules.cleanProfileEdit({ full_name: ' أ ' }), null);
+expectEqual('so is an empty city', rules.cleanProfileEdit({ city: '   ' }), null);
+expectEqual('and nothing to change', rules.cleanProfileEdit({}), null);
+const cleaned = rules.cleanProfileEdit({ full_name: '  أحمد سالم ', city: ' مصراتة ' })!;
+expectEqual('name and city trimmed', cleaned, { full_name: 'أحمد سالم', city: 'مصراتة' });
+// What a changed app could send: the rule and the demo keep only the name and the city.
+const cheat = { ...cleaned, gender: 'female', phone: '+218910000000', role: 'admin' } as ProfileEdit;
+expectEqual('gender, phone and role are not taken from an edit', rules.cleanProfileEdit(cheat), cleaned);
+const ahmad = server.getUser(server.updateProfile(db, 'u_ahmad', cheat), 'u_ahmad')!;
+const ahmadBefore = server.getUser(db, 'u_ahmad')!;
+expectEqual('nor written', [ahmad.full_name, ahmad.city, ahmad.gender, ahmad.phone, ahmad.role], [
+  'أحمد سالم',
+  'مصراتة',
+  ahmadBefore.gender,
+  ahmadBefore.phone,
+  ahmadBefore.role,
+]);
 
 console.log('\n— reports (بلاغ)');
 const report = (d: Db, userId: string, body: ReportBody) => server.fileReport(d, userId, body, NOW);
