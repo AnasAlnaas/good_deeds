@@ -412,7 +412,8 @@ export const eventRoutes = new Hono<AppEnv>()
     const body = await readBody(c, recordTimeBody);
     const t = now();
     const attendance = await db.transaction(async (tx) => {
-      const event = await findEvent(tx, id);
+      // Locking the event makes an admin cancelling it wait for this start, or this start see the cancellation.
+      const event = await findEvent(tx, id, { lock: true });
       const registration = await registrationOf(tx, id, userId, { lock: true });
       const start = rules.decideRecordStart({
         actorId: me.id,

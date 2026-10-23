@@ -387,7 +387,8 @@ export function recordEnd(
 // ---------- participant confirms or disputes what was recorded ----------
 
 export function confirmAttendance(db: Db, userId: string, attendanceId: string, now: number): Db {
-  rules.assertCanConfirm(db.attendance.find((x) => x.id === attendanceId), userId);
+  const a = db.attendance.find((x) => x.id === attendanceId);
+  rules.assertCanConfirm(a, userId, a && db.events.find((e) => e.id === a.event_id));
   const next = clone(db);
   const row = next.attendance.find((x) => x.id === attendanceId)!;
   row.participant_status = 'confirmed';

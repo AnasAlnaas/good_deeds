@@ -28,6 +28,8 @@ export interface AppDeps {
   cronSecret?: string;
   /** Empty = any origin. */
   corsOrigins: string[];
+  /** The caller's network address, for the sign-in limits per address. Absent = those limits are off (tests). */
+  clientIp?: (c: Context) => string | undefined;
 }
 
 export type AppEnv = { Variables: { deps: AppDeps; user: User } };

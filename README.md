@@ -169,6 +169,8 @@ no severity but records its event, the appeal and the decision.
 
 ## API
 
+Needs Node.js 24 (`.nvmrc`).
+
 ```bash
 cd server
 npm install
@@ -183,7 +185,7 @@ API at the laptop's address, e.g. `http://192.168.1.20:3000`.
 | Command | What it does |
 |---|---|
 | `npm run check:api` | Sends the same cheats as `check:rules`, plus sign-in, notification and admin checks, to the API on a fresh in-memory database. Must report "All checks passed" twice. |
-| `npm run db:seed` | Empties the development database and reloads the demo data. Stop `npm run dev` first: only one process may open the PGlite folder, and a second one is refused. |
+| `npm run db:seed` | Empties the development (PGlite) database and reloads the demo data. Stop `npm run dev` first: only one process may open the PGlite folder, and a second one is refused. Refused for a `DATABASE_URL` database, whose demo data would include an admin whose phone is in the code; use `--reference` there. |
 | `npm run db:generate` | After changing `src/db/schema.ts`: writes the SQL migration into `drizzle/`. Commit it. |
 | `npm run typecheck` | Also fails if the database schema and `shared/types.ts` stop matching. |
 | `npm run make-admin -- +2189…` | Makes the person with this phone an admin (they sign up in the app first). How the first admin is made on a real server. |
@@ -227,10 +229,20 @@ How it fits together:
   any other field, gender and phone included, is refused as `invalid_request`.
 
 Settings are environment variables; see `server/.env.example`. In production
-(`NODE_ENV=production`) `DATABASE_URL` and `JWT_SECRET` are required, and sign-in
-is refused until an SMS provider is added. On a VPS: `npm ci`, run migrations by
-starting once, `npm run db:seed -- --reference` for branches and levels, then keep
-`npm start` running under a process manager.
+(`NODE_ENV=production`) `DATABASE_URL` is required, and sign-in is refused until
+an SMS provider is added. `JWT_SECRET` (at least 32 characters) is required
+whenever `DATABASE_URL` is set, whatever `NODE_ENV` says: the server will not
+start without it. With PGlite and no `JWT_SECRET`, the server makes a random one
+and keeps it in `.data/jwt-secret`. Demo data is loaded only into an empty PGlite
+database, never into a `DATABASE_URL` one. On a VPS: set `NODE_ENV=production`,
+`DATABASE_URL` and `JWT_SECRET`, `npm ci`, run migrations by starting once,
+`npm run db:seed -- --reference` for branches and levels, then keep `npm start`
+running under a process manager. Behind a reverse proxy, also set `TRUST_PROXY=1`.
+
+Limits: a request body may be at most about 460 KB (a profile photo with room to
+spare; `too_large` otherwise). Sign-in allows, per phone over 24 hours, 5 codes
+and 10 wrong codes, and per network address 20 codes an hour (`try_later`
+otherwise), so a code cannot be guessed and SMS cannot be sent in bulk.
 
 ## Admin panel
 

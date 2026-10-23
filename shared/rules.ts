@@ -234,7 +234,7 @@ export function decideRecordStart(args: {
   actorId: string;
   participantId: string;
   actorIsOrganizer: boolean;
-  event: Pick<AppEvent, 'starts_at' | 'ends_at'>;
+  event: Pick<AppEvent, 'status' | 'starts_at' | 'ends_at'>;
   registration: Registration | undefined;
   attendance: Attendance | undefined;
   startedAt?: number;
@@ -242,6 +242,8 @@ export function decideRecordStart(args: {
 }): Pick<Attendance, 'started_at' | 'start_source'> {
   const { event, now } = args;
   assertRecorder(args);
+  // A cancelled event keeps its time and its joined members, but nobody works at it.
+  if (event.status === 'cancelled') throw new ApiError('event_closed');
   if (now < toMs(event.starts_at)) throw new ApiError('event_not_started');
   if (now > toMs(event.ends_at)) throw new ApiError('event_closed');
   if (args.registration?.status !== 'joined') throw new ApiError('not_joined');
@@ -260,13 +262,14 @@ export function decideRecordEnd(args: {
   actorId: string;
   participantId: string;
   actorIsOrganizer: boolean;
-  event: Pick<AppEvent, 'ends_at'>;
+  event: Pick<AppEvent, 'status' | 'ends_at'>;
   attendance: Attendance | undefined;
   endedAt?: number;
   now: number;
 }): Pick<Attendance, 'ended_at' | 'end_source' | 'hours'> {
   const { attendance: a, now } = args;
   assertRecorder(args);
+  if (args.event.status === 'cancelled') throw new ApiError('event_closed');
   if (!a) throw new ApiError('not_started');
   if (a.ended_at) throw new ApiError('already_ended');
   const endedAt = args.endedAt ?? now;
@@ -299,11 +302,17 @@ export function decideAutoClose(
 // ⚠️ ASSUMPTION: points are credited when the participant confirms (DESIGN.md
 // puts the reward moment there). A disputed record earns nothing until an
 // admin decides — that flow is not built yet.
-export function assertCanConfirm(a: Attendance | undefined, userId: string): asserts a is Attendance {
+/** `event` is the record's event: hours at a cancelled event earn nothing. */
+export function assertCanConfirm(
+  a: Attendance | undefined,
+  userId: string,
+  event: Pick<AppEvent, 'status'> | undefined,
+): asserts a is Attendance {
   if (!a) throw new ApiError('not_found');
   if (a.user_id !== userId) throw new ApiError('not_your_attendance');
   if (!a.ended_at) throw new ApiError('not_started');
   if (a.participant_status !== 'pending') throw new ApiError('already_acted');
+  if (event?.status === 'cancelled') throw new ApiError('event_closed');
 }
 
 export function assertCanDispute(a: Attendance | undefined, userId: string): asserts a is Attendance {

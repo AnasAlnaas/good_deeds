@@ -380,4 +380,16 @@ expectEqual('every decision is in the audit log', decisions.slice(0, 3).map((e) 
   ['handle_report', 'كلّمنا المشرف ووفّرنا قفازات إضافية.'],
 ]);
 
+console.log('\n— a cancelled event');
+// Last, since it moves the clock (and so closes open attendance):
+// a cancelled event's members stay joined and its supervisors stay, but nobody may work at it.
+{
+  const tokenOf: Record<string, string> = { u_ahmad: ahmad, u_mariam: mariam, u_khaled: khaled, u_f1: f1 };
+  const gone = await detail(id);
+  const recorder = gone.organizers.find((o) => tokenOf[o.id])!.id;
+  const member = gone.participants.find((p) => p.registration.status === 'joined' && p.user.id !== recorder)!.user.id;
+  h.setClock(Date.parse(gone.event.starts_at) + 30 * 60_000);
+  await expectError('its supervisor records a start there anyway', 'event_closed', call('POST', `/events/${id}/attendance/${member}/start`, tokenOf[recorder]));
+}
+
 await h.done();

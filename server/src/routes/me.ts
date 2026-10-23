@@ -200,7 +200,8 @@ export const attendanceRoutes = new Hono<AppEnv>()
     const t = now();
     const result = await db.transaction(async (tx) => {
       const a = await attendanceById(tx, id, { lock: true });
-      rules.assertCanConfirm(a, me.id);
+      const [recordEvent] = a ? await tx.select({ status: s.events.status }).from(s.events).where(eq(s.events.id, a.event_id)) : [];
+      rules.assertCanConfirm(a, me.id, recordEvent);
       const event = await findEvent(tx, a.event_id);
       const earned = rules.pointsForAttendance(event, a.hours, (await pillarWeights(tx, [event.id])).get(event.id)!);
       await tx

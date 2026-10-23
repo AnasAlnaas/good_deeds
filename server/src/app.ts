@@ -4,9 +4,11 @@
 
 import { Hono } from 'hono';
 import { bearerAuth } from 'hono/bearer-auth';
+import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 
 import type { ErrorBody } from '../../shared/api';
+import { PHOTO_MAX_BYTES } from '../../shared/rules';
 import { type AppDeps, type AppEnv, errorResponse } from './http';
 import { closeDueAndNotify } from './notify';
 import { adminRoutes } from './routes/admin';
@@ -15,10 +17,15 @@ import { eventRoutes } from './routes/events';
 import { attendanceRoutes, meRoutes, userRoutes } from './routes/me';
 import { reportRoutes, warningRoutes } from './routes/reports';
 
+// The largest body any request needs: a profile photo, base64 (4 bytes for every 3)
+// in JSON, with room to spare. Anything bigger is refused before it is read into memory.
+const MAX_BODY_BYTES = Math.ceil((PHOTO_MAX_BYTES * 4) / 3) + 64 * 1024;
+
 export function createApp(deps: AppDeps) {
   const app = new Hono<AppEnv>().basePath('/api');
 
   app.use(cors({ origin: deps.corsOrigins.length ? deps.corsOrigins : '*' }));
+  app.use(bodyLimit({ maxSize: MAX_BODY_BYTES, onError: (c) => c.json<ErrorBody>({ error: 'too_large' }, 413) }));
   app.use(async (c, next) => {
     c.set('deps', deps);
     await next();

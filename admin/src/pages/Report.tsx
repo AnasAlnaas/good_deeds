@@ -4,7 +4,7 @@ import { useState } from 'react';
 import type { HoursReportRow } from '../../../shared/admin-api';
 import { PILLARS } from '../../../shared/types';
 import { api } from '../api';
-import { dayInput, num } from '../format';
+import { dayInput, ltr, num } from '../format';
 import { t } from '../strings';
 import { Button, PageHeader, QueryState } from '../ui';
 
@@ -115,15 +115,22 @@ export function Report() {
   );
 }
 
-/** A CSV that Excel opens with Arabic intact: UTF-8 with a byte-order mark. */
+/**
+ * A CSV that Excel opens with Arabic intact: UTF-8 with a byte-order mark.
+ * Names and cities are typed by members, and Excel runs a cell starting with
+ * = + - @ (or a tab or carriage return) as a formula, so such text gets a ' in
+ * front and is shown as typed. Numbers stay numbers.
+ */
 function downloadCsv(rows: HoursReportRow[], from: string, to: string) {
   const cell = (value: string | number) => {
-    const text = String(value);
-    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    if (typeof value === 'number') return String(value);
+    const text = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
   };
   const header = [t.report.name, t.report.phone, t.report.city, t.report.gender, t.report.events, t.report.hours, ...PILLARS.map((p) => t.pillar[p]), t.report.total];
   const lines = rows.map((r) =>
-    [r.full_name, r.phone, r.city, t.gender[r.gender], r.events, r.hours, ...PILLARS.map((p) => r.points[p]), r.total_points].map(cell).join(','),
+    // The phone inside left-to-right marks: Excel then keeps it as text (+218…), not a number in scientific notation.
+    [r.full_name, ltr(r.phone), r.city, t.gender[r.gender], r.events, r.hours, ...PILLARS.map((p) => r.points[p]), r.total_points].map(cell).join(','),
   );
   const blob = new Blob(['﻿' + [header.map(cell).join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' });
   const link = document.createElement('a');

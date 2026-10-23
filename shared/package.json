@@ -1,0 +1,5 @@
+{
+  "//": "The files here are ES modules, like the server's. Without this, Node 22 loads them as CommonJS next to the server's ES modules, so shared/errors.ts exists twice and the server no longer recognises a rule's refusal (it answers 500 instead of the refusal's code).",
+  "private": true,
+  "type": "module"
+}

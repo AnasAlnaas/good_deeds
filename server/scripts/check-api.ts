@@ -81,6 +81,45 @@ const signup = await expectOk(
 expectEqual('new account is a member', signup.user.role, 'member');
 await expectError('the code works only once', 'code_expired', call('POST', '/auth/verify-code', undefined, { phone: phoneB, code: sentCodes.get(phoneB) }));
 
+console.log('\n— sign-in limits');
+{
+  const signIn = (phone: string, code: string) => call('POST', '/auth/verify-code', undefined, { phone, code });
+  const ask = (phone: string, address?: string) =>
+    call('POST', '/auth/request-code', undefined, { phone }, address ? { 'X-Check-Address': address } : {});
+  const minuteLater = () => h.setClock(h.clock() + 61_000);
+  const wrongFor = (phone: string) => (sentCodes.get(phone) === '000000' ? '111111' : '000000');
+
+  // Ten wrong codes in a day, over two codes: no third code, and not even the right one works.
+  const phoneC = '+218919990003';
+  await ask(phoneC);
+  for (let i = 0; i < 5; i++) await signIn(phoneC, wrongFor(phoneC));
+  minuteLater();
+  await ask(phoneC);
+  for (let i = 0; i < 4; i++) await signIn(phoneC, wrongFor(phoneC));
+  await expectError('a tenth wrong code that day', 'code_invalid', signIn(phoneC, wrongFor(phoneC)));
+  await expectError('then the right code', 'try_later', signIn(phoneC, sentCodes.get(phoneC)!));
+  minuteLater();
+  await expectError('or a new code', 'try_later', ask(phoneC));
+
+  // Five codes a day to one phone.
+  const phoneD = '+218919990004';
+  for (let i = 0; i < 5; i++) {
+    await ask(phoneD);
+    minuteLater();
+  }
+  await expectError('a sixth code to one phone in a day', 'try_later', ask(phoneD));
+
+  // Twenty codes an hour from one address, whatever the phones.
+  for (let i = 0; i < 20; i++) await ask(`+21892${String(1000000 + i)}`, '203.0.113.7');
+  await expectError('a 21st code from one address in an hour', 'try_later', ask('+218923000000', '203.0.113.7'));
+  await expectOk('from another address', ask('+218923000000', '203.0.113.8'));
+  h.setClock(NOW);
+}
+
+console.log('\n— request size');
+const huge = JSON.stringify({ phone: '+218919990005', padding: 'x'.repeat(2_000_000) });
+await expectError('a 2 MB body, even before sign-in', 'too_large', call('POST', '/auth/request-code', undefined, huge));
+
 const ahmad = await login('u_ahmad');
 const mariam = await login('u_mariam');
 const khaled = await login('u_khaled');
@@ -273,6 +312,7 @@ const jpeg = Buffer.concat([
 const b64 = (bytes: Buffer) => ({ jpeg_base64: bytes.toString('base64') });
 await expectError('a file that is not a JPEG', 'photo_invalid', call('PUT', '/me/photo', ahmad, b64(Buffer.from('<svg onload="alert(1)"/>'))));
 await expectError('a photo too big', 'photo_invalid', call('PUT', '/me/photo', ahmad, b64(Buffer.concat([jpeg, Buffer.alloc(PHOTO_MAX_BYTES)]))));
+await expectError('a body far bigger than any photo', 'too_large', call('PUT', '/me/photo', ahmad, { jpeg_base64: 'A'.repeat(2_000_000) }));
 await expectError('text that is not base64', 'photo_invalid', call('PUT', '/me/photo', ahmad, { jpeg_base64: 'not base64!' }));
 const { avatar_url } = await expectOk('a member adds a photo', call('PUT', '/me/photo', ahmad, b64(jpeg)));
 expectEqual('his profile points to it', (await meOf(ahmad)).user.avatar_url, avatar_url);
