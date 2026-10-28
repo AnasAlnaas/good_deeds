@@ -24,10 +24,7 @@ import type { LoginResponse, RequestCodeResponse, VerifyCodeBody } from '../../s
 import type { ReportStatus, WarningStatus } from '../../shared/types';
 import type { ErrorCode } from './strings';
 
-// Where the server is. In a production build with no VITE_API_URL, the same address
-// as the admin panel: the Worker serves both (server/wrangler.jsonc). In
-// development, the server on this computer (npm run dev in server/).
-export const API_URL = (import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000')).replace(/\/+$/, '');
+export const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000').replace(/\/+$/, '');
 
 export class ApiFailure extends Error {
   readonly code: ErrorCode;

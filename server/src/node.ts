@@ -6,7 +6,7 @@
 import { serve } from '@hono/node-server';
 import { getConnInfo } from '@hono/node-server/conninfo';
 
-import { createApp } from './app';
+import { createApp } from './create-app';
 import { openDatabase } from './db/client';
 import { isEmpty, seedDemo } from './db/seed';
 import { env, jwtSecret } from './env';

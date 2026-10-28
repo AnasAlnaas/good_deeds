@@ -1,5 +1,5 @@
 // The API as one Hono app. It does not know where it runs: src/node.ts serves
-// it on a VPS or a laptop, and the same app can be mounted on Vercel later.
+// it on a VPS or a laptop, index.ts on Vercel.
 // Tests build it with an in-memory database and a fixed clock.
 
 import { Hono } from 'hono';
@@ -44,9 +44,10 @@ export function createApp(deps: AppDeps) {
   app.route('/warnings', warningRoutes);
   app.route('/admin', adminRoutes);
 
-  // For an outside scheduler (e.g. Vercel Cron). On a VPS, src/node.ts runs the same job on a timer.
+  // For a scheduler: Vercel Cron calls it with GET, other schedulers may POST.
+  // On a VPS, src/node.ts runs the same job on a timer.
   if (deps.cronSecret) {
-    app.post('/internal/tick', bearerAuth({ token: deps.cronSecret }), async (c) =>
+    app.on(['GET', 'POST'], '/internal/tick', bearerAuth({ token: deps.cronSecret }), async (c) =>
       c.json({ closed: await closeDueAndNotify(deps) }),
     );
   }

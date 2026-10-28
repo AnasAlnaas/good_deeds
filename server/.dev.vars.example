@@ -1,3 +1,0 @@
-# For `npm run cf:dev` only (the Worker on this computer). Copy to .dev.vars.
-# The real secret goes in with `npx wrangler secret put JWT_SECRET`.
-JWT_SECRET=

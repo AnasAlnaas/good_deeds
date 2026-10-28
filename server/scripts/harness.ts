@@ -4,7 +4,7 @@
 // app), and helpers that print ✓ / ✗ lines.
 
 import { buildSeed } from '../../shared/demo-seed';
-import { createApp } from '../src/app';
+import { createApp } from '../src/create-app';
 import { openDatabase } from '../src/db/client';
 import { DEV_ADMIN, seedDemo } from '../src/db/seed';
 import type { PushMessage } from '../src/push';

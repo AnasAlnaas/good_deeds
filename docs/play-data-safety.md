@@ -138,7 +138,7 @@ All **No**. The image picker plugin has `microphonePermission: false` (`mobile/a
   provider (OSM's usage policy forbids heavy app use). Name that provider in
   the privacy policy.
 - **Server logs.** The API does not log requests or IP addresses itself
-  (`server/src/app.ts`). ⚠️ The host or a reverse proxy (nginx, Cloudflare…)
+  (`server/src/create-app.ts`). ⚠️ The host or a reverse proxy (nginx, Cloudflare…)
   may. Check, and say how long those logs are kept in the privacy policy.
 - **The demo mode** keeps made-up data on the phone (AsyncStorage,
   `mobile/src/state/app.tsx`) and sends nothing. It is not "collection".

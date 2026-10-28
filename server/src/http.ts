@@ -30,11 +30,6 @@ export interface AppDeps {
   corsOrigins: string[];
   /** The caller's network address, for the sign-in limits per address. Absent = those limits are off (tests). */
   clientIp?: (c: Context) => string | undefined;
-  /**
-   * Where those limits count codes per address. Pass one map shared by every
-   * request when `deps` is made per request (src/worker.ts); absent = one per `deps`.
-   */
-  codesByAddress?: Map<string, number[]>;
 }
 
 export type AppEnv = { Variables: { deps: AppDeps; user: User } };

@@ -209,7 +209,7 @@ API at the laptop's address, e.g. `http://192.168.1.20:3000`.
 
 How it fits together:
 
-- `src/app.ts` builds the API (Hono); `src/node.ts` serves it and runs the job that
+- `src/create-app.ts` builds the API (Hono); `src/node.ts` serves it and runs the job that
   closes attendance left open when an event ends.
 - `src/routes/` holds the endpoints. Each change runs in a transaction: read and lock
   the rows, let `shared/rules.ts` decide, write the result.
@@ -256,11 +256,10 @@ database, never into a `DATABASE_URL` one. On a VPS: set `NODE_ENV=production`,
 `npm run db:seed -- --reference` for branches and levels, then keep `npm start`
 running under a process manager. Behind a reverse proxy, also set `TRUST_PROXY=1`.
 
-**On Cloudflare (free plan, for testing):** the same API runs as a Worker
-(`src/worker.ts`, `wrangler.jsonc`) with the database at Neon through
-Hyperdrive, and the Worker also serves the admin panel at the same address.
-Steps: [docs/deploy-cloudflare.md](docs/deploy-cloudflare.md). `npm run cf:db`
-and `npm run cf:dev` run it on this computer first.
+**On Vercel (free Hobby plan, for testing):** the same API runs as a Vercel
+Function (`server/index.ts`, `server/vercel.json`) with the database at Neon,
+and the admin panel is a second Vercel project. Steps:
+[docs/deploy-vercel.md](docs/deploy-vercel.md).
 
 Limits: a request body may be at most about 460 KB (a profile photo with room to
 spare; `too_large` otherwise). Sign-in allows, per phone over 24 hours, 5 codes

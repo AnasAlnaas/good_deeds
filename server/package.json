@@ -14,22 +14,18 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
-    "make-admin": "tsx scripts/make-admin.ts",
-    "cf:db": "tsx scripts/local-postgres.ts",
-    "cf:dev": "npm --prefix ../admin run build && wrangler dev",
-    "cf:deploy": "npm --prefix ../admin run build && wrangler deploy"
+    "make-admin": "tsx scripts/make-admin.ts"
   },
   "devDependencies": {
-    "@electric-sql/pglite-socket": "^0.2.15",
     "@types/node": "^24.19.2",
     "@types/pg": "^8.23.1",
     "drizzle-kit": "^0.31.11",
-    "typescript": "^7.0.2",
-    "wrangler": "^4.154.0"
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.12",
     "@hono/node-server": "^2.1.5",
+    "@vercel/functions": "^3.10.4",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.13",
     "pg": "^8.23.1",
