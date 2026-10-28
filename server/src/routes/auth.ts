@@ -66,11 +66,12 @@ async function phoneDay(q: Database, phoneNumber: string, t: number) {
   return { codes: row.codes, failed: Number(row.failed) };
 }
 
-// Codes sent per network address, kept in this process's memory (one list per app).
+// Codes sent per network address, kept in this process's memory (one list per app,
+// or the one the Worker shares between its requests).
 const sentFrom = new WeakMap<AppDeps, Map<string, number[]>>();
 
 function recentFrom(deps: AppDeps, address: string, t: number) {
-  let all = sentFrom.get(deps);
+  let all = deps.codesByAddress ?? sentFrom.get(deps);
   if (!all) sentFrom.set(deps, (all = new Map()));
   if (all.size > 10_000) {
     for (const [key, times] of all) if (times.every((x) => t - x >= HOUR_MS)) all.delete(key);

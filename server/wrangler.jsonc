@@ -1,0 +1,41 @@
+// The API on Cloudflare Workers (free plan, for testing). Steps in docs/deploy-cloudflare.md.
+// Secrets are not here: `npx wrangler secret put JWT_SECRET` (and EXPO_ACCESS_TOKEN if used).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "good-deeds-api",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-10-01",
+  // `pg` and node:crypto need Node's APIs.
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  // The admin panel (admin/, built by `npm run cf:deploy`) is served from the same
+  // address: /api/* goes to the API, any other path to the panel's files.
+  "assets": {
+    "directory": "../admin/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      // From `npx wrangler hyperdrive create good-deeds-db --connection-string="postgres://…"`.
+      "id": "REPLACE_WITH_HYPERDRIVE_ID",
+      // `npm run cf:dev` connects to this database instead (docs/deploy-cloudflare.md).
+      "localConnectionString": "postgres://postgres:postgres@127.0.0.1:5433/postgres"
+    }
+  ],
+
+  // Every minute: close attendance left open when its event ended (src/worker.ts `scheduled`).
+  "triggers": { "crons": ["* * * * *"] },
+
+  "vars": {
+    "TIME_ZONE": "Africa/Tripoli",
+    // Testing only: sign-in codes appear in the Worker's logs until an SMS provider is added.
+    "LOGIN_CODE_DELIVERY": "console",
+    "PUSH_DELIVERY": "expo",
+    // Other web addresses allowed to call the API (the admin panel is on the same address, so it needs none). Empty = any.
+    "CORS_ORIGINS": ""
+  }
+}

@@ -256,6 +256,12 @@ database, never into a `DATABASE_URL` one. On a VPS: set `NODE_ENV=production`,
 `npm run db:seed -- --reference` for branches and levels, then keep `npm start`
 running under a process manager. Behind a reverse proxy, also set `TRUST_PROXY=1`.
 
+**On Cloudflare (free plan, for testing):** the same API runs as a Worker
+(`src/worker.ts`, `wrangler.jsonc`) with the database at Neon through
+Hyperdrive, and the Worker also serves the admin panel at the same address.
+Steps: [docs/deploy-cloudflare.md](docs/deploy-cloudflare.md). `npm run cf:db`
+and `npm run cf:dev` run it on this computer first.
+
 Limits: a request body may be at most about 460 KB (a profile photo with room to
 spare; `too_large` otherwise). Sign-in allows, per phone over 24 hours, 5 codes
 and 10 wrong codes, and per network address 20 codes an hour (`try_later`
