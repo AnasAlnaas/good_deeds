@@ -46,6 +46,7 @@
         }
       ],
       "expo-secure-store",
+      "./plugins/withFastGradle",
       [
         "expo-image-picker",
         {

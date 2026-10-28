@@ -55,6 +55,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "check:rules": "tsx scripts/check-rules.ts",
+    "apk": "node scripts/build-apk.mjs",
     "typecheck": "tsc --noEmit"
   },
   "private": true

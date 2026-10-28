@@ -137,12 +137,18 @@ Built on this PC, no Expo account needed (Android SDK + JDK 17+ required):
 
 ```bash
 cd mobile
-npx expo prebuild --platform android --clean
-cd android
-./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+npm run apk
 ```
 
-The APK is `mobile/android/app/build/outputs/apk/release/app-release.apk`. It is
+That builds for 64-bit phones (almost every phone in use); `npm run apk -- --all`
+also covers old 32-bit phones and takes longer. The Android emulator on a PC is
+x86_64 and cannot start the phone APK; `npm run apk -- --emulator` builds a copy
+for it. `android/` is made again only
+when `app.json`, the packages, `plugins/` or the brand pictures changed, so later
+builds reuse the last one and are much faster. The first build after a change
+like that is the slow one.
+
+The APK is copied to `mobile/builds/good-deeds-<version>-arm64.apk`. It is
 signed with the Android debug key: fine for testers, not for Google Play.
 `android/` is generated (and git-ignored); change native settings in `app.json`.
 `--clean` rebuilds it from `app.json` each time, so changes such as the package
