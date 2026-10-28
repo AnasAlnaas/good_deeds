@@ -2,61 +2,44 @@ import { useEffect, useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 
-import { leafletPage } from './leaflet';
+import { eventsPage, type MapPin } from './leaflet';
 
-export interface MapPin {
-  id: string;
-  lat: number;
-  lng: number;
-  color: string;
-  dim: boolean;
-  selected: boolean;
-}
+export type { MapPin } from './leaflet';
 
-interface Props {
+export interface OsmMapProps {
   center: { lat: number; lng: number; zoom: number };
   pins: MapPin[];
+  /** Room left at the bottom for what floats over the map. */
+  bottomInset: number;
+  /** Changing it moves the map back to `center`. */
+  recenter: number;
   onSelect(id: string): void;
   onClear(): void;
 }
 
+type Message = { type: 'ready' | 'select' | 'clear'; id?: string };
+
 // OpenStreetMap through Leaflet in a web view (leaflet.ts): no API key, same
 // look on Android and iOS.
-function html(center: Props['center']) {
-  return leafletPage(`
-  const post = (m) => window.ReactNativeWebView.postMessage(JSON.stringify(m));
-  const map = L.map('map', { zoomControl: false }).setView([${center.lat}, ${center.lng}], ${center.zoom});
-  tiles(map);
-  const layer = L.layerGroup().addTo(map);
-  map.on('click', () => post({ type: 'clear' }));
-  window.setPins = (pins) => {
-    layer.clearLayers();
-    for (const p of pins) {
-      const select = (e) => { L.DomEvent.stopPropagation(e); post({ type: 'select', id: p.id }); };
-      // Invisible 48px hit area: the smallest touch target in DESIGN.md.
-      L.circleMarker([p.lat, p.lng], { radius: 24, stroke: false, fillOpacity: 0 }).on('click', select).addTo(layer);
-      // Pin in the dominant pillar's colour with a white halo.
-      L.circleMarker([p.lat, p.lng], {
-        radius: p.selected ? 15 : 11, color: '#FFFFFF', weight: p.selected ? 3 : 2,
-        fillColor: p.color, fillOpacity: p.dim ? 0.4 : 1, opacity: p.dim ? 0.4 : 1,
-      }).on('click', select).addTo(layer);
-    }
-  };
-  post({ type: 'ready' });`);
-}
-
-export function OsmMap({ center, pins, onSelect, onClear }: Props) {
+export function OsmMap({ center, pins, bottomInset, recenter, onSelect, onClear }: OsmMapProps) {
   const ref = useRef<WebView>(null);
   const [loaded, setLoaded] = useState(false);
   // The page is built once; later changes go in as pins only, so the map keeps its position.
-  const [source] = useState(() => ({ html: html(center), baseUrl: 'https://github.com/AnasAlnaas/good_deeds' }));
+  const [source] = useState(() => ({
+    html: eventsPage(center, bottomInset, '(m) => window.ReactNativeWebView.postMessage(JSON.stringify(m))'),
+    baseUrl: 'https://github.com/AnasAlnaas/good_deeds',
+  }));
 
   useEffect(() => {
     if (loaded) ref.current?.injectJavaScript(`window.setPins(${JSON.stringify(pins)}); true;`);
   }, [loaded, pins]);
 
+  useEffect(() => {
+    if (loaded && recenter > 0) ref.current?.injectJavaScript('window.recenter(); true;');
+  }, [loaded, recenter]);
+
   const onMessage = (e: WebViewMessageEvent) => {
-    const msg = JSON.parse(e.nativeEvent.data) as { type: 'ready' | 'select' | 'clear'; id?: string };
+    const msg = JSON.parse(e.nativeEvent.data) as Message;
     if (msg.type === 'ready') setLoaded(true);
     else if (msg.type === 'select' && msg.id) onSelect(msg.id);
     else if (msg.type === 'clear') onClear();

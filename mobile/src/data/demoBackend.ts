@@ -3,9 +3,10 @@
 // builds the same responses the server builds (server/src/routes/).
 
 import type { AppEvent, Attendance, Db, Report, User, Warning } from '@/data/types';
-import { PILLARS, REPORT_CATEGORIES } from '@/data/types';
+import { REPORT_CATEGORIES } from '@/data/types';
 import { BASE_POINTS_BY_SUBTYPE } from '@/demo/placeholders';
 import * as server from '@/demo/server';
+import { classOf, eventSubtypes } from '../../../shared/classes';
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
 import type { AttendanceItem, EventDetail, EventProposal, EventSummary, MyReport, MyWarning, PublicUser, ReportFormMeta } from './api';
@@ -24,22 +25,13 @@ const publicUser = (viewer: User, u: User): PublicUser => ({
   gender: u.gender,
 });
 
-function branchesWithPillars(db: Db, branches: Db['branches']) {
-  return branches.map((b) => ({
-    ...b,
-    pillars: PILLARS.filter((p) => db.branch_pillars.some((bp) => bp.branch_id === b.id && bp.pillar === p)),
-  }));
-}
-
 function summary(db: Db, me: User, e: AppEvent, now: number): EventSummary {
   const { description, status, terms_locked_at, created_by, created_at, ...shown } = e;
-  const w = server.eventPillarWeights(db, e.id);
   return {
     ...shown,
     status: server.effectiveStatus(e, now),
     joined_count: server.joinedUsers(db, e.id).length,
-    pillar_weights: w,
-    dominant_pillar: rules.dominantPillar(w),
+    event_class: classOf(e.subtype),
     can_join_category: server.canUserJoinCategory(me, e),
     my_registration_status: server.registrationOf(db, e.id, me.id)?.status ?? null,
     i_organize: server.isOrganizer(db, e.id, me.id),
@@ -152,7 +144,7 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
           ...summary(db, me, e, now),
           description: e.description,
           terms_locked_at: e.terms_locked_at,
-          branches: branchesWithPillars(db, server.eventBranches(db, id)),
+          branches: server.eventBranches(db, id),
           terms: server.eventTerms(db, id),
           participants: server.joinedUsers(db, id).map((u) => publicUser(me, u)),
           my_registration: reg ?? null,
@@ -166,8 +158,8 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
         const { db, me } = read();
         if (!server.canCreateEvents(db, me)) throw new ApiError('cannot_create_events');
         return {
-          branches: branchesWithPillars(db, db.branches.filter((b) => b.is_active)),
-          subtypes: Object.entries(BASE_POINTS_BY_SUBTYPE).map(([id, base_points]) => ({ id, base_points })),
+          branches: db.branches.filter((b) => b.is_active),
+          subtypes: eventSubtypes(),
           publishes_directly: rules.proposalStatus(me) === 'published',
           waiting: server.waitingProposals(db, me.id),
           max_waiting: rules.MAX_WAITING_PROPOSALS,
@@ -328,12 +320,10 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
     me: () =>
       async(() => {
         const { db, me } = read();
-        const byPillar = server.pointsByPillar(db, me.id);
-        const total = rules.totalOf(byPillar);
+        const total = server.totalPoints(db, me.id);
         const level = server.levelFor(db, total);
         return {
           user: me,
-          points_by_pillar: byPillar,
           total_points: total,
           level,
           next_level: server.nextLevel(db, total) ?? null,

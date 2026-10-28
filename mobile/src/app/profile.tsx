@@ -3,10 +3,10 @@ import { ActivityIndicator, Alert, Platform, StyleSheet, View } from 'react-nati
 
 import { Avatar } from '@/components/Avatar';
 import { Button } from '@/components/Button';
-import { PillarBar } from '@/components/PillarBar';
+import { ProgressBar } from '@/components/ProgressBar';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
-import { Badge, Card, InfoRow, QueryState, SectionTitle } from '@/components/ui';
+import { Badge, Card, InfoRow, QueryState } from '@/components/ui';
 import { useMeSummary } from '@/data/queries';
 import { count, fmt, num } from '@/i18n/format';
 import * as dialog from '@/lib/dialog';
@@ -54,17 +54,17 @@ export default function ProfileScreen() {
     });
   if (!summary.data) {
     return (
-      <Screen title={s.tabs.profile}>
+      <Screen back title={s.tabs.profile}>
         <QueryState query={summary} />
       </Screen>
     );
   }
-  const { user: me, total_points: total, level, next_level: next, points_by_pillar } = summary.data;
+  const { user: me, total_points: total, level, next_level: next } = summary.data;
   const progress = next ? (total - level.min_points) / (next.min_points - level.min_points) : 1;
   const unlockLevel = summary.data.create_events_level;
 
   return (
-    <Screen title={s.tabs.profile}>
+    <Screen back title={s.tabs.profile}>
       <View style={styles.head}>
         <View>
           <Avatar user={me} size={72} />
@@ -92,38 +92,31 @@ export default function ProfileScreen() {
         {s.profile.photoWho}
       </Txt>
 
-      <Card>
+      <View style={styles.level}>
         <View style={styles.levelRow}>
-          <Txt variant="sectionTitle">{fmt(s.profile.level, { n: level.level })}</Txt>
-          <Txt variant="metric" tabular>
+          <Txt variant="sectionTitle" color={colors.accentInk}>
+            {fmt(s.profile.level, { n: level.level })}
+          </Txt>
+          <Txt variant="hero" color={colors.accentInk} tabular>
             {num(total)}
           </Txt>
         </View>
-        <View style={styles.track}>
-          <View style={[styles.progress, { width: `${Math.round(progress * 100)}%` }]} />
-        </View>
-        <Txt variant="caption" color={colors.inkMuted}>
+        <ProgressBar value={progress} height={10} onAccent />
+        <Txt variant="caption" color={colors.accentInk}>
           {next
             ? fmt(s.profile.toNext, { n: count(next.min_points - total, s.units.point), level: next.level })
             : s.profile.maxLevel}
         </Txt>
         {summary.data.can_create_events ? (
-          <Button variant="secondary" icon="add-circle-outline" label={s.events.propose} onPress={() => router.push('/event/new')} />
+          <Button icon="add-circle-outline" label={s.events.propose} onPress={() => router.push('/event/new')} />
         ) : (
           unlockLevel !== null && (
-            <Txt variant="caption" color={colors.inkMuted}>
+            <Txt variant="caption" color={colors.accentInk}>
               {fmt(s.profile.createUnlock, { level: unlockLevel })}
             </Txt>
           )
         )}
-      </Card>
-
-      <SectionTitle>{s.profile.distribution}</SectionTitle>
-      {total > 0 ? (
-        <PillarBar values={points_by_pillar} height={18} />
-      ) : (
-        <Txt color={colors.inkMuted}>{s.profile.noPoints}</Txt>
-      )}
+      </View>
 
       <Card>
         <InfoRow icon="call-outline" label={s.profile.phone} value={ltr(me.phone)} />
@@ -152,8 +145,6 @@ const styles = StyleSheet.create({
   photoActions: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginTop: -space.sm },
   flex: { flex: 1, gap: space.xs },
   badges: { flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' },
+  level: { backgroundColor: colors.accent, borderRadius: radius.card, padding: space.md + space.xs, gap: space.sm },
   levelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  // Level progress uses navy, never a pillar colour (DESIGN.md: pillar colours are for pillars only).
-  track: { height: 8, borderRadius: radius.pill, backgroundColor: colors.primarySoft, overflow: 'hidden' },
-  progress: { height: '100%', backgroundColor: colors.primary },
 });

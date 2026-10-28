@@ -1,5 +1,6 @@
 // What the two maps share (OsmMap: the events; LocationPicker: an event's
-// place): OpenStreetMap tiles drawn by Leaflet inside a web page.
+// place): OpenStreetMap tiles drawn by Leaflet inside a web page. Each runs in a
+// WebView on a phone and in an iframe in the web build (the .web.tsx files).
 
 import { StyleSheet } from 'react-native';
 
@@ -38,6 +39,7 @@ export function leafletPage(script: string, extraCss = '') {
   html, body, #map { margin: 0; height: 100%; background: ${colors.surfaceAlt}; }
   /* DESIGN.md: the map is context, the pins are content. */
   .leaflet-tile-pane { filter: saturate(0.4); }
+  .leaflet-control-attribution { font: 11px sans-serif; border-radius: 8px 0 0 0; }
   ${extraCss}
 </style></head><body><div id="map"></div><script>
   const tiles = (map) => {
@@ -69,4 +71,49 @@ export function pickerPage(center: { lat: number; lng: number }, post: string) {
   #pin::after { content: ''; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px;
                 margin: -2px 0 0 -2px; border-radius: 50%; background: #FFFFFF; }`,
   ).replace('<div id="map"></div>', '<div id="map"></div><div id="pin"></div>');
+}
+
+export interface MapPin {
+  id: string;
+  lat: number;
+  lng: number;
+  dim: boolean;
+  selected: boolean;
+}
+
+/**
+ * The events map: blue-grey streets, green pins. Only for seeing where events
+ * are; directions open the phone's maps app (src/lib/directions.ts).
+ * `bottomInset` keeps the OpenStreetMap credit above what floats at the bottom.
+ * The page answers `window.setPins(pins)` and `window.recenter()`.
+ */
+export function eventsPage(center: { lat: number; lng: number; zoom: number }, bottomInset: number, post: string) {
+  return leafletPage(
+    `
+  const post = ${post};
+  const map = L.map('map', { zoomControl: false }).setView([${center.lat}, ${center.lng}], ${center.zoom});
+  tiles(map);
+  const layer = L.layerGroup().addTo(map);
+  map.on('click', () => post({ type: 'clear' }));
+  window.recenter = () => map.flyTo([${center.lat}, ${center.lng}], ${center.zoom}, { duration: 0.6 });
+  window.setPins = (pins) => {
+    layer.clearLayers();
+    // The chosen pin last, so it sits on top.
+    for (const p of [...pins].sort((a, b) => a.selected - b.selected)) {
+      const select = (e) => { L.DomEvent.stopPropagation(e); post({ type: 'select', id: p.id }); };
+      // Invisible 48px hit area: the smallest touch target in DESIGN.md.
+      L.circleMarker([p.lat, p.lng], { radius: 24, stroke: false, fillOpacity: 0 }).on('click', select).addTo(layer);
+      L.circleMarker([p.lat, p.lng], {
+        radius: p.selected ? 14 : 10, color: p.selected ? '${colors.primary}' : '${colors.surface}', weight: p.selected ? 4 : 2,
+        fillColor: '${colors.accent}', fillOpacity: p.dim ? 0.45 : 1, opacity: p.dim ? 0.6 : 1,
+      }).on('click', select).addTo(layer);
+    }
+  };
+  post({ type: 'ready' });`,
+    `
+  /* The picture's blue-grey map: grey streets, tinted toward slate and darkened. */
+  .leaflet-tile-pane { filter: grayscale(1) brightness(0.5) contrast(1.55) sepia(0.5) hue-rotate(172deg) saturate(2); }
+  html, body, #map { background: ${colors.slate}; }
+  .leaflet-bottom { margin-bottom: ${bottomInset}px; }`,
+  );
 }

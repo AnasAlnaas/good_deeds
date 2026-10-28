@@ -7,7 +7,7 @@ import type { GenderCategory } from '../../../shared/types';
 import { api } from '../api';
 import { fill, fromLocalInput, toLocalInput } from '../format';
 import { t } from '../strings';
-import { Button, ErrorNote, Field, Notice, PageHeader, PillarDots, QueryState, useAction } from '../ui';
+import { Button, ErrorNote, Field, Notice, PageHeader, QueryState, useAction } from '../ui';
 
 const TRIPOLI = { lat: 32.8872, lng: 13.1913 };
 
@@ -196,7 +196,6 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
             <label key={b.id} className="check">
               <input type="checkbox" checked={v.branch_ids.includes(b.id)} onChange={() => set('branch_ids', toggle(v.branch_ids, b.id))} />
               <span>{b.name_ar}</span>
-              <PillarDots pillars={b.pillars} />
             </label>
           ))}
         </div>

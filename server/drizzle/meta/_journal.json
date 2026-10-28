@@ -43,6 +43,13 @@
       "when": 1792709622412,
       "tag": "0005_reports_and_warnings",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793182736273,
+      "tag": "0006_remove_pillars",
+      "breakpoints": true
     }
   ]
 }

@@ -22,7 +22,7 @@ import * as rules from '../../../shared/rules';
 import type { Attendance, User } from '../../../shared/types';
 import { requireUser } from '../auth';
 import type { Database } from '../db/client';
-import { allLevels, attendanceById, creditPoints, findEvent, findUser, ledgerOf, pillarWeights, publicUser, shownTo } from '../db/queries';
+import { allLevels, attendanceById, creditPoints, findEvent, findUser, ledgerOf, publicUser, shownTo } from '../db/queries';
 import { iso } from '../db/rows';
 import * as s from '../db/schema';
 import { type AppEnv, HttpError, readBody } from '../http';
@@ -65,7 +65,6 @@ async function toItems(db: Database, viewer: User, records: Attendance[]): Promi
     .select(publicUser)
     .from(s.users)
     .where(inArray(s.users.id, [...new Set(records.map((a) => a.recorded_by))]));
-  const weights = await pillarWeights(db, eventIds);
   const eventById = new Map(events.map((e) => [e.id, iso(e)]));
   const recorderById = new Map(recorders.map((u) => [u.id, u]));
   return records.map((a) => {
@@ -74,7 +73,7 @@ async function toItems(db: Database, viewer: User, records: Attendance[]): Promi
       attendance: a,
       event: { id: e.id, title: e.title, address_text: e.address_text, starts_at: e.starts_at, ends_at: e.ends_at, base_points: e.base_points },
       recorded_by: recorderById.has(a.recorded_by) ? shownTo(viewer, recorderById.get(a.recorded_by)!) : null,
-      points: rules.pointsForAttendance(e, a.hours, weights.get(e.id)!),
+      points: rules.pointsForAttendance(e, a.hours),
     };
   });
 }
@@ -85,8 +84,7 @@ export const meRoutes = new Hono<AppEnv>()
   .get('/', async (c) => {
     const { db } = c.var.deps;
     const user = c.var.user;
-    const byPillar = rules.pointsByPillar(await ledgerOf(db, user.id));
-    const total = rules.totalOf(byPillar);
+    const total = rules.totalPoints(await ledgerOf(db, user.id));
     const levels = await allLevels(db);
     const level = rules.levelFor(levels, total);
     const confirmed = await db
@@ -96,7 +94,6 @@ export const meRoutes = new Hono<AppEnv>()
     const [warnings] = await db.select({ n: count() }).from(s.warnings).where(eq(s.warnings.user_id, user.id));
     return c.json<MeResponse>({
       user,
-      points_by_pillar: byPillar,
       total_points: total,
       level,
       next_level: rules.nextLevel(levels, total) ?? null,
@@ -232,7 +229,7 @@ export const attendanceRoutes = new Hono<AppEnv>()
       const [recordEvent] = a ? await tx.select({ status: s.events.status }).from(s.events).where(eq(s.events.id, a.event_id)) : [];
       rules.assertCanConfirm(a, me.id, recordEvent);
       const event = await findEvent(tx, a.event_id);
-      const earned = rules.pointsForAttendance(event, a.hours, (await pillarWeights(tx, [event.id])).get(event.id)!);
+      const earned = rules.pointsForAttendance(event, a.hours);
       await tx
         .update(s.attendance)
         .set({ participant_status: 'confirmed', participant_acted_at: new Date(t) })

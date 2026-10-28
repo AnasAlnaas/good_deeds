@@ -1,15 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { UseQueryResult } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, TextInput, View, type TextInputProps, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View, type StyleProp, type TextInputProps, type ViewStyle } from 'react-native';
 
 import { errorCode } from '@/data/backend';
 import { useApp } from '@/state/app';
-import { colors, fonts, radius, space, touch } from '@/theme/tokens';
+import { classIcon, className, EVENT_CLASSES, type EventClassId } from '@/theme/classes';
+import { colors, fonts, radius, shadow, space, touch } from '@/theme/tokens';
 import { Button } from './Button';
 import { Txt } from './Txt';
 
-export function Card({ children, onPress, style }: { children: ReactNode; onPress?: () => void; style?: ViewStyle }) {
+export function Card({ children, onPress, style }: { children: ReactNode; onPress?: () => void; style?: StyleProp<ViewStyle> }) {
   if (!onPress) return <View style={[styles.card, style]}>{children}</View>;
   return (
     <Pressable
@@ -21,18 +22,100 @@ export function Card({ children, onPress, style }: { children: ReactNode; onPres
   );
 }
 
-export function Chip({ label, selected, onPress, dotColor }: { label: string; selected?: boolean; onPress?: () => void; dotColor?: string }) {
+/** A choice among a few. The chosen one is green. `floating` gives it a frosted background for over the map. */
+export function Chip({
+  label,
+  selected,
+  onPress,
+  icon,
+  floating,
+}: {
+  label: string;
+  selected?: boolean;
+  onPress?: () => void;
+  icon?: keyof typeof Ionicons.glyphMap;
+  floating?: boolean;
+}) {
+  const fg = selected ? colors.accentInk : colors.ink;
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ selected }}
       onPress={onPress}
       disabled={!onPress}
-      style={[styles.chip, selected && styles.chipSelected]}>
-      {dotColor && <View style={[styles.dot, { backgroundColor: dotColor }]} />}
-      <Txt variant="caption" color={selected ? colors.surface : colors.ink} style={styles.chipText}>
+      style={[styles.chip, floating && styles.chipFloating, selected && styles.chipSelected]}>
+      {icon && <Ionicons name={icon} size={16} color={fg} />}
+      <Txt variant="caption" color={fg} style={styles.chipText}>
         {label}
       </Txt>
+    </Pressable>
+  );
+}
+
+/** The general filter: all events, or one class of good works. */
+export function ClassFilter({
+  value,
+  onChange,
+  floating,
+}: {
+  value: EventClassId | null;
+  onChange(next: EventClassId | null): void;
+  floating?: boolean;
+}) {
+  const { s, lang } = useApp();
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={[styles.filter, floating && styles.filterFloating]}>
+      <Chip label={s.map.all} selected={!value} onPress={() => onChange(null)} floating={floating} />
+      {EVENT_CLASSES.map((c) => (
+        <Chip
+          key={c.id}
+          label={className(c.id, lang)}
+          icon={classIcon(c.id)}
+          selected={value === c.id}
+          onPress={() => onChange(c.id)}
+          floating={floating}
+        />
+      ))}
+    </ScrollView>
+  );
+}
+
+type IconButtonLook = 'light' | 'dark' | 'accent';
+const iconLook: Record<IconButtonLook, { bg: string; fg: string }> = {
+  light: { bg: colors.glass, fg: colors.primary },
+  dark: { bg: colors.primary, fg: colors.surface },
+  accent: { bg: colors.accent, fg: colors.accentInk },
+};
+
+/** A round button with only an icon; `label` is what a screen reader says. */
+export function IconButton({
+  icon,
+  label,
+  onPress,
+  look = 'light',
+  size = touch,
+  lifted,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress?: () => void;
+  look?: IconButtonLook;
+  size?: number;
+  lifted?: boolean;
+}) {
+  const l = iconLook[look];
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      hitSlop={size < touch ? (touch - size) / 2 : 0}
+      style={({ pressed }) => [
+        styles.iconButton,
+        { width: size, height: size, borderRadius: size / 2, backgroundColor: l.bg, opacity: pressed ? 0.75 : 1 },
+        lifted && shadow,
+      ]}>
+      <Ionicons name={icon} size={Math.round(size * 0.46)} color={l.fg} />
     </Pressable>
   );
 }
@@ -131,9 +214,7 @@ export const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: space.md,
+    padding: space.md + space.xs,
     gap: space.sm,
   },
   chip: {
@@ -143,13 +224,14 @@ export const styles = StyleSheet.create({
     gap: space.xs,
     paddingHorizontal: space.md,
     borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
     backgroundColor: colors.surface,
   },
-  chipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
+  chipFloating: { backgroundColor: colors.glass },
+  chipSelected: { backgroundColor: colors.accent },
   chipText: { lineHeight: 20 },
-  dot: { width: 10, height: 10, borderRadius: 5 },
+  filter: { gap: space.sm },
+  filterFloating: { paddingHorizontal: space.md },
+  iconButton: { alignItems: 'center', justifyContent: 'center' },
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -168,7 +250,7 @@ export const styles = StyleSheet.create({
     minHeight: touch,
     borderRadius: radius.input,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.surface,
     paddingHorizontal: space.md,
     fontFamily: fonts.plex400,
     fontSize: 16,

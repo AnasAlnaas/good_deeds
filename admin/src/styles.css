@@ -1,11 +1,8 @@
-/* Tokens from mobile/src/theme/tokens.ts (DESIGN.md). Pillar colours are for pillars only. */
+/* Tokens from mobile/src/theme/tokens.ts (DESIGN.md). */
 :root {
   --primary: #103048;
   --primary-pressed: #0a2134;
   --primary-soft: #e7ecf1;
-  --spiritual: #0e7c74;
-  --mental: #b45309;
-  --physical: #0a7a3e;
   --ink: #111827;
   --ink-muted: #4b5563;
   --surface: #ffffff;
@@ -179,11 +176,6 @@ tfoot td { font-weight: 600; background: var(--surface-alt); }
 td.num, th.num { text-align: end; font-variant-numeric: tabular-nums; }
 .empty { padding: 32px; text-align: center; color: var(--ink-muted); }
 
-.pillar-bar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: var(--border); min-width: 80px; }
-.pillar-spiritual, .dot-spiritual { background: var(--spiritual); }
-.pillar-mental, .dot-mental { background: var(--mental); }
-.pillar-physical, .dot-physical { background: var(--physical); }
-.pillar-dots { display: inline-flex; gap: 4px; vertical-align: middle; }
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }

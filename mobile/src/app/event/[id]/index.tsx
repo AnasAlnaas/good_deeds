@@ -3,17 +3,18 @@ import { StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/components/Avatar';
 import { Button } from '@/components/Button';
-import { PillarBar } from '@/components/PillarBar';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
 import { Badge, Card, InfoRow, QueryState, Row, SectionTitle } from '@/components/ui';
 import { useEvent, useMeSummary } from '@/data/queries';
 import { dayTimeRange, fmt } from '@/i18n/format';
 import * as dialog from '@/lib/dialog';
+import { openDirections } from '@/lib/directions';
 import { goBack } from '@/lib/goBack';
 import { useApp } from '@/state/app';
 import { useAction } from '@/state/useAction';
-import { colors, pillarColor, space } from '@/theme/tokens';
+import { classIcon, className } from '@/theme/classes';
+import { colors, space } from '@/theme/tokens';
 
 export default function EventDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -134,6 +135,7 @@ export default function EventDetail() {
           color={status === 'running' ? colors.danger : status === 'draft' ? colors.warning : status === 'rejected' ? colors.inkMuted : colors.primary}
           icon={status === 'running' ? 'radio-button-on' : status === 'draft' ? 'hourglass-outline' : undefined}
         />
+        <Badge label={className(event.event_class, lang)} color={colors.primary} icon={classIcon(event.event_class)} />
         <Badge label={s.category[event.gender_category]} color={colors.inkMuted} />
       </Row>
       <Txt variant="screenTitle">{event.title}</Txt>
@@ -147,20 +149,15 @@ export default function EventDetail() {
           label={s.event.participants}
           value={full ? s.event.full : fmt(s.event.seats, { joined: event.joined_count, capacity: event.capacity })}
         />
+        <Button variant="accent" icon="navigate" label={s.event.directions} onPress={() => openDirections(event)} />
       </Card>
 
-      <SectionTitle>{s.event.pillars}</SectionTitle>
-      <PillarBar values={event.pillar_weights} height={14} />
-
       <SectionTitle>{s.event.branches}</SectionTitle>
-      {event.branches.map((b) => (
-        <View key={b.id} style={styles.branch}>
-          <Txt style={styles.flex}>{lang === 'ar' ? b.name_ar : b.name_en}</Txt>
-          {b.pillars.map((p) => (
-            <Badge key={p} label={s.pillar[p]} color={pillarColor[p]} />
-          ))}
-        </View>
-      ))}
+      <Row>
+        {event.branches.map((b) => (
+          <Badge key={b.id} label={lang === 'ar' ? b.name_ar : b.name_en} color={colors.ink} />
+        ))}
+      </Row>
 
       <SectionTitle>{s.event.participants}</SectionTitle>
       {participants.length === 0 ? (
@@ -189,8 +186,6 @@ export default function EventDetail() {
 }
 
 const styles = StyleSheet.create({
-  branch: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  flex: { flex: 1 },
   people: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   person: { flexDirection: 'row', alignItems: 'center', gap: space.xs, paddingEnd: space.sm },
 });

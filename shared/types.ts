@@ -3,9 +3,6 @@
 // schema (server/src/db/schema.ts) has the same tables and column names.
 // Anything marked DEMO-ONLY is not in Data_Model.md and needs a decision.
 
-export type Pillar = 'spiritual' | 'mental' | 'physical';
-export const PILLARS: Pillar[] = ['spiritual', 'mental', 'physical'];
-
 export type Gender = 'male' | 'female';
 export type GenderCategory = 'male' | 'female' | 'mixed';
 export type Role = 'member' | 'supervisor' | 'admin';
@@ -33,11 +30,6 @@ export interface Branch {
   source_ref: string;
   is_agreed: boolean;
   is_active: boolean;
-}
-
-export interface BranchPillar {
-  branch_id: string;
-  pillar: Pillar;
 }
 
 // Not in Data_Model.md yet: `rejected` = a draft an admin turned down (or dropped)
@@ -127,7 +119,6 @@ export interface PointsLedgerEntry {
   id: string;
   user_id: string;
   event_id: string;
-  pillar: Pillar;
   points: number;
   reason: string;
   created_at: string;
@@ -197,7 +188,6 @@ export interface Db {
   version: number;
   users: User[];
   branches: Branch[];
-  branch_pillars: BranchPillar[];
   events: AppEvent[];
   event_organizers: EventOrganizer[];
   event_branches: EventBranch[];

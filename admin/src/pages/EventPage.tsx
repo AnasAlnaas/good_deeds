@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router';
 
+import { classOf, EVENT_CLASSES } from '../../../shared/classes';
 import { api } from '../api';
 import { fill, ltr, num, range, time } from '../format';
 import { t } from '../strings';
-import { Badge, Button, ErrorNote, Notice, PageHeader, PillarDots, QueryState, StatusBadge, useAction } from '../ui';
+import { Badge, Button, ErrorNote, Notice, PageHeader, QueryState, StatusBadge, useAction } from '../ui';
 
 export function EventPage() {
   const { id = '' } = useParams();
@@ -91,7 +92,8 @@ export function EventPage() {
             </dd>
             <dt>{t.event.type}</dt>
             <dd>
-              {t.subtype[e.subtype] ?? e.subtype} · {fill(t.event.points, { n: e.base_points })}
+              {EVENT_CLASSES.find((k) => k.id === classOf(e.subtype))?.name_ar} · {t.subtype[e.subtype] ?? e.subtype} ·{' '}
+              {fill(t.event.points, { n: e.base_points })}
             </dd>
             <dt>{t.events.seats}</dt>
             <dd className="tabular">{fill(t.event.seats, { joined: d.joined_count, capacity: e.capacity })}</dd>
@@ -107,7 +109,7 @@ export function EventPage() {
           <ul className="stack" style={{ margin: 0, paddingInlineStart: 18 }}>
             {d.branches.map((b) => (
               <li key={b.id}>
-                {b.name_ar} <PillarDots pillars={b.pillars} />
+                {b.name_ar}
               </li>
             ))}
           </ul>

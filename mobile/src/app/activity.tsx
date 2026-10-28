@@ -2,14 +2,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
-import { PillarBar } from '@/components/PillarBar';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
 import { Badge, Card, EmptyState, QueryState, SectionTitle } from '@/components/ui';
 import { useMeSummary, useMyAttendance } from '@/data/queries';
 import { count, day, num } from '@/i18n/format';
 import { useApp } from '@/state/app';
-import { colors, space } from '@/theme/tokens';
+import { colors, radius, space } from '@/theme/tokens';
 
 export default function ActivityScreen() {
   const { s, now, isRTL } = useApp();
@@ -18,7 +17,7 @@ export default function ActivityScreen() {
 
   if (!records.data || !summary.data) {
     return (
-      <Screen title={s.activity.title}>
+      <Screen back title={s.activity.title}>
         <QueryState query={records.data ? summary : records} />
       </Screen>
     );
@@ -31,16 +30,16 @@ export default function ActivityScreen() {
   const total = summary.data.total_points;
 
   return (
-    <Screen title={s.activity.title}>
+    <Screen back title={s.activity.title}>
       <View style={styles.metrics}>
-        <Card style={styles.metric}>
-          <Txt variant="metric" tabular>
+        <View style={styles.hero}>
+          <Txt variant="hero" color={colors.accentInk} tabular>
             {num(summary.data.confirmed_hours)}
           </Txt>
-          <Txt variant="caption" color={colors.inkMuted}>
+          <Txt variant="caption" color={colors.accentInk}>
             {s.activity.hours}
           </Txt>
-        </Card>
+        </View>
         <Card style={styles.metric}>
           <Txt variant="metric" tabular>
             {num(total)}
@@ -50,7 +49,6 @@ export default function ActivityScreen() {
           </Txt>
         </Card>
       </View>
-      {total > 0 && <PillarBar values={summary.data.points_by_pillar} height={16} />}
 
       {mine.length === 0 && <EmptyState icon="leaf-outline" text={s.activity.empty} />}
 
@@ -100,7 +98,15 @@ export default function ActivityScreen() {
 
 const styles = StyleSheet.create({
   metrics: { flexDirection: 'row', gap: space.md },
-  metric: { flex: 1 },
-  pending: { borderColor: colors.primary, borderWidth: 2 },
+  hero: {
+    flex: 1.4,
+    justifyContent: 'flex-end',
+    minHeight: 150,
+    padding: space.md + space.xs,
+    borderRadius: radius.card,
+    backgroundColor: colors.accent,
+  },
+  metric: { flex: 1, justifyContent: 'flex-end' },
+  pending: { borderColor: colors.accent, borderWidth: 3 },
   cta: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
 });

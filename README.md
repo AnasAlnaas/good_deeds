@@ -55,10 +55,18 @@ The app follows the planning notes (`DESIGN.md`, `Screens.md`, `Data_Model.md`,
 
 - **Arabic and English**, switchable in Settings; Arabic is right-to-left.
 - **Demo accounts** on the login screen: two participants (male/female) and two supervisors.
-- Map of Tripoli events, event list, event page with the three-pillar bar and branches of faith.
+- **One main screen, the map** of Tripoli events. Everything else opens from its
+  icons as a full screen that comes back to the map: your profile (your photo,
+  top), search, the event list, My activity, and proposing an event.
+- A **filter by class of good work** on the map and in the list: بيئة، صحة،
+  تعلُّم وتعليم، مجتمع. Each event type belongs to one class (`shared/classes.ts`,
+  where a class is added in one line).
+- The map only shows where events are. **Directions** open Google Maps (Apple
+  Maps on an iPhone) from the event page or the event's card on the map.
+- Event page with its class and branches of faith.
 - Join flow with the one-item-per-screen terms carousel; capacity and men/women/mixed rules.
 - Supervisor roster: record start and finish, with backdating limited to event start → now.
-- Participant confirms or disputes recorded hours; confirming credits points per pillar.
+- Participant confirms or disputes recorded hours; confirming credits points (one total per person).
 - My activity, profile with level, account deletion.
 - **Editing the profile** (Profile → "عدّل بياناتك"): the name and the city,
   checked as at sign-up. Gender stays as it was set at sign-up (it decides which

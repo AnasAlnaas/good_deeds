@@ -4,8 +4,7 @@
 // The screens never compute hours or points themselves.
 
 import type { EventProposal, ProfileEdit, ReportBody } from '@/data/api';
-import type { AppEvent, Attendance, Db, EventStatus, EventTerm, Pillar, Registration, Report, User, Warning } from '@/data/types';
-import { PILLARS } from '@/data/types';
+import type { AppEvent, Attendance, Db, EventStatus, EventTerm, Registration, Report, User, Warning } from '@/data/types';
 import { BASE_POINTS_BY_SUBTYPE } from './placeholders';
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
@@ -74,23 +73,8 @@ export function canUserJoinCategory(user: User, e: AppEvent) {
   return rules.canUserJoinCategory(user, e);
 }
 
-export function eventPillarWeights(db: Db, eventId: string): Record<Pillar, number> {
-  const links = eventBranches(db, eventId).flatMap((b) =>
-    db.branch_pillars.filter((x) => x.branch_id === b.id).map((x) => x.pillar),
-  );
-  return rules.pillarWeights(links);
-}
-
-export function dominantPillar(db: Db, eventId: string): Pillar {
-  return rules.dominantPillar(eventPillarWeights(db, eventId));
-}
-
-export function pointsByPillar(db: Db, userId: string): Record<Pillar, number> {
-  return rules.pointsByPillar(db.points_ledger.filter((l) => l.user_id === userId));
-}
-
 export function totalPoints(db: Db, userId: string) {
-  return rules.totalOf(pointsByPillar(db, userId));
+  return rules.totalPoints(db.points_ledger.filter((l) => l.user_id === userId));
 }
 
 export function levelFor(db: Db, points: number) {
@@ -117,8 +101,8 @@ export function confirmedHours(db: Db, userId: string) {
   );
 }
 
-export function pointsForAttendance(db: Db, a: Attendance): Record<Pillar, number> {
-  return rules.pointsForAttendance(getEvent(db, a.event_id), a.hours, eventPillarWeights(db, a.event_id));
+export function pointsForAttendance(db: Db, a: Attendance): number {
+  return rules.pointsForAttendance(getEvent(db, a.event_id), a.hours);
 }
 
 // ---------- scheduled job: auto-close open attendance at events.ends_at ----------
@@ -393,19 +377,16 @@ export function confirmAttendance(db: Db, userId: string, attendanceId: string, 
   const row = next.attendance.find((x) => x.id === attendanceId)!;
   row.participant_status = 'confirmed';
   row.participant_acted_at = new Date(now).toISOString();
-  const pts = pointsForAttendance(next, row);
-  for (const p of PILLARS) {
-    if (pts[p] > 0) {
-      next.points_ledger.push({
-        id: newId('pl'),
-        user_id: userId,
-        event_id: row.event_id,
-        pillar: p,
-        points: pts[p],
-        reason: 'attendance_confirmed',
-        created_at: new Date(now).toISOString(),
-      });
-    }
+  const points = pointsForAttendance(next, row);
+  if (points > 0) {
+    next.points_ledger.push({
+      id: newId('pl'),
+      user_id: userId,
+      event_id: row.event_id,
+      points,
+      reason: 'attendance_confirmed',
+      created_at: new Date(now).toISOString(),
+    });
   }
   const u = next.users.find((x) => x.id === userId)!;
   u.total_points = totalPoints(next, userId);

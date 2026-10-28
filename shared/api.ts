@@ -4,6 +4,7 @@
 // request, 401 not signed in, 403 not allowed, 404 not found, 409 a rule
 // refused it, 429 too soon, 503 not configured.
 
+import type { EventClassId } from './classes';
 import type { AdminErrorCode, ApiErrorCode } from './errors';
 import type {
   AppEvent,
@@ -14,7 +15,6 @@ import type {
   Gender,
   GenderCategory,
   Level,
-  Pillar,
   Registration,
   RegistrationStatus,
   Report,
@@ -78,8 +78,8 @@ export interface EventSummary
   /** Computed with the server's clock: published → running → finished. */
   status: EventStatus;
   joined_count: number;
-  pillar_weights: Record<Pillar, number>;
-  dominant_pillar: Pillar;
+  /** From the event's type (shared/classes.ts). */
+  event_class: EventClassId;
   /** The event's men / women / mixed rule allows the signed-in user. */
   can_join_category: boolean;
   my_registration_status: RegistrationStatus | null;
@@ -118,9 +118,9 @@ export interface ProposeEventResponse {
 
 /** GET /api/events/form: what the event form offers. */
 export interface EventFormMeta {
-  branches: (Branch & { pillars: Pillar[] })[];
-  /** Event types and their fixed points (shared/placeholders.ts until Points_And_Levels.md is in). */
-  subtypes: { id: string; base_points: number }[];
+  branches: Branch[];
+  /** Event types, their fixed points (shared/placeholders.ts until Points_And_Levels.md is in) and their class. */
+  subtypes: { id: string; base_points: number; event_class: EventClassId }[];
   /** false = the event waits for an admin's approval. */
   publishes_directly: boolean;
   /** The signed-in user's events waiting for approval, and how many may wait at once. */
@@ -132,7 +132,7 @@ export interface EventFormMeta {
 export interface EventDetail extends EventSummary {
   description: string;
   terms_locked_at: string | null;
-  branches: (Branch & { pillars: Pillar[] })[];
+  branches: Branch[];
   terms: EventTerm[];
   participants: PublicUser[];
   my_registration: Registration | null;
@@ -179,7 +179,7 @@ export interface AttendanceItem {
   event: Pick<AppEvent, 'id' | 'title' | 'address_text' | 'starts_at' | 'ends_at' | 'base_points'>;
   recorded_by: PublicUser | null;
   /** What these hours are worth by the points formula: earned once confirmed. */
-  points: Record<Pillar, number>;
+  points: number;
 }
 
 /** PUT /api/me/push-token (the phone signed in) and DELETE /api/me/push-token (it signed out). */
@@ -191,7 +191,7 @@ export interface PushTokenBody {
 /** POST /api/attendance/:id/confirm */
 export interface ConfirmResponse {
   attendance: Attendance;
-  points_earned: Record<Pillar, number>;
+  points_earned: number;
   total_points: number;
   level: Level;
 }
@@ -199,7 +199,6 @@ export interface ConfirmResponse {
 /** GET /api/me */
 export interface MeResponse {
   user: User;
-  points_by_pillar: Record<Pillar, number>;
   total_points: number;
   level: Level;
   next_level: Level | null;

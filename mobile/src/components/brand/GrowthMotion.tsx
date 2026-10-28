@@ -2,14 +2,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
-import { colors, pillarColor } from '@/theme/tokens';
+import { colors } from '@/theme/tokens';
 import { ease, lerp, seg, useTimeline, type MotionProps } from './motion';
 import { Plus } from './shapes';
 
-// Onboarding slide 3 — "Three pillars, built in you".
-// Spiritual, mental and physical columns rise one after another, each topped
-// with its symbol; afterwards "+" points keep floating up out of them.
-// The row follows RTL, so spiritual is always on the start side.
+// Onboarding slide 3 — "Your good works grow".
+// Three columns rise one after another like levels, each a deeper green and
+// topped with its symbol; afterwards "+" points keep floating up out of them.
+// The row follows RTL, so the smallest is always on the start side.
 
 const W = 240;
 const H = 200;
@@ -18,13 +18,13 @@ const IDLE = 2200;
 
 const COL_W = 40;
 const AREA = { x: 44, w: 152, base: 172, h: 150 };
-const PILLARS = [
-  { key: 'spiritual', icon: 'moon', height: 80, at: 150 },
-  { key: 'mental', icon: 'bulb', height: 104, at: 350 },
-  { key: 'physical', icon: 'barbell', height: 126, at: 550 },
+const COLUMNS = [
+  { key: 'seed', icon: 'leaf', color: colors.accent, height: 80, at: 150 },
+  { key: 'grow', icon: 'star', color: colors.brandGreen, height: 104, at: 350 },
+  { key: 'rise', icon: 'trophy', color: colors.primary, height: 126, at: 550 },
 ] as const;
 
-export function PillarsMotion({ size = 280, play = true, onDone }: MotionProps) {
+export function GrowthMotion({ size = 280, play = true, onDone }: MotionProps) {
   const u = size / W;
   const { t, idle, still } = useTimeline(play, DURATION, IDLE, onDone);
 
@@ -51,8 +51,8 @@ export function PillarsMotion({ size = 280, play = true, onDone }: MotionProps) 
           styles.row,
           { left: AREA.x * u, width: AREA.w * u, top: (AREA.base - AREA.h) * u, height: AREA.h * u },
         ]}>
-        {PILLARS.map((p, k) => (
-          <Column key={p.key} pillar={p} index={k} u={u} t={t} idle={idle} still={still} />
+        {COLUMNS.map((c, k) => (
+          <Column key={c.key} column={c} index={k} u={u} t={t} idle={idle} still={still} />
         ))}
       </View>
     </View>
@@ -60,7 +60,7 @@ export function PillarsMotion({ size = 280, play = true, onDone }: MotionProps) 
 }
 
 interface ColumnProps {
-  pillar: (typeof PILLARS)[number];
+  column: (typeof COLUMNS)[number];
   index: number;
   u: number;
   t: SharedValue<number>;
@@ -68,9 +68,8 @@ interface ColumnProps {
   still: boolean;
 }
 
-function Column({ pillar, index, u, t, idle, still }: ColumnProps) {
-  const { at, height } = pillar;
-  const color = pillarColor[pillar.key];
+function Column({ column, index, u, t, idle, still }: ColumnProps) {
+  const { at, height, color } = column;
 
   const grow = useAnimatedStyle(() => ({ height: Math.max(0, lerp(0, height * u, seg(t.get(), at, at + 700, ease.soft))) }));
   const icon = useAnimatedStyle(() => ({
@@ -100,7 +99,7 @@ function Column({ pillar, index, u, t, idle, still }: ColumnProps) {
           grow,
         ]}>
         <Animated.View style={icon}>
-          <Ionicons name={pillar.icon} size={20 * u} color={colors.surface} />
+          <Ionicons name={column.icon} size={20 * u} color={column.key === 'seed' ? colors.accentInk : colors.surface} />
         </Animated.View>
       </Animated.View>
     </View>

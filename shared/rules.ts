@@ -16,14 +16,12 @@ import type {
   EventStatus,
   EventTerm,
   Level,
-  Pillar,
   PointsLedgerEntry,
   Registration,
   ReportCategory,
   User,
   Warning,
 } from './types';
-import { PILLARS } from './types';
 
 export const MS_HOUR = 3_600_000;
 export const toMs = (iso: string) => new Date(iso).getTime();
@@ -323,46 +321,15 @@ export function assertCanDispute(a: Attendance | undefined, userId: string): ass
 
 // ---------- points and levels ----------
 
-// ⚠️ PLACEHOLDER: how an event's points split across pillars is not written
-// down yet. Here each branch→pillar link of the event's branches counts once,
-// then the weights are normalised to sum to 1.
-export function pillarWeights(links: Pillar[]): Record<Pillar, number> {
-  const w: Record<Pillar, number> = { spiritual: 0, mental: 0, physical: 0 };
-  for (const p of links) w[p] += 1;
-  const sum = PILLARS.reduce((s, p) => s + w[p], 0) || 1;
-  for (const p of PILLARS) w[p] = w[p] / sum;
-  return w;
-}
-
-export function dominantPillar(w: Record<Pillar, number>): Pillar {
-  return PILLARS.reduce((best, p) => (w[p] > w[best] ? p : best), 'physical' as Pillar);
-}
-
-/** The master file's formula: points = event points × attendance ratio, split by pillar weight. */
-export function pointsForAttendance(
-  event: Pick<AppEvent, 'starts_at' | 'ends_at' | 'base_points'>,
-  hours: number | null,
-  weights: Record<Pillar, number>,
-): Record<Pillar, number> {
+/** The master file's formula: points = event points × attendance ratio. */
+export function pointsForAttendance(event: Pick<AppEvent, 'starts_at' | 'ends_at' | 'base_points'>, hours: number | null): number {
   const duration = (toMs(event.ends_at) - toMs(event.starts_at)) / MS_HOUR;
   const ratio = Math.min(1, (hours ?? 0) / duration);
-  const total = event.base_points * ratio;
-  return {
-    spiritual: round2(total * weights.spiritual),
-    mental: round2(total * weights.mental),
-    physical: round2(total * weights.physical),
-  };
+  return round2(event.base_points * ratio);
 }
 
-export function pointsByPillar(ledger: Pick<PointsLedgerEntry, 'pillar' | 'points'>[]): Record<Pillar, number> {
-  const r: Record<Pillar, number> = { spiritual: 0, mental: 0, physical: 0 };
-  for (const l of ledger) r[l.pillar] += l.points;
-  for (const p of PILLARS) r[p] = round2(r[p]);
-  return r;
-}
-
-export function totalOf(byPillar: Record<Pillar, number>) {
-  return round2(byPillar.spiritual + byPillar.mental + byPillar.physical);
+export function totalPoints(ledger: Pick<PointsLedgerEntry, 'points'>[]): number {
+  return round2(ledger.reduce((sum, l) => sum + l.points, 0));
 }
 
 export function levelFor(levels: Level[], points: number): Level {

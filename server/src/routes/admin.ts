@@ -20,13 +20,14 @@ import type {
   HoursReportRow,
 } from '../../../shared/admin-api';
 import * as adminRules from '../../../shared/admin-rules';
+import { eventSubtypes } from '../../../shared/classes';
 import { AdminError, ApiError } from '../../../shared/errors';
 import { BASE_POINTS_BY_SUBTYPE } from '../../../shared/placeholders';
 import * as rules from '../../../shared/rules';
-import { type AppEvent, type Attendance, PILLARS, type Pillar } from '../../../shared/types';
+import { type AppEvent, type Attendance } from '../../../shared/types';
 import { requireUser } from '../auth';
 import type { Database } from '../db/client';
-import { activeBranches, creditPoints, joinedCounts, newId, pillarWeights, publicUser, warningById } from '../db/queries';
+import { activeBranches, creditPoints, joinedCounts, newId, publicUser, warningById } from '../db/queries';
 import { iso } from '../db/rows';
 import * as s from '../db/schema';
 import { type AppEnv, HttpError, readBody } from '../http';
@@ -193,7 +194,7 @@ export const adminRoutes = new Hono<AppEnv>()
       .orderBy(asc(s.users.full_name));
     return c.json<AdminMeta>({
       branches: await activeBranches(db),
-      subtypes: Object.entries(BASE_POINTS_BY_SUBTYPE).map(([id, base_points]) => ({ id, base_points })),
+      subtypes: eventSubtypes(),
       people,
     });
   })
@@ -305,9 +306,6 @@ export const adminRoutes = new Hono<AppEnv>()
       .from(s.event_branches)
       .innerJoin(s.branches, eq(s.branches.id, s.event_branches.branch_id))
       .where(eq(s.event_branches.event_id, id));
-    const links = branches.length
-      ? await db.select().from(s.branch_pillars).where(inArray(s.branch_pillars.branch_id, branches.map((b) => b.branch.id)))
-      : [];
     const terms = await db.select().from(s.event_terms).where(eq(s.event_terms.event_id, id)).orderBy(asc(s.event_terms.order_index));
     const registrations = await db
       .select({ registration: s.registrations, ...publicUser, phone: s.users.phone })
@@ -322,10 +320,7 @@ export const adminRoutes = new Hono<AppEnv>()
       joined_count: (await joinedCounts(db, [id])).get(id) ?? 0,
       organizers: (await organizersOf(db, [id])).get(id) ?? [],
       creator: (await creatorsOf(db, [event])).get(event.created_by) ?? null,
-      branches: branches.map(({ branch }) => ({
-        ...branch,
-        pillars: PILLARS.filter((p) => links.some((l) => l.branch_id === branch.id && l.pillar === p)),
-      })),
+      branches: branches.map(({ branch }) => branch),
       terms: terms.map(iso),
       participants: registrations.map((r) => {
         const a = attendance.find((x) => x.user_id === r.id);
@@ -504,7 +499,7 @@ export const adminRoutes = new Hono<AppEnv>()
       const event = await anyEvent(tx, a.event_id);
       const { hours } = adminRules.decideResolution({ attendance: a, event, decision: body.decision, hours: body.hours });
       await tx.update(s.attendance).set({ hours, participant_status: 'confirmed' }).where(eq(s.attendance.id, id));
-      const earned = rules.pointsForAttendance(event, hours, (await pillarWeights(tx, [event.id])).get(event.id)!);
+      const earned = rules.pointsForAttendance(event, hours);
       await creditPoints(tx, { userId: a.user_id, eventId: event.id, earned, reason: 'dispute_resolved', at: t });
       await audit(tx, {
         actorId: me.id,
@@ -662,16 +657,13 @@ export const adminRoutes = new Hono<AppEnv>()
         gender: user.gender,
         events: 0,
         hours: 0,
-        points: { spiritual: 0, mental: 0, physical: 0 } as Record<Pillar, number>,
         total_points: 0,
       };
       entry.events += 1;
       entry.hours = rules.round2(entry.hours + (a.hours ?? 0));
       // The points these hours earned: the ledger rows for this person at this event.
-      for (const l of ledger.filter((x) => x.user_id === user.id && x.event_id === a.event_id)) {
-        entry.points[l.pillar] = rules.round2(entry.points[l.pillar] + l.points);
-      }
-      entry.total_points = rules.totalOf(entry.points);
+      const earned = rules.totalPoints(ledger.filter((x) => x.user_id === user.id && x.event_id === a.event_id));
+      entry.total_points = rules.round2(entry.total_points + earned);
       report.set(user.id, entry);
     }
     return c.json<HoursReportRow[]>([...report.values()].sort((x, y) => y.hours - x.hours));

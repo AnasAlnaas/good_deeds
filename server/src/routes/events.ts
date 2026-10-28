@@ -19,10 +19,11 @@ import type {
   RosterResponse,
   WarningResponse,
 } from '../../../shared/api';
+import { classOf, eventSubtypes } from '../../../shared/classes';
 import { ApiError } from '../../../shared/errors';
 import { BASE_POINTS_BY_SUBTYPE } from '../../../shared/placeholders';
 import * as rules from '../../../shared/rules';
-import { type AppEvent, PILLARS, type Registration, type User } from '../../../shared/types';
+import { type AppEvent, type Registration, type User } from '../../../shared/types';
 import { requireUser } from '../auth';
 import type { Database } from '../db/client';
 import {
@@ -36,7 +37,6 @@ import {
   joinedUsers,
   levelOf,
   newId,
-  pillarWeights,
   registrationOf,
   shownTo,
   termsOf,
@@ -56,7 +56,6 @@ const warnBody = z.object({ reason: z.string().max(rules.REASON_MAX) });
 async function summarize(db: Database, me: User, events: AppEvent[], now: number): Promise<EventSummary[]> {
   const ids = events.map((e) => e.id);
   if (ids.length === 0) return [];
-  const weights = await pillarWeights(db, ids);
   const counts = await joinedCounts(db, ids);
   const mine = await db
     .select({ event_id: s.registrations.event_id, status: s.registrations.status })
@@ -71,13 +70,11 @@ async function summarize(db: Database, me: User, events: AppEvent[], now: number
 
   return events.map((e) => {
     const { description, status, terms_locked_at, created_by, created_at, ...shown } = e;
-    const w = weights.get(e.id)!;
     return {
       ...shown,
       status: rules.effectiveStatus(e, now),
       joined_count: counts.get(e.id) ?? 0,
-      pillar_weights: w,
-      dominant_pillar: rules.dominantPillar(w),
+      event_class: classOf(e.subtype),
       can_join_category: rules.canUserJoinCategory(me, e),
       my_registration_status: myStatus.get(e.id) ?? null,
       i_organize: iOrganize.has(e.id),
@@ -106,7 +103,7 @@ export const eventRoutes = new Hono<AppEnv>()
     if (!rules.canCreateEvents(me, await levelOf(db, me.id))) throw new ApiError('cannot_create_events');
     return c.json<EventFormMeta>({
       branches: await activeBranches(db),
-      subtypes: Object.entries(BASE_POINTS_BY_SUBTYPE).map(([id, base_points]) => ({ id, base_points })),
+      subtypes: eventSubtypes(),
       publishes_directly: rules.proposalStatus(me) === 'published',
       waiting: await waitingProposals(db, me.id),
       max_waiting: rules.MAX_WAITING_PROPOSALS,
@@ -238,21 +235,12 @@ export const eventRoutes = new Hono<AppEnv>()
       .from(s.event_branches)
       .innerJoin(s.branches, eq(s.branches.id, s.event_branches.branch_id))
       .where(eq(s.event_branches.event_id, id));
-    const links = branches.length
-      ? await db
-          .select()
-          .from(s.branch_pillars)
-          .where(inArray(s.branch_pillars.branch_id, branches.map((r) => r.branch.id)))
-      : [];
     const registration = await registrationOf(db, id, me.id);
     return c.json<EventDetail>({
       ...summary,
       description: event.description,
       terms_locked_at: event.terms_locked_at,
-      branches: branches.map((r) => ({
-        ...r.branch,
-        pillars: PILLARS.filter((p) => links.some((l) => l.branch_id === r.branch.id && l.pillar === p)),
-      })),
+      branches: branches.map((r) => r.branch),
       terms: await termsOf(db, id),
       participants: (await joinedUsers(db, id)).map((u) => shownTo(me, u)),
       my_registration: registration ?? null,

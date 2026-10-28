@@ -3,13 +3,13 @@
 // is `admin` may call them; anyone else gets 403 `forbidden`.
 
 import type { EventProposal, PublicUser } from './api';
+import type { EventClassId } from './classes';
 import type {
   AppEvent,
   Attendance,
   Branch,
   EventStatus,
   EventTerm,
-  Pillar,
   Registration,
   Report,
   Role,
@@ -36,9 +36,9 @@ export interface AdminOverview {
 
 /** GET /api/admin/meta: what the event form offers. */
 export interface AdminMeta {
-  branches: (Branch & { pillars: Pillar[] })[];
-  /** Event types and their fixed points (shared/placeholders.ts until Points_And_Levels.md is in). */
-  subtypes: { id: string; base_points: number }[];
+  branches: Branch[];
+  /** Event types, their fixed points (shared/placeholders.ts until Points_And_Levels.md is in) and their class. */
+  subtypes: { id: string; base_points: number; event_class: EventClassId }[];
   /** Everyone who can be named a supervisor of an event. */
   people: (PublicUser & Pick<User, 'role' | 'phone'>)[];
 }
@@ -99,7 +99,7 @@ export interface StatusChangeBody {
 
 /** GET /api/admin/events/:id */
 export interface AdminEventDetail extends AdminEventRow {
-  branches: (Branch & { pillars: Pillar[] })[];
+  branches: Branch[];
   terms: EventTerm[];
   participants: { user: PublicUser & Pick<User, 'phone'>; registration: Registration; attendance: Attendance | null }[];
 }
@@ -132,7 +132,6 @@ export interface HoursReportRow extends Pick<User, 'full_name' | 'phone' | 'city
   user_id: string;
   events: number;
   hours: number;
-  points: Record<Pillar, number>;
   total_points: number;
 }
 

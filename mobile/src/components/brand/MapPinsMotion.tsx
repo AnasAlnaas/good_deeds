@@ -3,12 +3,12 @@ import { StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 import Svg, { Circle, Path } from 'react-native-svg';
 
-import { colors, pillarColor } from '@/theme/tokens';
+import { colors } from '@/theme/tokens';
 import { PIN, PIN_BOX } from './geometry';
 import { ease, lerp, seg, useTimeline, wave, type MotionProps } from './motion';
 
 // Onboarding slide 1 — "Volunteer events near you".
-// A map card; event pins drop in one by one (one per pillar colour), the
+// A map card; event pins drop in one by one (all green, like the map), the
 // nearest one lifts, a route dashes in from "you", and a joined-chip pops
 // above it. Afterwards "you" pulses and the chosen pin bobs.
 
@@ -19,9 +19,9 @@ const IDLE = 2400;
 
 const YOU = { x: 104, y: 140 };
 const PINS = [
-  { x: 58, y: 86, color: pillarColor.spiritual, at: 200 },
-  { x: 196, y: 46, color: pillarColor.mental, at: 400 },
-  { x: 168, y: 136, color: pillarColor.physical, at: 600, chosen: true },
+  { x: 58, y: 86, color: colors.accent, at: 200 },
+  { x: 196, y: 46, color: colors.accent, at: 400 },
+  { x: 168, y: 136, color: colors.brandGreen, at: 600, chosen: true },
 ];
 const CHOSEN = PINS[2];
 
@@ -58,7 +58,7 @@ export function MapPinsMotion({ size = 280, play = true, onDone }: MotionProps) 
           <Path d={`M0 0H${W}V${H}H0Z`} fill={colors.primarySoft} />
           <Path
             d="M20 114C8 98 18 80 38 82C52 72 74 82 72 100C80 118 60 130 44 124C32 134 18 128 20 114Z"
-            fill={colors.physical}
+            fill={colors.brandGreen}
             opacity={0.1}
           />
           <Path d="M-10 52C60 70 120 30 250 60" stroke={colors.surface} strokeWidth={6} fill="none" />
@@ -107,7 +107,7 @@ export function MapPinsMotion({ size = 280, play = true, onDone }: MotionProps) 
       />
 
       {PINS.map((p) => (
-        <DropPin key={p.color} pin={p} u={u} t={t} idle={idle} />
+        <DropPin key={p.at} pin={p} u={u} t={t} idle={idle} />
       ))}
 
       <Animated.View

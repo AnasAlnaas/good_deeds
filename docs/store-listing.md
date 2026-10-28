@@ -30,11 +30,11 @@ action in the name or short description.
 في الميدان يسجّل المشرف بدء نشاطك وانتهاءه. ثم تؤكد أنت ما سُجّل لك، أو
 تعترض عليه فتنظر فيه إدارة الجمعية.
 
-تتحول ساعاتك المؤكدة إلى نقاط موزّعة على ثلاثة أعمدة: الروحي والعقلي
-والبدني. ومع النقاط يرتفع مستواك.
+تتحول ساعاتك المؤكدة إلى نقاط، ومع النقاط يرتفع مستواك.
 
 ما في التطبيق:
-• خريطة الفعاليات في طرابلس وقائمتها
+• خريطة الفعاليات في طرابلس وقائمتها، مع تصفية حسب نوع العمل: بيئة، صحة، تعلُّم وتعليم، مجتمع
+• الاتجاهات إلى مكان الفعالية في خرائط Google أو Apple
 • فعاليات للرجال، وللنساء، ومختلطة
 • شروط كل فعالية، واحداً بعد واحد، قبل الانضمام
 • حضور يسجّله المشرف، وساعات تؤكدها أنت
@@ -78,15 +78,16 @@ and join.
 At the event, a supervisor records when you start and finish. Then you
 confirm your hours, or dispute them and the association reviews it.
 
-Your confirmed hours become points across three pillars: spiritual, mental
-and physical. As your points grow, so does your level.
+Your confirmed hours become points. As your points grow, so does your level.
 
 What's inside:
-• A map and a list of events in Tripoli
+• A map and a list of events in Tripoli, filtered by kind of good work:
+  environment, health, learning, community
+• Directions to an event in Google Maps or Apple Maps
 • Events for men, for women, and mixed
 • Each event's terms, one at a time, before you join
 • Attendance recorded by the supervisor, hours confirmed by you
-• Your points, your level and your three pillars
+• Your hours, your points and your level
 • Propose a new event once you reach the level for it
 • Report any problem to the association; the person you name is not told
 • Notifications when hours wait for you, or an event's time or place changes
@@ -123,18 +124,18 @@ the app in Arabic (for the Arabic listing) and one in English.
 Use the demo accounts, so no real member's name or photo appears. ⚠️ Check
 each one: no real phone numbers, no photos of real people.
 
-1. **Map** (Map tab): Tripoli with several event pins.
+1. **Map** (the main screen): Tripoli with several event pins and one event's card.
    Caption: «فعاليات تطوعية قربك» / "Volunteer events near you".
-2. **Event page**: حملة نظافة السراج, with the three-pillar bar and branches
-   of faith. Caption: «اعرف الفعالية قبل أن تنضم» / "Know the event before you join".
+2. **Event page**: حملة نظافة السراج, with its class, branches of faith and
+   the directions button. Caption: «اعرف الفعالية قبل أن تنضم» / "Know the event before you join".
 3. **Terms carousel**: one term on screen, during joining.
    Caption: «شروط واضحة، واحداً بعد واحد» / "Clear terms, one at a time".
 4. **Supervisor roster** (as خالد منصور): people with start/finish recorded.
    Caption: «المشرف يسجّل حضورك» / "Your supervisor records your attendance".
 5. **Confirm hours** (as أحمد سالم, My activity → the recorded hours).
    Caption: «أكّد ساعاتك بنفسك» / "You confirm your own hours".
-6. **Profile**: level, points and the three pillars.
-   Caption: «ثلاثة أعمدة تُبنى فيك» / "Three pillars that grow with you".
+6. **Profile**: level and points on the green card.
+   Caption: «أعمالك الصالحة تكبر» / "Your good works grow".
 7. **Events list** with the men / women / mixed labels.
    Caption: «فعاليات للرجال وللنساء ومختلطة» / "Events for men, women, or mixed".
 8. *(optional)* **Report a problem** screen.

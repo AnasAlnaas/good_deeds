@@ -1,5 +1,5 @@
 // npm run db:seed              → empties the development (PGlite) database and loads the demo data
-// npm run db:seed -- --reference → adds only branches, pillars and levels (safe in production)
+// npm run db:seed -- --reference → adds only branches and levels (safe in production)
 // Stop `npm run dev` first when using PGlite: only one process may open its folder.
 
 import { openDatabase } from '../src/db/client';
@@ -17,7 +17,7 @@ const conn = openDatabase({ url: env.databaseUrl, dataDir: env.pgliteDir });
 await conn.migrate();
 if (referenceOnly) {
   await seedReference(conn.db);
-  console.log('Reference data loaded: branches, pillars, levels.');
+  console.log('Reference data loaded: branches, levels.');
 } else {
   await clearAll(conn.db);
   await seedDemo(conn.db, Date.now());

@@ -195,8 +195,8 @@ console.log('\n— confirming hours and points');
 await expectError("confirm someone else's hours", 'not_your_attendance', call('POST', `/attendance/${ended.id}/confirm`, mariam));
 const before = await totalOf(ahmad);
 const confirmed = (await call('POST', `/attendance/${ended.id}/confirm`, ahmad)).body;
-// Placeholder formula: base 30 × (0.5 h / 4 h event) = 3.75, all physical.
-expectEqual('fractional points credited', confirmed.points_earned, { spiritual: 0, mental: 0, physical: 3.75 });
+// Placeholder formula: base 30 × (0.5 h / 4 h event) = 3.75.
+expectEqual('fractional points credited', confirmed.points_earned, 3.75);
 expectEqual('total updated', Math.round(((await totalOf(ahmad)) - before) * 100) / 100, 3.75);
 await expectError('confirm twice', 'already_acted', call('POST', `/attendance/${ended.id}/confirm`, ahmad));
 const afterConfirm = await totalOf(ahmad);

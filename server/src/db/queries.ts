@@ -14,8 +14,6 @@ import {
   type Branch,
   type EventTerm,
   type Level,
-  PILLARS,
-  type Pillar,
   type Registration,
   type User,
   type Warning,
@@ -52,11 +50,9 @@ export async function findEventFor(q: Database, id: string, viewer: Pick<User, '
   return iso(row);
 }
 
-/** The branches of faith an event form offers, each with its pillars. */
-export async function activeBranches(q: Database): Promise<(Branch & { pillars: Pillar[] })[]> {
-  const branches = await q.select().from(s.branches).where(eq(s.branches.is_active, true)).orderBy(asc(s.branches.id));
-  const links = await q.select().from(s.branch_pillars);
-  return branches.map((b) => ({ ...b, pillars: PILLARS.filter((p) => links.some((l) => l.branch_id === b.id && l.pillar === p)) }));
+/** The branches of faith an event form offers. */
+export async function activeBranches(q: Database): Promise<Branch[]> {
+  return q.select().from(s.branches).where(eq(s.branches.is_active, true)).orderBy(asc(s.branches.id));
 }
 
 export async function findUser(q: Database, id: string): Promise<User | undefined> {
@@ -162,27 +158,13 @@ export async function joinedCounts(q: Database, eventIds: string[]): Promise<Map
   return new Map(rows.map((r) => [r.event_id, r.n]));
 }
 
-/** Each event's pillar weights, from the pillars of its branches of faith. */
-export async function pillarWeights(q: Database, eventIds: string[]): Promise<Map<string, Record<Pillar, number>>> {
-  const links = new Map<string, Pillar[]>(eventIds.map((id) => [id, []]));
-  if (eventIds.length > 0) {
-    const rows = await q
-      .select({ event_id: s.event_branches.event_id, pillar: s.branch_pillars.pillar })
-      .from(s.event_branches)
-      .innerJoin(s.branch_pillars, eq(s.branch_pillars.branch_id, s.event_branches.branch_id))
-      .where(inArray(s.event_branches.event_id, eventIds));
-    for (const r of rows) links.get(r.event_id)!.push(r.pillar);
-  }
-  return new Map([...links].map(([id, pillars]) => [id, rules.pillarWeights(pillars)]));
-}
-
 export async function allLevels(q: Database): Promise<Level[]> {
   return q.select().from(s.levels).orderBy(asc(s.levels.min_points));
 }
 
 /** A person's level by the points in their ledger (as GET /api/me shows it). */
 export async function levelOf(q: Database, userId: string): Promise<Level> {
-  return rules.levelFor(await allLevels(q), rules.totalOf(rules.pointsByPillar(await ledgerOf(q, userId))));
+  return rules.levelFor(await allLevels(q), rules.totalPoints(await ledgerOf(q, userId)));
 }
 
 /** How many of a person's events still wait for an admin. */
@@ -195,31 +177,31 @@ export async function waitingProposals(q: Database, userId: string) {
 }
 
 /**
- * Adds points for confirmed hours to the ledger (one row per pillar, only ever
- * added) and updates the person's total and level.
+ * Adds points for confirmed hours to the ledger (only ever added) and updates
+ * the person's total and level.
  */
 export async function creditPoints(
   q: Database,
-  args: { userId: string; eventId: string; earned: Record<Pillar, number>; reason: string; at: Date },
+  args: { userId: string; eventId: string; earned: number; reason: string; at: Date },
 ): Promise<{ total: number; level: Level }> {
-  const rows = PILLARS.filter((p) => args.earned[p] > 0).map((p) => ({
-    id: newId(),
-    user_id: args.userId,
-    event_id: args.eventId,
-    pillar: p,
-    points: args.earned[p],
-    reason: args.reason,
-    created_at: args.at,
-  }));
-  if (rows.length) await q.insert(s.points_ledger).values(rows);
-  const total = rules.totalOf(rules.pointsByPillar(await ledgerOf(q, args.userId)));
+  if (args.earned > 0) {
+    await q.insert(s.points_ledger).values({
+      id: newId(),
+      user_id: args.userId,
+      event_id: args.eventId,
+      points: args.earned,
+      reason: args.reason,
+      created_at: args.at,
+    });
+  }
+  const total = rules.totalPoints(await ledgerOf(q, args.userId));
   const level = rules.levelFor(await allLevels(q), total);
   await q.update(s.users).set({ total_points: total, level: level.level }).where(eq(s.users.id, args.userId));
   return { total, level };
 }
 
 export async function ledgerOf(q: Database, userId: string) {
-  return q.select({ pillar: s.points_ledger.pillar, points: s.points_ledger.points }).from(s.points_ledger).where(eq(s.points_ledger.user_id, userId));
+  return q.select({ points: s.points_ledger.points }).from(s.points_ledger).where(eq(s.points_ledger.user_id, userId));
 }
 
 /**

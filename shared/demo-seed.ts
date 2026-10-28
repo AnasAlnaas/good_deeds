@@ -5,12 +5,13 @@
 // Build_Plan.md asks for 15 REAL past events of the association before phase 2;
 // these are realistic stand-ins until those are collected.
 
-import type { AppEvent, Attendance, Branch, BranchPillar, Db, GenderCategory, Pillar, User } from './types';
+import type { AppEvent, Attendance, Branch, Db, GenderCategory, User } from './types';
 import { BASE_POINTS_BY_SUBTYPE, LEVELS } from './placeholders';
-import { pillarWeights, pointsForAttendance } from './rules';
+import { pointsForAttendance } from './rules';
 
 // 2: reports and warnings were added; phones holding version 1 start again from this seed.
-export const SEED_VERSION = 2;
+// 3: the pillars were removed (one points total per person).
+export const SEED_VERSION = 3;
 
 export const DEMO_ACCOUNTS = {
   participant: 'u_ahmad',
@@ -19,30 +20,29 @@ export const DEMO_ACCOUNTS = {
   supervisorFemale: 'u_fatima',
 } as const;
 
-// Shuab_AlIman_Research.md — the 20-item starter list. Pillars follow the
-// "dominant nature" rule in that file; items the file does not map explicitly
-// are a first guess. The list itself still needs review by scholars (is_agreed: false).
-const BRANCHES: [string, string, string, Pillar[]][] = [
-  ['b01', 'إماطة الأذى عن الطريق', 'Removing harm from the road', ['physical']],
-  ['b02', 'إطعام الطعام', 'Feeding people', ['physical', 'spiritual']],
-  ['b03', 'تعليم العلم', 'Teaching knowledge', ['mental']],
-  ['b04', 'طلب العلم', 'Seeking knowledge', ['mental']],
-  ['b05', 'تعليم القرآن وتحفيظه', "Teaching the Qur'an", ['spiritual']],
-  ['b06', 'عيادة المريض', 'Visiting the sick', ['physical', 'spiritual']],
-  ['b07', 'صلة الرحم', 'Keeping family ties', ['spiritual']],
-  ['b08', 'برّ الوالدين', 'Kindness to parents', ['spiritual']],
-  ['b09', 'الإحسان إلى الجار', 'Kindness to neighbours', ['spiritual']],
-  ['b10', 'كفالة اليتيم', 'Caring for orphans', ['physical', 'spiritual']],
-  ['b11', 'إغاثة الملهوف', 'Helping those in distress', ['physical']],
-  ['b12', 'الصدقة', 'Charity', ['spiritual']],
-  ['b13', 'الإصلاح بين الناس', 'Reconciling people', ['mental', 'spiritual']],
-  ['b14', 'الأمر بالمعروف والنهي عن المنكر', 'Enjoining good', ['mental', 'spiritual']],
-  ['b15', 'سقي الماء', 'Giving water', ['physical']],
-  ['b16', 'غرس الشجر والزرع', 'Planting trees', ['physical']],
-  ['b17', 'الرفق بالحيوان', 'Kindness to animals', ['physical']],
-  ['b18', 'تشييع الجنائز وتجهيز الميت', 'Funeral rites', ['spiritual']],
-  ['b19', 'إكرام الضيف', 'Honouring guests', ['spiritual']],
-  ['b20', 'إفشاء السلام والتعاون على البر', 'Cooperating in good', ['spiritual']],
+// Shuab_AlIman_Research.md — the 20-item starter list. The list itself still
+// needs review by scholars (is_agreed: false).
+const BRANCHES: [string, string, string][] = [
+  ['b01', 'إماطة الأذى عن الطريق', 'Removing harm from the road'],
+  ['b02', 'إطعام الطعام', 'Feeding people'],
+  ['b03', 'تعليم العلم', 'Teaching knowledge'],
+  ['b04', 'طلب العلم', 'Seeking knowledge'],
+  ['b05', 'تعليم القرآن وتحفيظه', "Teaching the Qur'an"],
+  ['b06', 'عيادة المريض', 'Visiting the sick'],
+  ['b07', 'صلة الرحم', 'Keeping family ties'],
+  ['b08', 'برّ الوالدين', 'Kindness to parents'],
+  ['b09', 'الإحسان إلى الجار', 'Kindness to neighbours'],
+  ['b10', 'كفالة اليتيم', 'Caring for orphans'],
+  ['b11', 'إغاثة الملهوف', 'Helping those in distress'],
+  ['b12', 'الصدقة', 'Charity'],
+  ['b13', 'الإصلاح بين الناس', 'Reconciling people'],
+  ['b14', 'الأمر بالمعروف والنهي عن المنكر', 'Enjoining good'],
+  ['b15', 'سقي الماء', 'Giving water'],
+  ['b16', 'غرس الشجر والزرع', 'Planting trees'],
+  ['b17', 'الرفق بالحيوان', 'Kindness to animals'],
+  ['b18', 'تشييع الجنائز وتجهيز الميت', 'Funeral rites'],
+  ['b19', 'إكرام الضيف', 'Honouring guests'],
+  ['b20', 'إفشاء السلام والتعاون على البر', 'Cooperating in good'],
 ];
 
 const PEOPLE: [string, string, 'male' | 'female', User['role']][] = [
@@ -239,13 +239,11 @@ export function buildSeed(nowMs: number): Db {
   const branches: Branch[] = BRANCHES.map(([id, ar, en]) => ({
     id, name_ar: ar, name_en: en, source_ref: 'Shuab_AlIman_Research.md', is_agreed: false, is_active: true,
   }));
-  const branch_pillars: BranchPillar[] = BRANCHES.flatMap(([id, , , ps]) => ps.map((p) => ({ branch_id: id, pillar: p })));
 
   const db: Db = {
     version: SEED_VERSION,
     users,
     branches,
-    branch_pillars,
     events: [],
     event_organizers: [],
     event_branches: [],
@@ -337,16 +335,12 @@ export function buildSeed(nowMs: number): Db {
   // Ledger rows for already-confirmed attendance, computed with the same formula as the server.
   for (const a of db.attendance.filter((x) => x.participant_status === 'confirmed')) {
     const e = db.events.find((x) => x.id === a.event_id)!;
-    const branchIds = db.event_branches.filter((x) => x.event_id === e.id).map((x) => x.branch_id);
-    const links = db.branch_pillars.filter((x) => branchIds.includes(x.branch_id)).map((x) => x.pillar);
-    const pts = pointsForAttendance(e, a.hours, pillarWeights(links));
-    for (const p of ['spiritual', 'mental', 'physical'] as Pillar[]) {
-      if (pts[p] > 0) {
-        db.points_ledger.push({
-          id: `pl_${a.id}_${p}`, user_id: a.user_id, event_id: a.event_id, pillar: p,
-          points: pts[p], reason: 'attendance_confirmed', created_at: a.participant_acted_at ?? iso(now),
-        });
-      }
+    const points = pointsForAttendance(e, a.hours);
+    if (points > 0) {
+      db.points_ledger.push({
+        id: `pl_${a.id}`, user_id: a.user_id, event_id: a.event_id,
+        points, reason: 'attendance_confirmed', created_at: a.participant_acted_at ?? iso(now),
+      });
     }
   }
   for (const u of db.users) {

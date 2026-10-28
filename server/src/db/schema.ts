@@ -20,7 +20,6 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 
-export const pillar = pgEnum('pillar', ['spiritual', 'mental', 'physical']);
 export const gender = pgEnum('gender', ['male', 'female']);
 export const genderCategory = pgEnum('gender_category', ['male', 'female', 'mixed']);
 export const role = pgEnum('role', ['member', 'supervisor', 'admin']);
@@ -84,15 +83,6 @@ export const branches = pgTable('branches', {
   is_agreed: boolean('is_agreed').notNull().default(false),
   is_active: boolean('is_active').notNull().default(true),
 });
-
-export const branch_pillars = pgTable(
-  'branch_pillars',
-  {
-    branch_id: text('branch_id').notNull().references(() => branches.id),
-    pillar: pillar('pillar').notNull(),
-  },
-  (t) => [primaryKey({ columns: [t.branch_id, t.pillar] })],
-);
 
 export const events = pgTable(
   'events',
@@ -210,7 +200,6 @@ export const points_ledger = pgTable(
     id: text('id').primaryKey(),
     user_id: text('user_id').notNull().references(() => users.id),
     event_id: text('event_id').notNull().references(() => events.id),
-    pillar: pillar('pillar').notNull(),
     points: points('points').notNull(),
     reason: text('reason').notNull(),
     created_at: at('created_at').notNull().defaultNow(),

@@ -6,7 +6,6 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Button } from '@/components/Button';
 import { DateTimeField } from '@/components/DateTimeField';
 import { type LatLng, LocationPicker } from '@/components/LocationPicker';
-import { PillarBar } from '@/components/PillarBar';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
 import { Card, Chip, Field, Row, SectionTitle } from '@/components/ui';
@@ -16,8 +15,8 @@ import { count, fmt } from '@/i18n/format';
 import { goBack } from '@/lib/goBack';
 import { useApp, useMe } from '@/state/app';
 import { useAction } from '@/state/useAction';
+import { classIcon, className, EVENT_CLASSES } from '@/theme/classes';
 import { colors, space, touch } from '@/theme/tokens';
-import * as rules from '../../../shared/rules';
 
 // The event form of the app: proposing an event (level 5, or a supervisor),
 // and the proposer editing it while it waits for an admin (`editing`). An
@@ -82,7 +81,6 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
   const ends = new Date(v.ends_at);
   const seats = Number(capacity);
   const points = meta.subtypes.find((x) => x.id === v.subtype)?.base_points ?? 0;
-  const chosen = meta.branches.filter((b) => v.branch_ids.includes(b.id));
   const categories: GenderCategory[] = ['mixed', me.gender];
   const today = new Date(now);
   today.setHours(0, 0, 0, 0);
@@ -189,11 +187,25 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
       <Txt variant="caption" color={colors.inkMuted}>
         {s.newEvent.type}
       </Txt>
-      <Row>
-        {meta.subtypes.map((x) => (
-          <Chip key={x.id} label={s.subtype[x.id] ?? x.id} selected={v.subtype === x.id} onPress={() => set('subtype', x.id)} />
-        ))}
-      </Row>
+      {EVENT_CLASSES.map((c) => {
+        const types = meta.subtypes.filter((x) => x.event_class === c.id);
+        if (types.length === 0) return null;
+        return (
+          <View key={c.id} style={styles.typeGroup}>
+            <View style={styles.typeClass}>
+              <Ionicons name={classIcon(c.id)} size={16} color={colors.inkMuted} />
+              <Txt variant="caption" color={colors.inkMuted}>
+                {className(c.id, lang)}
+              </Txt>
+            </View>
+            <Row>
+              {types.map((x) => (
+                <Chip key={x.id} label={s.subtype[x.id] ?? x.id} selected={v.subtype === x.id} onPress={() => set('subtype', x.id)} />
+              ))}
+            </Row>
+          </View>
+        );
+      })}
       <Txt variant="caption" color={colors.inkMuted}>
         {fmt(s.newEvent.typePoints, { points: count(points, s.units.point) })}
       </Txt>
@@ -212,7 +224,6 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
           />
         ))}
       </Row>
-      {chosen.length > 0 && <PillarBar values={rules.pillarWeights(chosen.flatMap((b) => b.pillars))} height={14} />}
 
       <SectionTitle>{s.newEvent.place}</SectionTitle>
       <Field label={s.newEvent.address} placeholder={s.newEvent.addressPlaceholder} value={v.address_text} maxLength={200} onChangeText={(t) => set('address_text', t)} />
@@ -267,6 +278,8 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
 }
 
 const styles = StyleSheet.create({
+  typeGroup: { gap: space.xs },
+  typeClass: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
   intro: { backgroundColor: colors.primarySoft, borderColor: colors.primarySoft },
   warning: { borderColor: colors.warning },
   term: { flexDirection: 'row', alignItems: 'flex-end', gap: space.sm },

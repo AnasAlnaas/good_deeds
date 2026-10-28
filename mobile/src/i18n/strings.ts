@@ -24,7 +24,7 @@ const ar = {
     slides: [
       { title: 'فعاليات تطوعية قربك', body: 'تُنشر فعاليات الجمعية على الخريطة، فتختار ما يناسبك وتنضم إليه.' },
       { title: 'حضورك يسجّله المشرف', body: 'في الميدان يُقرّ المشرف باسمك ويسجّل بدء نشاطك وانتهاءه، ثم تؤكد أنت ما سُجّل لك.' },
-      { title: 'ثلاثة أعمدة تُبنى فيك', body: 'تتراكم ساعاتك ونقاطك موزّعة على الروحي والعقلي والبدني.' },
+      { title: 'أعمالك الصالحة تكبر', body: 'كل ساعة تؤكدها تمنحك نقاطاً ترفع مستواك.' },
     ],
   },
 
@@ -66,7 +66,6 @@ const ar = {
 
   tabs: { map: 'الخريطة', events: 'الفعاليات', activity: 'نشاطي', profile: 'حسابي' },
 
-  pillar: { spiritual: 'روحي', mental: 'عقلي', physical: 'بدني' },
   category: { male: 'للذكور', female: 'للإناث', mixed: 'مختلط' },
   // In the app a draft is always an event someone proposed, seen only by them.
   status: { draft: 'بانتظار الاعتماد', published: 'قادمة', running: 'جارية الآن', finished: 'انتهت', cancelled: 'أُلغيت', rejected: 'لم تُعتمد' },
@@ -90,19 +89,30 @@ const ar = {
   } as Record<string, string>,
 
   map: {
+    title: 'الأعمال الصالحة',
     all: 'الكل',
-    empty: 'لا فعاليات قريبة الآن. وسّع نطاق البحث أو تابع لتصلك الجديدة.',
+    empty: 'لا فعاليات قريبة الآن. تابع لتصلك الجديدة.',
+    emptyClass: 'لا فعاليات من هذا النوع الآن.',
     open: 'افتح الفعالية',
+    search: 'ابحث عن فعالية',
+    recenter: 'أعد الخريطة إلى المدينة',
+    events: 'قائمة الفعاليات',
+    activity: 'نشاطي',
+    propose: 'اقترح فعالية',
+    profile: 'حسابك',
+    nav: 'أقسام التطبيق',
   },
 
   events: {
     upcoming: 'القادمة',
     mine: 'فعالياتي',
     emptyUpcoming: 'لا فعاليات قادمة الآن. تابع لتصلك الجديدة.',
-    emptyMine: 'لم تنضم إلى أي فعالية بعد. الفعاليات القادمة في التبويب المجاور.',
+    emptyMine: 'لم تنضم إلى أي فعالية بعد. تجد الفعاليات في «القادمة».',
     organize: 'أنظّمها',
     emptyOrganize: 'لا فعاليات تشرف عليها بعد.',
     propose: 'اقترح فعالية',
+    search: 'ابحث بالاسم أو المكان',
+    noMatch: 'لا فعالية تطابق بحثك.',
   },
 
   newEvent: {
@@ -119,7 +129,7 @@ const ar = {
     type: 'نوع الفعالية',
     typePoints: 'تُمنح {points} لمن يحضرها كاملة.',
     branches: 'شعب الإيمان',
-    branchesHint: 'اختر شعبة واحدة على الأقل. تحدد الشعب كيف تتوزع النقاط على الأعمدة الثلاثة.',
+    branchesHint: 'اختر شعبة واحدة على الأقل.',
     place: 'المكان',
     address: 'العنوان',
     addressPlaceholder: 'مثلاً: حديقة الحي، الأندلس',
@@ -155,7 +165,7 @@ const ar = {
     seats: '{joined} من {capacity} مشاركاً',
     full: 'اكتمل العدد',
     branches: 'شعب الإيمان',
-    pillars: 'ما تبنيه فيك هذه الفعالية',
+    directions: 'الاتجاهات إلى المكان',
     participants: 'المشاركون',
     noParticipants: 'لم ينضم أحد بعد.',
     join: 'انضم إلى الفعالية',
@@ -252,7 +262,7 @@ const ar = {
     points: 'مجموع النقاط',
     pending: 'بانتظار تأكيدك',
     history: 'سجل الفعاليات',
-    empty: 'لم تشارك بعد. الفعاليات القريبة في تبويب الخريطة.',
+    empty: 'لم تشارك بعد. الفعاليات القريبة على الخريطة.',
     confirmedLabel: 'مؤكدة',
     disputedLabel: 'معترض عليها',
     pendingLabel: 'بانتظار تأكيدك',
@@ -264,8 +274,6 @@ const ar = {
     level: 'المستوى {n}',
     toNext: 'بقي {n} للمستوى {level}',
     maxLevel: 'بلغت أعلى مستوى',
-    distribution: 'توزيع نقاطك على الأعمدة',
-    noPoints: 'يمتلئ هذا الشريط حين تؤكد ساعاتك في أول فعالية.',
     member: 'عضو في الجمعية',
     phone: 'الهاتف',
     city: 'المدينة',
@@ -473,7 +481,7 @@ const en: Strings = {
     slides: [
       { title: 'Volunteer events near you', body: "The association's events appear on a map. Pick one that suits you and join it." },
       { title: 'A supervisor records your attendance', body: 'On site, the supervisor confirms your name and records when you start and finish. Then you confirm what was recorded.' },
-      { title: 'Three pillars, built in you', body: 'Your hours and points add up across the spiritual, mental and physical pillars.' },
+      { title: 'Your good works grow', body: 'Every hour you confirm earns points that raise your level.' },
     ],
   },
 
@@ -515,7 +523,6 @@ const en: Strings = {
 
   tabs: { map: 'Map', events: 'Events', activity: 'My activity', profile: 'Profile' },
 
-  pillar: { spiritual: 'Spiritual', mental: 'Mental', physical: 'Physical' },
   category: { male: 'Men only', female: 'Women only', mixed: 'Mixed' },
   status: { draft: 'Waiting for approval', published: 'Upcoming', running: 'Happening now', finished: 'Finished', cancelled: 'Cancelled', rejected: 'Not approved' },
   role: { member: 'Member', supervisor: 'Supervisor', admin: 'Admin' },
@@ -537,19 +544,30 @@ const en: Strings = {
   },
 
   map: {
+    title: 'Good Deeds',
     all: 'All',
-    empty: 'No events nearby right now. Widen the search, or check back for new ones.',
+    empty: 'No events nearby right now. Check back for new ones.',
+    emptyClass: 'No events of this kind right now.',
     open: 'Open event',
+    search: 'Search events',
+    recenter: 'Back to the city',
+    events: 'Event list',
+    activity: 'My activity',
+    propose: 'Propose an event',
+    profile: 'Your profile',
+    nav: 'App sections',
   },
 
   events: {
     upcoming: 'Upcoming',
     mine: 'My events',
     emptyUpcoming: 'No upcoming events right now. Check back for new ones.',
-    emptyMine: "You haven't joined any events yet. Upcoming events are in the next tab.",
+    emptyMine: "You haven't joined any events yet. You'll find events under Upcoming.",
     organize: 'Organising',
     emptyOrganize: "You don't supervise any events yet.",
     propose: 'Propose an event',
+    search: 'Search by name or place',
+    noMatch: 'No event matches your search.',
   },
 
   newEvent: {
@@ -566,7 +584,7 @@ const en: Strings = {
     type: 'Event type',
     typePoints: 'Attending all of it earns {points}.',
     branches: 'Branches of faith',
-    branchesHint: 'Choose at least one. The branches decide how the points split across the three pillars.',
+    branchesHint: 'Choose at least one.',
     place: 'Place',
     address: 'Address',
     addressPlaceholder: 'For example: Neighbourhood park, Al-Andalus',
@@ -602,7 +620,7 @@ const en: Strings = {
     seats: '{joined} of {capacity} participants',
     full: 'Full',
     branches: 'Branches of faith',
-    pillars: 'What this event builds in you',
+    directions: 'Directions to the place',
     participants: 'Participants',
     noParticipants: 'Nobody has joined yet.',
     join: 'Join the event',
@@ -699,7 +717,7 @@ const en: Strings = {
     points: 'Total points',
     pending: 'Waiting for you to confirm',
     history: 'Event history',
-    empty: "You haven't taken part yet. Nearby events are on the Map tab.",
+    empty: "You haven't taken part yet. Nearby events are on the map.",
     confirmedLabel: 'Confirmed',
     disputedLabel: 'Disputed',
     pendingLabel: 'Waiting for you',
@@ -711,8 +729,6 @@ const en: Strings = {
     level: 'Level {n}',
     toNext: '{n} to level {level}',
     maxLevel: "You've reached the top level",
-    distribution: 'Your points across the pillars',
-    noPoints: 'This bar fills once you confirm your hours at your first event.',
     member: 'Association member',
     phone: 'Phone',
     city: 'City',
