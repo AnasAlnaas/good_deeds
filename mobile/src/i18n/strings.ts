@@ -380,6 +380,8 @@ const ar = {
     deleteBody: 'تُحذف بياناتك الشخصية، ويُلغى انضمامك إلى كل الفعاليات. لا يمكن التراجع.',
     deleted: 'حُذف حسابك',
     signOut: 'اخرج من حسابك',
+    privacy: 'الخصوصية',
+    privacyPolicy: 'اقرأ سياسة الخصوصية',
   },
 
   units: {
@@ -821,6 +823,8 @@ const en: Strings = {
     deleteBody: "Your personal data is deleted and you leave every event. This can't be undone.",
     deleted: 'Your account was deleted',
     signOut: 'Sign out',
+    privacy: 'Privacy',
+    privacyPolicy: 'Read the privacy policy',
   },
 
   units: {

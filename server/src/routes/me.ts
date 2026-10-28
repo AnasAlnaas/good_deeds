@@ -3,7 +3,7 @@
 // and deleting the account.
 // Also other people's photos, for those allowed to see them.
 
-import { and, count, desc, eq, inArray } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
@@ -34,6 +34,28 @@ const pushTokenBody = z.object({ token: pushToken, lang: z.enum(['ar', 'en']) })
 const photoBody = z.object({ jpeg_base64: z.string().min(1) });
 // Anything else (gender, phone, role) is refused, not quietly dropped; the lengths are the rule's (rules.cleanProfileEdit).
 const profileBody = z.object({ full_name: z.string().optional(), city: z.string().optional() }).strict();
+
+/** The admin log keeps decisions, not people: a deleted account's name becomes rules.DELETED_NAME there too. */
+async function eraseNameFromAdminLog(tx: Database, userId: string) {
+  const a = s.admin_actions;
+  const rename = (key: string) => sql`jsonb_set(${a.details}, ${`{${key}}`}::text[], ${JSON.stringify(rules.DELETED_NAME)}::jsonb)`;
+  // Role changes and removed photos name their target; a warning decision names the member.
+  await tx
+    .update(a)
+    .set({ details: rename('name') })
+    .where(
+      or(
+        and(inArray(a.action, ['change_role', 'remove_photo']), eq(a.target_id, userId)),
+        and(inArray(a.action, ['uphold_warning', 'withdraw_warning']), sql`${a.details}->>'user_id' = ${userId}`),
+      ),
+    );
+  // A handled report names whoever sent it.
+  const sent = tx.select({ id: s.reports.id }).from(s.reports).where(eq(s.reports.reporter_id, userId));
+  await tx
+    .update(a)
+    .set({ details: rename('reporter') })
+    .where(and(eq(a.action, 'handle_report'), inArray(a.target_id, sent)));
+}
 
 async function toItems(db: Database, viewer: User, records: Attendance[]): Promise<AttendanceItem[]> {
   if (records.length === 0) return [];
@@ -147,15 +169,22 @@ export const meRoutes = new Hono<AppEnv>()
     return c.body(null, 204);
   })
 
-  // App Store and Google Play require account deletion. Soft delete, as in Data_Model.md.
+  // App Store and Google Play require account deletion. The row stays (Data_Model.md:
+  // users.deleted_at) so hours and points still add up, but everything personal is
+  // erased (rules.erasedProfile), here and in the names the admin log copied.
   .delete('/', async (c) => {
     const { db, now } = c.var.deps;
-    const userId = c.var.user.id;
+    const { id: userId, phone } = c.var.user;
     await db.transaction(async (tx) => {
-      await tx.update(s.users).set({ deleted_at: new Date(now()), avatar_url: null }).where(eq(s.users.id, userId));
+      await tx
+        .update(s.users)
+        .set({ ...rules.erasedProfile(), deleted_at: new Date(now()) })
+        .where(eq(s.users.id, userId));
       await tx.update(s.registrations).set({ status: 'cancelled' }).where(eq(s.registrations.user_id, userId));
       await tx.delete(s.push_tokens).where(eq(s.push_tokens.user_id, userId));
       await tx.delete(s.user_photos).where(eq(s.user_photos.user_id, userId));
+      await tx.delete(s.login_codes).where(eq(s.login_codes.phone, phone));
+      await eraseNameFromAdminLog(tx, userId);
     });
     return c.body(null, 204);
   })

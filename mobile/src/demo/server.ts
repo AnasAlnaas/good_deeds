@@ -536,10 +536,7 @@ export function appealWarning(db: Db, userId: string, warningId: string, reason:
 export function deleteAccount(db: Db, userId: string, now: number): Db {
   const next = clone(db);
   const u = next.users.find((x) => x.id === userId);
-  if (u) {
-    u.deleted_at = new Date(now).toISOString();
-    u.avatar_url = null;
-  }
+  if (u) Object.assign(u, rules.erasedProfile(), { deleted_at: new Date(now).toISOString() });
   for (const r of next.registrations) if (r.user_id === userId) r.status = 'cancelled';
   return next;
 }

@@ -18,3 +18,6 @@ function resolveApiUrl(): string | null {
 }
 
 export const API_URL = resolveApiUrl();
+
+// The published privacy policy (docs/privacy-*.md). Settings links to it; unset = no link.
+export const PRIVACY_URL = process.env.EXPO_PUBLIC_PRIVACY_URL || null;

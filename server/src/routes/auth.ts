@@ -4,7 +4,7 @@
 
 import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
 
-import { and, count, desc, eq, gt, isNull, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gt, isNull, lt, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
@@ -20,6 +20,8 @@ import { type AppDeps, type AppEnv, HttpError, readBody } from '../http';
 const CODE_MINUTES = 10;
 const MAX_ATTEMPTS = 5;
 const RESEND_AFTER_MS = 60_000;
+/** Spent and expired codes are deleted this long after they expire. */
+const KEEP_EXPIRED_MS = 24 * 60 * 60_000;
 
 // A code is one of a million. Without a daily cap, a new code every minute with
 // 5 tries each is 7,200 guesses a day, enough to take over a phone's account in
@@ -98,6 +100,8 @@ export const authRoutes = new Hono<AppEnv>()
     const address = c.var.deps.clientIp?.(c);
     const fromHere = address ? recentFrom(c.var.deps, address, t) : [];
     if (fromHere.length >= MAX_CODES_PER_ADDRESS) throw new HttpError(429, 'try_later');
+    // Old codes are of no use: clear them now and then, without a separate job.
+    await db.delete(s.login_codes).where(lt(s.login_codes.expires_at, new Date(t - KEEP_EXPIRED_MS)));
     const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
     await db.insert(s.login_codes).values({
       id: newId(),
