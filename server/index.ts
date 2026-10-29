@@ -9,11 +9,12 @@
 // Migrations do not run here: `npm run db:migrate` runs them from a laptop.
 
 import { attachDatabasePool, waitUntil } from '@vercel/functions';
+import type { Hono } from 'hono';
 
 import { createApp } from './src/create-app';
 import { openDatabase } from './src/db/client';
 import { env, jwtSecret } from './src/env';
-import type { AppDeps } from './src/http';
+import type { AppDeps, AppEnv } from './src/http';
 import { consolePush, expoPush } from './src/push';
 
 const conn = openDatabase({ url: env.databaseUrl, dataDir: env.pgliteDir });
@@ -34,4 +35,6 @@ const deps: AppDeps = {
   clientIp: (c) => (env.trustProxy ? c.req.header('X-Forwarded-For')?.split(',')[0]?.trim() : undefined),
 };
 
-export default createApp(deps);
+// Vercel accepts an entry file only if it imports Hono itself.
+const app: Hono<AppEnv> = createApp(deps);
+export default app;
