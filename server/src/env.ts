@@ -13,7 +13,17 @@ try {
 
 const isProduction = process.env.NODE_ENV === 'production';
 
-const databaseUrl = process.env.DATABASE_URL || undefined;
+/**
+ * An environment variable, or the same name with a prefix: Vercel's storage
+ * connection can add one (e.g. `good_DATABASE_URL`) when a database is connected.
+ */
+export function prefixedEnv(name: string): string | undefined {
+  if (process.env[name]) return process.env[name];
+  const key = Object.keys(process.env).find((k) => k.endsWith(`_${name}`) && process.env[k]);
+  return key ? process.env[key] : undefined;
+}
+
+const databaseUrl = prefixedEnv('DATABASE_URL');
 if (isProduction && !databaseUrl) throw new Error('DATABASE_URL must be set in production.');
 
 const pgliteDir = process.env.PGLITE_DIR ?? '.data/pglite';

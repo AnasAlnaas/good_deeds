@@ -6,9 +6,9 @@
 
 import { openDatabase } from '../src/db/client';
 import { seedReference } from '../src/db/seed';
-import { env } from '../src/env';
+import { env, prefixedEnv } from '../src/env';
 
-const url = process.env.DATABASE_URL_UNPOOLED || env.databaseUrl;
+const url = prefixedEnv('DATABASE_URL_UNPOOLED') || env.databaseUrl;
 if (!url) {
   console.error('Set DATABASE_URL (the hosted database, e.g. Neon) in server/.env first.');
   process.exit(1);
