@@ -2,18 +2,18 @@
 // builds these and the admin panel (admin/) reads them. Only users whose role
 // is `admin` may call them; anyone else gets 403 `forbidden`.
 
-import type { PublicUser } from './api';
+import type { EventProposal, PublicUser } from './api';
+import type { EventClassId } from './classes';
 import type {
   AppEvent,
   Attendance,
-  Branch,
   EventStatus,
   EventTerm,
-  GenderCategory,
-  Pillar,
   Registration,
+  Report,
   Role,
   User,
+  Warning,
 } from './types';
 
 /** GET /api/admin/overview */
@@ -25,13 +25,18 @@ export interface AdminOverview {
   /** Hours recorded and waiting for the participant to confirm them. */
   awaiting_confirmation: number;
   open_disputes: number;
+  /** Drafts made in the app by members and supervisors, waiting for an admin to publish or turn them down. */
+  proposals_waiting: number;
+  /** Members' reports nobody has handled yet. */
+  open_reports: number;
+  /** Warnings the member appealed, waiting for an admin to keep or withdraw them. */
+  appealed_warnings: number;
 }
 
 /** GET /api/admin/meta: what the event form offers. */
 export interface AdminMeta {
-  branches: (Branch & { pillars: Pillar[] })[];
-  /** Event types and their fixed points (shared/placeholders.ts until Points_And_Levels.md is in). */
-  subtypes: { id: string; base_points: number }[];
+  /** Event types, their fixed points (shared/placeholders.ts until Points_And_Levels.md is in) and their class. */
+  subtypes: { id: string; base_points: number; event_class: EventClassId }[];
   /** Everyone who can be named a supervisor of an event. */
   people: (PublicUser & Pick<User, 'role' | 'phone'>)[];
 }
@@ -40,8 +45,13 @@ export interface AdminMeta {
 
 /** GET /api/admin/users?q= (name or phone) */
 export interface AdminUserRow
-  extends Pick<User, 'id' | 'full_name' | 'phone' | 'gender' | 'city' | 'role' | 'level' | 'total_points' | 'is_association_member' | 'created_at'> {
+  extends Pick<
+    User,
+    'id' | 'full_name' | 'phone' | 'gender' | 'city' | 'avatar_url' | 'role' | 'level' | 'total_points' | 'is_association_member' | 'created_at'
+  > {
   confirmed_hours: number;
+  /** Warnings that stand (not withdrawn). */
+  warnings: number;
 }
 
 /** PATCH /api/admin/users/:id */
@@ -49,24 +59,15 @@ export interface ChangeRoleBody {
   role: Role;
 }
 
+// DELETE /api/admin/users/:id/photo: removes an unsuitable profile photo. The
+// member is told, and may add another. Admins see every photo (GET /api/users/:id/photo).
+
+
 // ---------- events ----------
 
 /** POST /api/admin/events and PUT /api/admin/events/:id. Times are ISO. Points come from the subtype. */
-export interface EventInput {
-  title: string;
-  description: string;
-  subtype: string;
-  address_text: string;
-  lat: number;
-  lng: number;
-  starts_at: string;
-  ends_at: string;
-  capacity: number;
-  gender_category: GenderCategory;
-  branch_ids: string[];
+export interface EventInput extends EventProposal {
   organizer_ids: string[];
-  /** In order; each one is accepted on its own screen. */
-  terms: string[];
 }
 
 export interface CreateEventBody extends EventInput {
@@ -81,11 +82,21 @@ export interface AdminEventRow {
   effective_status: EventStatus;
   joined_count: number;
   organizers: PublicUser[];
+  /** Who made it. Not an admin = proposed in the app. */
+  creator: (PublicUser & Pick<User, 'role' | 'level'>) | null;
+}
+
+/**
+ * POST /api/admin/events/:id/publish | cancel | reject
+ * publish: a draft goes live · reject: a draft is turned down (never shown in the app) ·
+ * cancel: a published event is called off. `note` (reject only) is sent to whoever proposed it.
+ */
+export interface StatusChangeBody {
+  note?: string;
 }
 
 /** GET /api/admin/events/:id */
 export interface AdminEventDetail extends AdminEventRow {
-  branches: (Branch & { pillars: Pillar[] })[];
   terms: EventTerm[];
   participants: { user: PublicUser & Pick<User, 'phone'>; registration: Registration; attendance: Attendance | null }[];
 }
@@ -118,13 +129,65 @@ export interface HoursReportRow extends Pick<User, 'full_name' | 'phone' | 'city
   user_id: string;
   events: number;
   hours: number;
-  points: Record<Pillar, number>;
   total_points: number;
+}
+
+// ---------- members' reports (بلاغ) ----------
+// (Not to be confused with the hours report above: /reports/hours.)
+
+/** GET /api/admin/reports?status=open|handled (latest first; every report without `status`) */
+export interface AdminReportRow {
+  report: Report;
+  reporter: (PublicUser & Pick<User, 'phone'>) | null;
+  event: Pick<AppEvent, 'id' | 'title' | 'starts_at'> | null;
+  /** The person named. They are never told. */
+  subject: (PublicUser & Pick<User, 'phone'>) | null;
+  handled_by: PublicUser | null;
+}
+
+/**
+ * POST /api/admin/reports/:id/handle. The note (required) says what was done; it
+ * goes to the audit log. The reporter is told their report was looked at, not the note.
+ */
+export interface HandleReportBody {
+  note: string;
+}
+
+// ---------- warnings (إنذار) ----------
+
+/** GET /api/admin/warnings?status=&user_id= (latest first) */
+export interface AdminWarningRow {
+  warning: Warning;
+  user: PublicUser & Pick<User, 'phone'>;
+  event: Pick<AppEvent, 'id' | 'title' | 'starts_at'>;
+  issued_by: PublicUser | null;
+  decided_by: PublicUser | null;
+}
+
+/**
+ * POST /api/admin/warnings/:id/decide
+ * uphold: answers an appeal; the warning stands · withdraw: it is taken back, with or without an appeal.
+ * The note is required: the member reads it in the app, and the audit log keeps it.
+ */
+export interface DecideWarningBody {
+  decision: 'uphold' | 'withdraw';
+  note: string;
 }
 
 // ---------- audit log ----------
 
-export type AdminAction = 'change_role' | 'create_event' | 'update_event' | 'publish_event' | 'cancel_event' | 'resolve_dispute';
+export type AdminAction =
+  | 'change_role'
+  | 'create_event'
+  | 'update_event'
+  | 'publish_event'
+  | 'cancel_event'
+  | 'reject_event'
+  | 'resolve_dispute'
+  | 'remove_photo'
+  | 'handle_report'
+  | 'uphold_warning'
+  | 'withdraw_warning';
 
 /** GET /api/admin/audit (newest first) */
 export interface AuditEntry {

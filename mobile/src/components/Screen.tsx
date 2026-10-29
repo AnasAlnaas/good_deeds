@@ -1,17 +1,19 @@
-import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
 import type { ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { goBack } from '@/lib/goBack';
 import { useApp } from '@/state/app';
-import { colors, space, touch } from '@/theme/tokens';
+import { colors, space } from '@/theme/tokens';
 import { Txt } from './Txt';
+import { IconButton } from './ui';
 
 interface Props {
   title?: string;
   back?: boolean;
   scroll?: boolean;
+  /** false pauses scrolling, e.g. while a finger moves a map inside the page. */
+  scrollEnabled?: boolean;
   background?: string;
   footer?: ReactNode;
   children: ReactNode;
@@ -19,7 +21,9 @@ interface Props {
 
 // Our own header instead of the native one: Expo Go keeps native headers LTR,
 // so the back arrow and title would sit on the wrong side in Arabic.
-export function Screen({ title, back, scroll = true, background = colors.surface, footer, children }: Props) {
+// Every section opens over the map, so a screen with nothing behind it (opened
+// from a notification) goes back to the map.
+export function Screen({ title, back, scroll = true, scrollEnabled, background = colors.surfaceAlt, footer, children }: Props) {
   const insets = useSafeAreaInsets();
   const { isRTL, s } = useApp();
   const Body = scroll ? ScrollView : View;
@@ -28,14 +32,7 @@ export function Screen({ title, back, scroll = true, background = colors.surface
       {(title || back) && (
         <View style={styles.header}>
           {back && (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={s.back}
-              onPress={() => router.back()}
-              style={styles.backBtn}
-              hitSlop={8}>
-              <Ionicons name={isRTL ? 'arrow-forward' : 'arrow-back'} size={24} color={colors.primary} />
-            </Pressable>
+            <IconButton icon={isRTL ? 'arrow-forward' : 'arrow-back'} label={s.back} look="dark" onPress={() => goBack('/map')} />
           )}
           {title && (
             <Txt variant={back ? 'sectionTitle' : 'screenTitle'} style={styles.title} numberOfLines={2}>
@@ -46,10 +43,11 @@ export function Screen({ title, back, scroll = true, background = colors.surface
       )}
       <Body
         style={styles.body}
+        {...(scroll ? { scrollEnabled } : null)}
         contentContainerStyle={scroll ? { padding: space.md, paddingBottom: space.xl, gap: space.md } : undefined}>
         {children}
       </Body>
-      {footer && <View style={[styles.footer, { paddingBottom: insets.bottom + space.md }]}>{footer}</View>}
+      {footer && <View style={[styles.footer, { backgroundColor: background, paddingBottom: insets.bottom + space.md }]}>{footer}</View>}
     </View>
   );
 }
@@ -59,22 +57,15 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: space.sm,
+    gap: space.md,
     paddingHorizontal: space.md,
     paddingVertical: space.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.surface,
   },
-  backBtn: { width: touch, height: touch, alignItems: 'center', justifyContent: 'center', marginStart: -space.sm },
   title: { flex: 1 },
   body: { flex: 1 },
   footer: {
     paddingHorizontal: space.md,
-    paddingTop: space.md,
+    paddingTop: space.sm,
     gap: space.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    backgroundColor: colors.surface,
   },
 });

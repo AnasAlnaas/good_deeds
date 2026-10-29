@@ -1,11 +1,15 @@
 // Tries to break the demo server's rules, as Build_Plan.md phase 5 asks:
 // record for someone absent, backdate before the event, record yourself,
-// confirm someone else's hours. Every cheat must be refused.
+// confirm someone else's hours, report below the allowed level, warn someone
+// who was not at your event, change someone else's proposal or your own gender.
+// Every cheat must be refused.
 // Run: npm run check:rules
 
+import type { EventProposal, ProfileEdit, ReportBody } from '../src/data/api';
 import type { Db } from '../src/data/types';
 import { buildSeed } from '../src/demo/seed';
 import * as server from '../src/demo/server';
+import * as rules from '../../shared/rules';
 
 const NOW = new Date('2026-10-21T12:00:00').getTime();
 let failed = 0;
@@ -104,10 +108,148 @@ expectError('confirm twice', 'already_acted', () => server.confirmAttendance(con
 const disputed = server.disputeAttendance(d, 'u_ahmad', a.id, NOW);
 expectEqual('disputed hours earn nothing', server.totalPoints(disputed, 'u_ahmad'), before);
 
+console.log('\n— a cancelled event');
+const cancelledEvent = (from: Db, eventId: string): Db => ({
+  ...from,
+  events: from.events.map((e) => (e.id === eventId ? { ...e, status: 'cancelled' as const } : e)),
+});
+expectError('a supervisor records a start at a cancelled event', 'event_closed', () =>
+  server.recordStart(cancelledEvent(db, 'e01'), 'u_khaled', { eventId: 'e01', userId: 'u_ahmad' }, NOW),
+);
+expectError('or a finish', 'event_closed', () => server.recordEnd(cancelledEvent(db, 'e01'), 'u_khaled', { eventId: 'e01', userId: 'u_f1' }, NOW));
+expectError('hours recorded there earn nothing', 'event_closed', () => server.confirmAttendance(cancelledEvent(d, 'e01'), 'u_ahmad', a.id, NOW));
+
 console.log('\n— scheduled auto-close');
 const later = server.tick(db, new Date(running.ends_at).getTime() + 1000);
 const closed = server.attendanceOf(later, 'e01', 'u_f1')!;
 expectEqual('open attendance closed at event end', [closed.end_source, closed.ended_at], ['auto_closed', running.ends_at]);
+
+console.log('\n— proposing an event');
+const HOUR = 3_600_000;
+const proposal = (over: Partial<EventProposal> = {}): EventProposal => ({
+  title: 'تنظيف حديقة الحي',
+  description: 'جمع المخلفات من الحديقة.',
+  subtype: 'street_cleanup',
+  address_text: 'حديقة الحي، طرابلس',
+  lat: 32.88,
+  lng: 13.19,
+  starts_at: new Date(NOW + 72 * HOUR).toISOString(),
+  ends_at: new Date(NOW + 75 * HOUR).toISOString(),
+  capacity: 15,
+  gender_category: 'mixed',
+  terms: ['أحضر قفازيك.'],
+  ...over,
+});
+expectError('a member below level 5 proposes', 'cannot_create_events', () => server.proposeEvent(db, 'u_ahmad', proposal(), NOW));
+expectError('a man proposes a women-only event', 'category_not_allowed', () =>
+  server.proposeEvent(db, 'u_khaled', proposal({ gender_category: 'female' }), NOW),
+);
+expectError('an event that has already started', 'starts_in_past', () =>
+  server.proposeEvent(db, 'u_khaled', proposal({ starts_at: new Date(NOW - HOUR).toISOString() }), NOW),
+);
+const { db: withDraft, event: draft } = server.proposeEvent(db, 'u_khaled', proposal(), NOW);
+expectEqual('it waits for an admin, with its creator as supervisor', [draft.status, server.isOrganizer(withDraft, draft.id, 'u_khaled')], ['draft', true]);
+expectError('nobody joins it', 'not_found', () => server.startJoin(withDraft, 'u_ahmad', draft.id, NOW));
+let three = withDraft;
+for (let i = 0; i < 2; i++) three = server.proposeEvent(three, 'u_khaled', proposal(), NOW).db;
+expectError('a fourth while three wait', 'too_many_proposals', () => server.proposeEvent(three, 'u_khaled', proposal(), NOW));
+
+console.log('\n— the proposer edits or withdraws his waiting event');
+const edited = proposal({ title: 'حلقة تلاوة في الحديقة', subtype: 'quran_circle', terms: ['أحضر مصحفك.', 'احضر قبل الموعد بربع ساعة.'] });
+expectError('a member edits his proposal', 'not_found', () => server.editProposal(three, 'u_ahmad', draft.id, edited, NOW));
+expectError('another supervisor withdraws it', 'not_found', () => server.withdrawProposal(three, 'u_fatima', draft.id));
+expectError('he makes it women-only', 'category_not_allowed', () =>
+  server.editProposal(three, 'u_khaled', draft.id, { ...edited, gender_category: 'female' }, NOW),
+);
+expectError('he moves it into the past', 'starts_in_past', () =>
+  server.editProposal(three, 'u_khaled', draft.id, { ...edited, starts_at: new Date(NOW - HOUR).toISOString() }, NOW),
+);
+const afterEdit = server.editProposal(three, 'u_khaled', draft.id, edited, NOW);
+const editedEvent = afterEdit.events.find((e) => e.id === draft.id)!;
+expectEqual('he edits it while three wait; it still waits, with the points of its new type', [
+  editedEvent.title,
+  editedEvent.status,
+  editedEvent.base_points,
+  server.eventTerms(afterEdit, draft.id).map((x) => x.text),
+  server.isOrganizer(afterEdit, draft.id, 'u_khaled'),
+], ['حلقة تلاوة في الحديقة', 'draft', 20, ['أحضر مصحفك.', 'احضر قبل الموعد بربع ساعة.'], true]);
+const rejected: Db = { ...three, events: three.events.map((e) => (e.id === draft.id ? { ...e, status: 'rejected' as const } : e)) };
+expectError('he edits it after an admin turned it down', 'proposal_not_waiting', () => server.editProposal(rejected, 'u_khaled', draft.id, edited, NOW));
+expectError('a supervisor edits a published event he runs', 'proposal_not_waiting', () => server.editProposal(three, 'u_khaled', 'e02', edited, NOW));
+expectError('or withdraws it', 'proposal_not_waiting', () => server.withdrawProposal(three, 'u_khaled', 'e02'));
+const withdrawn = server.withdrawProposal(three, 'u_khaled', draft.id);
+expectEqual('he withdraws it: gone, with its terms and supervisors', [
+  withdrawn.events.some((e) => e.id === draft.id),
+  withdrawn.event_terms.some((x) => x.event_id === draft.id),
+  withdrawn.event_organizers.some((x) => x.event_id === draft.id),
+  server.waitingProposals(withdrawn, 'u_khaled'),
+], [false, false, false, 2]);
+expectError('withdrawn twice', 'not_found', () => server.withdrawProposal(withdrawn, 'u_khaled', draft.id));
+
+console.log('\n— editing the profile');
+expectEqual('a name of one letter is refused', rules.cleanProfileEdit({ full_name: ' أ ' }), null);
+expectEqual('so is an empty city', rules.cleanProfileEdit({ city: '   ' }), null);
+expectEqual('and nothing to change', rules.cleanProfileEdit({}), null);
+const cleaned = rules.cleanProfileEdit({ full_name: '  أحمد سالم ', city: ' مصراتة ' })!;
+expectEqual('name and city trimmed', cleaned, { full_name: 'أحمد سالم', city: 'مصراتة' });
+// What a changed app could send: the rule and the demo keep only the name and the city.
+const cheat = { ...cleaned, gender: 'female', phone: '+218910000000', role: 'admin' } as ProfileEdit;
+expectEqual('gender, phone and role are not taken from an edit', rules.cleanProfileEdit(cheat), cleaned);
+const ahmad = server.getUser(server.updateProfile(db, 'u_ahmad', cheat), 'u_ahmad')!;
+const ahmadBefore = server.getUser(db, 'u_ahmad')!;
+expectEqual('nor written', [ahmad.full_name, ahmad.city, ahmad.gender, ahmad.phone, ahmad.role], [
+  'أحمد سالم',
+  'مصراتة',
+  ahmadBefore.gender,
+  ahmadBefore.phone,
+  ahmadBefore.role,
+]);
+
+console.log('\n— reports (بلاغ)');
+const report = (d: Db, userId: string, body: ReportBody) => server.fileReport(d, userId, body, NOW);
+const noReporting: Db = { ...db, levels: db.levels.map((l) => ({ ...l, can_report: false })) };
+expectError('a member reports below the level that allows it', 'cannot_report', () => report(noReporting, 'u_ahmad', { category: 'app' }));
+expectEqual('a supervisor may, whatever the level', report(noReporting, 'u_khaled', { category: 'app' }).report.status, 'open');
+expectError('"something else" without a word', 'note_required', () => report(db, 'u_ahmad', { category: 'other', note: '  ' }));
+expectError('about an event he was not at', 'not_at_event', () => report(db, 'u_ahmad', { category: 'safety', event_id: 'e04' }));
+expectError('naming someone who was not at that event', 'person_not_at_event', () =>
+  report(db, 'u_ahmad', { category: 'behaviour', event_id: 'e01', subject_id: 'u_f5' }),
+);
+expectError('naming someone without an event', 'person_not_at_event', () => report(db, 'u_ahmad', { category: 'behaviour', subject_id: 'u_f1' }));
+expectError('naming himself', 'cannot_report_self', () => report(db, 'u_ahmad', { category: 'behaviour', event_id: 'e01', subject_id: 'u_ahmad' }));
+const filed = report(db, 'u_ahmad', { category: 'behaviour', event_id: 'e01', subject_id: 'u_khaled', note: '  تأخر في فتح نقطة التجمع. ' });
+expectEqual('he may name the supervisor; it waits, the note trimmed', [filed.report.status, filed.report.subject_id, filed.report.note], [
+  'open',
+  'u_khaled',
+  'تأخر في فتح نقطة التجمع.',
+]);
+let five = filed.db;
+for (let i = 0; i < 4; i++) five = report(five, 'u_ahmad', { category: 'safety' }).db;
+expectError('a sixth while five wait', 'too_many_reports', () => report(five, 'u_ahmad', { category: 'safety' }));
+
+console.log('\n— warnings (إنذار)');
+const warn = (d: Db, actorId: string, eventId: string, userId: string, reason = 'غادر دون إبلاغ المشرف.', now = NOW) =>
+  server.warn(d, actorId, { eventId, userId, reason }, now);
+expectError('a member gives a warning', 'not_organizer', () => warn(db, 'u_ahmad', 'e01', 'u_f1'));
+expectError('a supervisor of ANOTHER event', 'not_organizer', () => warn(db, 'u_fatima', 'e01', 'u_ahmad'));
+expectError('a supervisor warns someone not at his event', 'not_joined', () => warn(db, 'u_khaled', 'e01', 'u_f5'));
+expectError('a supervisor warns himself', 'cannot_warn_self', () => warn(db, 'u_khaled', 'e01', 'u_khaled'));
+expectError('before the event starts', 'event_not_started', () => warn(db, 'u_khaled', 'e02', 'u_f3'));
+expectError('more than a week after it ended', 'event_closed', () => warn(db, 'u_khaled', 'e13', 'u_ahmad'));
+expectError('without a reason', 'reason_required', () => warn(db, 'u_khaled', 'e01', 'u_ahmad', '   '));
+const given = warn(db, 'u_khaled', 'e01', 'u_ahmad');
+expectEqual('recorded only: no points taken', server.totalPoints(given.db, 'u_ahmad'), server.totalPoints(db, 'u_ahmad'));
+expectEqual('his roster shows it', server.warnedBy(given.db, 'e01', 'u_khaled').has('u_ahmad'), true);
+expectError('the same supervisor, twice', 'already_warned', () => warn(given.db, 'u_khaled', 'e01', 'u_ahmad'));
+expectEqual('it blocks nothing: he still joins an event', server.registrationOf(joinFully(given.db, 'u_ahmad', 'e02', NOW), 'e02', 'u_ahmad')?.status, 'joined');
+
+console.log('\n— appealing a warning');
+const w = given.warning;
+expectError('someone else appeals it', 'not_your_warning', () => server.appealWarning(given.db, 'u_mariam', w.id, 'ظُلم.', NOW));
+expectError('an appeal without a reason', 'reason_required', () => server.appealWarning(given.db, 'u_ahmad', w.id, ' ', NOW));
+const appealed = server.appealWarning(given.db, 'u_ahmad', w.id, 'أبلغت المشرف المساعد.', NOW);
+expectEqual('it waits for an admin', appealed.warnings.find((x) => x.id === w.id)?.status, 'appealed');
+expectError('appeal twice', 'already_appealed', () => server.appealWarning(appealed, 'u_ahmad', w.id, 'مرة أخرى.', NOW));
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');
 process.exit(failed ? 1 : 0);

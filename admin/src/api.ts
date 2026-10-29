@@ -6,16 +6,22 @@ import type {
   AdminEventRow,
   AdminMeta,
   AdminOverview,
+  AdminReportRow,
   AdminUserRow,
+  AdminWarningRow,
   AuditEntry,
   ChangeRoleBody,
   CreateEventBody,
+  DecideWarningBody,
   DisputeRow,
   EventInput,
+  HandleReportBody,
   HoursReportRow,
   ResolveDisputeBody,
+  StatusChangeBody,
 } from '../../shared/admin-api';
 import type { LoginResponse, RequestCodeResponse, VerifyCodeBody } from '../../shared/api';
+import type { ReportStatus, WarningStatus } from '../../shared/types';
 import type { ErrorCode } from './strings';
 
 export const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000').replace(/\/+$/, '');
@@ -69,16 +75,33 @@ export const api = {
 
   users: (q: string) => call<AdminUserRow[]>('GET', `/admin/users${q ? `?q=${enc(q)}` : ''}`),
   changeRole: (id: string, body: ChangeRoleBody) => call<void>('PATCH', `/admin/users/${enc(id)}`, body),
+  removePhoto: (id: string) => call<void>('DELETE', `/admin/users/${enc(id)}/photo`),
+  /** A profile photo (users.avatar_url). It is served only with the sign-in token, so an <img src> cannot load it directly. */
+  photo: async (avatarUrl: string, signal?: AbortSignal): Promise<Blob> => {
+    const res = await fetch(`${API_URL}${avatarUrl}`, { headers: token ? { Authorization: `Bearer ${token}` } : {}, signal });
+    if (!res.ok) throw new ApiFailure(res.status === 404 ? 'not_found' : 'internal_error');
+    return res.blob();
+  },
 
   events: () => call<AdminEventRow[]>('GET', '/admin/events'),
   event: (id: string) => call<AdminEventDetail>('GET', `/admin/events/${enc(id)}`),
   createEvent: (body: CreateEventBody) => call<{ id: string }>('POST', '/admin/events', body),
   updateEvent: (id: string, body: EventInput) => call<void>('PUT', `/admin/events/${enc(id)}`, body),
-  setEventStatus: (id: string, action: 'publish' | 'cancel') => call<void>('POST', `/admin/events/${enc(id)}/${action}`),
+  setEventStatus: (id: string, action: 'publish' | 'cancel' | 'reject', body?: StatusChangeBody) =>
+    call<void>('POST', `/admin/events/${enc(id)}/${action}`, body),
 
   disputes: () => call<DisputeRow[]>('GET', '/admin/disputes'),
   resolveDispute: (attendanceId: string, body: ResolveDisputeBody) =>
     call<void>('POST', `/admin/disputes/${enc(attendanceId)}/resolve`, body),
+
+  /** Members' reports (بلاغ); every one without `status`. */
+  reports: (status?: ReportStatus) => call<AdminReportRow[]>('GET', `/admin/reports${status ? `?status=${status}` : ''}`),
+  handleReport: (id: string, body: HandleReportBody) => call<void>('POST', `/admin/reports/${enc(id)}/handle`, body),
+  warnings: (filter: { status?: WarningStatus; user_id?: string }) => {
+    const query = new URLSearchParams(Object.entries(filter).filter((e): e is [string, string] => !!e[1])).toString();
+    return call<AdminWarningRow[]>('GET', `/admin/warnings${query ? `?${query}` : ''}`);
+  },
+  decideWarning: (id: string, body: DecideWarningBody) => call<void>('POST', `/admin/warnings/${enc(id)}/decide`, body),
 
   hoursReport: (from: string, to: string) => call<HoursReportRow[]>('GET', `/admin/reports/hours?from=${enc(from)}&to=${enc(to)}`),
   audit: () => call<AuditEntry[]>('GET', '/admin/audit'),

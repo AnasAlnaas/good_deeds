@@ -28,6 +28,8 @@ export interface AppDeps {
   cronSecret?: string;
   /** Empty = any origin. */
   corsOrigins: string[];
+  /** The caller's network address, for the sign-in limits per address. Absent = those limits are off (tests). */
+  clientIp?: (c: Context) => string | undefined;
 }
 
 export type AppEnv = { Variables: { deps: AppDeps; user: User } };
@@ -50,6 +52,8 @@ const RULE_STATUS: Partial<Record<ApiErrorCode, ContentfulStatusCode>> = {
   cannot_record_self: 403,
   not_your_attendance: 403,
   gender_not_allowed: 403,
+  cannot_warn_self: 403,
+  not_your_warning: 403,
 };
 
 const ADMIN_STATUS: Partial<Record<AdminErrorCode, ContentfulStatusCode>> = {

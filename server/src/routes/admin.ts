@@ -2,7 +2,7 @@
 // in a transaction with its audit row, so a decision and its record of who
 // made it land together or not at all.
 
-import { and, asc, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, lt, or } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, lt, ne, or } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { z } from 'zod';
@@ -12,23 +12,35 @@ import type {
   AdminEventRow,
   AdminMeta,
   AdminOverview,
+  AdminReportRow,
   AdminUserRow,
+  AdminWarningRow,
   AuditEntry,
   DisputeRow,
   HoursReportRow,
 } from '../../../shared/admin-api';
 import * as adminRules from '../../../shared/admin-rules';
+import { eventSubtypes } from '../../../shared/classes';
 import { AdminError, ApiError } from '../../../shared/errors';
 import { BASE_POINTS_BY_SUBTYPE } from '../../../shared/placeholders';
 import * as rules from '../../../shared/rules';
-import { type AppEvent, type Attendance, PILLARS, type Pillar } from '../../../shared/types';
+import { type AppEvent, type Attendance } from '../../../shared/types';
 import { requireUser } from '../auth';
 import type { Database } from '../db/client';
-import { creditPoints, joinedCounts, newId, pillarWeights, publicUser } from '../db/queries';
+import { creditPoints, joinedCounts, newId, publicUser, warningById } from '../db/queries';
 import { iso } from '../db/rows';
 import * as s from '../db/schema';
 import { type AppEnv, HttpError, readBody } from '../http';
-import { notifyDisputeSettled, notifyEventCancelled, notifyEventChanged } from '../notify';
+import {
+  notifyDisputeSettled,
+  notifyEventCancelled,
+  notifyEventChanged,
+  notifyPhotoRemoved,
+  notifyProposalDecided,
+  notifyReportHandled,
+  notifyWarningDecided,
+} from '../notify';
+import { assertIdsExist, eventInput, isoTime, writeLinks, writeTerms } from './event-input';
 
 const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
   if (c.var.user.role !== 'admin') throw new AdminError('forbidden');
@@ -37,35 +49,18 @@ const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
 
 // ---------- request bodies ----------
 
-const subtypes = Object.keys(BASE_POINTS_BY_SUBTYPE) as [string, ...string[]];
-const isoTime = z.iso.datetime({ offset: true });
-
-const eventInput = z
-  .object({
-    title: z.string().trim().min(3).max(120),
-    description: z.string().trim().min(1).max(4000),
-    subtype: z.enum(subtypes),
-    address_text: z.string().trim().min(1).max(200),
-    lat: z.number().min(-90).max(90),
-    lng: z.number().min(-180).max(180),
-    starts_at: isoTime,
-    ends_at: isoTime,
-    capacity: z.number().int().min(1).max(10_000),
-    gender_category: z.enum(['male', 'female', 'mixed']),
-    branch_ids: z.array(z.string()).min(1).max(20),
-    organizer_ids: z.array(z.string()).max(20),
-    terms: z.array(z.string().trim().min(1).max(1000)).max(30),
-  })
-  .refine((v) => Date.parse(v.ends_at) > Date.parse(v.starts_at));
-type EventInput = z.infer<typeof eventInput>;
-
 const createEventBody = eventInput.and(z.object({ publish: z.boolean() }));
 const roleBody = z.object({ role: z.enum(['member', 'supervisor', 'admin']) });
+const statusBody = z.object({ note: z.string().trim().max(500).optional() });
 const resolveBody = z.object({
   decision: z.enum(['accept', 'correct', 'reject']),
   hours: z.number().optional(),
   note: z.string().trim().min(1).max(500),
 });
+const handleReportBody = z.object({ note: z.string().trim().min(1).max(500) });
+const decideWarningBody = z.object({ decision: z.enum(['uphold', 'withdraw']), note: z.string().trim().min(1).max(500) });
+const reportQuery = z.object({ status: z.enum(['open', 'handled']).optional() });
+const warningQuery = z.object({ status: z.enum(['active', 'appealed', 'upheld', 'withdrawn']).optional(), user_id: z.string().min(1).optional() });
 
 // ---------- helpers ----------
 
@@ -109,6 +104,15 @@ const toPublic = (r: { id: string; full_name: string; avatar_url: string | null;
   gender: r.gender,
 });
 
+/** Who made each event: an admin in the panel, or someone else in the app. */
+async function creatorsOf(q: Database, events: Pick<AppEvent, 'created_by'>[]) {
+  const ids = [...new Set(events.map((e) => e.created_by))];
+  const rows = ids.length
+    ? await q.select({ ...publicUser, role: s.users.role, level: s.users.level }).from(s.users).where(inArray(s.users.id, ids))
+    : [];
+  return new Map(rows.map((r) => [r.id, { ...toPublic(r), role: r.role, level: r.level }]));
+}
+
 async function hasAttendance(q: Database, eventId: string) {
   const [row] = await q.select({ n: count() }).from(s.attendance).where(eq(s.attendance.event_id, eventId));
   return row.n > 0;
@@ -119,35 +123,31 @@ async function termTexts(q: Database, eventId: string) {
   return rows.map((r) => r.text ?? '');
 }
 
-/** Every id must name an existing branch / an active person, or the request is invalid. */
-async function assertIdsExist(q: Database, input: Pick<EventInput, 'branch_ids' | 'organizer_ids'>) {
-  const branchIds = [...new Set(input.branch_ids)];
-  const organizerIds = [...new Set(input.organizer_ids)];
-  const branches = await q.select({ id: s.branches.id }).from(s.branches).where(inArray(s.branches.id, branchIds));
-  const people = organizerIds.length
-    ? await q.select({ id: s.users.id }).from(s.users).where(and(inArray(s.users.id, organizerIds), isNull(s.users.deleted_at)))
-    : [];
-  if (branches.length !== branchIds.length || people.length !== organizerIds.length) throw new HttpError(400, 'invalid_request');
-  return { branchIds, organizerIds };
-}
-
-async function writeLinks(q: Database, eventId: string, branchIds: string[], organizerIds: string[]) {
-  await q.delete(s.event_branches).where(eq(s.event_branches.event_id, eventId));
-  await q.delete(s.event_organizers).where(eq(s.event_organizers.event_id, eventId));
-  await q.insert(s.event_branches).values(branchIds.map((branch_id) => ({ event_id: eventId, branch_id })));
-  if (organizerIds.length) await q.insert(s.event_organizers).values(organizerIds.map((user_id) => ({ event_id: eventId, user_id })));
-}
-
-async function writeTerms(q: Database, eventId: string, terms: string[], at: Date) {
-  await q.delete(s.event_terms).where(eq(s.event_terms.event_id, eventId));
-  if (terms.length) {
-    await q.insert(s.event_terms).values(
-      terms.map((text, i) => ({ id: newId(), event_id: eventId, order_index: i + 1, text, created_at: at })),
-    );
-  }
-}
-
 const escapeLike = (text: string) => text.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+
+/** The people and events that reports and warnings point at, looked up once for a whole list. */
+async function lookup(q: Database, userIds: (string | null)[], eventIds: (string | null)[]) {
+  const uIds = [...new Set(userIds.filter((x): x is string => !!x))];
+  const eIds = [...new Set(eventIds.filter((x): x is string => !!x))];
+  const people = uIds.length ? await q.select({ ...publicUser, phone: s.users.phone }).from(s.users).where(inArray(s.users.id, uIds)) : [];
+  const events = eIds.length
+    ? await q.select({ id: s.events.id, title: s.events.title, starts_at: s.events.starts_at }).from(s.events).where(inArray(s.events.id, eIds))
+    : [];
+  return {
+    withPhone: (id: string | null) => {
+      const p = people.find((u) => u.id === id);
+      return p ? { ...toPublic(p), phone: p.phone } : null;
+    },
+    person: (id: string | null) => {
+      const p = people.find((u) => u.id === id);
+      return p ? toPublic(p) : null;
+    },
+    event: (id: string | null) => {
+      const e = events.find((x) => x.id === id);
+      return e ? { id: e.id, title: e.title, starts_at: e.starts_at.toISOString() } : null;
+    },
+  };
+}
 
 // ---------- routes ----------
 
@@ -165,6 +165,13 @@ export const adminRoutes = new Hono<AppEnv>()
       .from(s.attendance)
       .where(and(eq(s.attendance.participant_status, 'pending'), isNotNull(s.attendance.ended_at)));
     const [disputes] = await db.select({ n: count() }).from(s.attendance).where(eq(s.attendance.participant_status, 'disputed'));
+    const [proposals] = await db
+      .select({ n: count() })
+      .from(s.events)
+      .innerJoin(s.users, eq(s.users.id, s.events.created_by))
+      .where(and(eq(s.events.status, 'draft'), ne(s.users.role, 'admin')));
+    const [reports] = await db.select({ n: count() }).from(s.reports).where(eq(s.reports.status, 'open'));
+    const [appeals] = await db.select({ n: count() }).from(s.warnings).where(eq(s.warnings.status, 'appealed'));
     return c.json<AdminOverview>({
       users: users.n,
       upcoming_events: statuses.filter((x) => x === 'published').length,
@@ -172,21 +179,21 @@ export const adminRoutes = new Hono<AppEnv>()
       draft_events: statuses.filter((x) => x === 'draft').length,
       awaiting_confirmation: awaiting.n,
       open_disputes: disputes.n,
+      proposals_waiting: proposals.n,
+      open_reports: reports.n,
+      appealed_warnings: appeals.n,
     });
   })
 
   .get('/meta', async (c) => {
     const { db } = c.var.deps;
-    const branches = await db.select().from(s.branches).where(eq(s.branches.is_active, true)).orderBy(asc(s.branches.id));
-    const links = await db.select().from(s.branch_pillars);
     const people = await db
       .select({ ...publicUser, role: s.users.role, phone: s.users.phone })
       .from(s.users)
       .where(isNull(s.users.deleted_at))
       .orderBy(asc(s.users.full_name));
     return c.json<AdminMeta>({
-      branches: branches.map((b) => ({ ...b, pillars: PILLARS.filter((p) => links.some((l) => l.branch_id === b.id && l.pillar === p)) })),
-      subtypes: Object.entries(BASE_POINTS_BY_SUBTYPE).map(([id, base_points]) => ({ id, base_points })),
+      subtypes: eventSubtypes(),
       people,
     });
   })
@@ -210,6 +217,13 @@ export const adminRoutes = new Hono<AppEnv>()
           .from(s.attendance)
           .where(and(inArray(s.attendance.user_id, ids), eq(s.attendance.participant_status, 'confirmed')))
       : [];
+    const warnings = ids.length
+      ? await db
+          .select({ user_id: s.warnings.user_id, n: count() })
+          .from(s.warnings)
+          .where(and(inArray(s.warnings.user_id, ids), ne(s.warnings.status, 'withdrawn')))
+          .groupBy(s.warnings.user_id)
+      : [];
     return c.json<AdminUserRow[]>(
       users.map((u) => ({
         id: u.id,
@@ -217,12 +231,14 @@ export const adminRoutes = new Hono<AppEnv>()
         phone: u.phone,
         gender: u.gender,
         city: u.city,
+        avatar_url: u.avatar_url,
         role: u.role,
         level: u.level,
         total_points: u.total_points,
         is_association_member: u.is_association_member,
         created_at: u.created_at.toISOString(),
         confirmed_hours: rules.round2(hours.filter((h) => h.user_id === u.id).reduce((sum, h) => sum + (h.hours ?? 0), 0)),
+        warnings: warnings.find((w) => w.user_id === u.id)?.n ?? 0,
       })),
     );
   })
@@ -243,6 +259,22 @@ export const adminRoutes = new Hono<AppEnv>()
     return c.body(null, 204);
   })
 
+  // An unsuitable profile photo. The member may add another; they are told why it went.
+  .delete('/users/:id/photo', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    await db.transaction(async (tx) => {
+      const [target] = await tx.select().from(s.users).where(eq(s.users.id, id)).for('update');
+      if (!target || target.deleted_at || !target.avatar_url) throw new ApiError('not_found');
+      await tx.delete(s.user_photos).where(eq(s.user_photos.user_id, id));
+      await tx.update(s.users).set({ avatar_url: null }).where(eq(s.users.id, id));
+      await audit(tx, { actorId: me.id, action: 'remove_photo', targetId: id, details: { name: target.full_name }, at: new Date(now()) });
+    });
+    notifyPhotoRemoved(c.var.deps, id);
+    return c.body(null, 204);
+  })
+
   // ---------- events ----------
 
   .get('/events', async (c) => {
@@ -252,12 +284,14 @@ export const adminRoutes = new Hono<AppEnv>()
     const ids = events.map((e) => e.id);
     const counts = await joinedCounts(db, ids);
     const organizers = await organizersOf(db, ids);
+    const creators = await creatorsOf(db, events);
     return c.json<AdminEventRow[]>(
       events.map((event) => ({
         event,
         effective_status: rules.effectiveStatus(event, t),
         joined_count: counts.get(event.id) ?? 0,
         organizers: organizers.get(event.id) ?? [],
+        creator: creators.get(event.created_by) ?? null,
       })),
     );
   })
@@ -266,14 +300,6 @@ export const adminRoutes = new Hono<AppEnv>()
     const { db, now } = c.var.deps;
     const id = c.req.param('id');
     const event = await anyEvent(db, id);
-    const branches = await db
-      .select({ branch: s.branches })
-      .from(s.event_branches)
-      .innerJoin(s.branches, eq(s.branches.id, s.event_branches.branch_id))
-      .where(eq(s.event_branches.event_id, id));
-    const links = branches.length
-      ? await db.select().from(s.branch_pillars).where(inArray(s.branch_pillars.branch_id, branches.map((b) => b.branch.id)))
-      : [];
     const terms = await db.select().from(s.event_terms).where(eq(s.event_terms.event_id, id)).orderBy(asc(s.event_terms.order_index));
     const registrations = await db
       .select({ registration: s.registrations, ...publicUser, phone: s.users.phone })
@@ -287,10 +313,7 @@ export const adminRoutes = new Hono<AppEnv>()
       effective_status: rules.effectiveStatus(event, now()),
       joined_count: (await joinedCounts(db, [id])).get(id) ?? 0,
       organizers: (await organizersOf(db, [id])).get(id) ?? [],
-      branches: branches.map(({ branch }) => ({
-        ...branch,
-        pillars: PILLARS.filter((p) => links.some((l) => l.branch_id === branch.id && l.pillar === p)),
-      })),
+      creator: (await creatorsOf(db, [event])).get(event.created_by) ?? null,
       terms: terms.map(iso),
       participants: registrations.map((r) => {
         const a = attendance.find((x) => x.user_id === r.id);
@@ -310,7 +333,7 @@ export const adminRoutes = new Hono<AppEnv>()
     const t = new Date(now());
     const id = newId();
     await db.transaction(async (tx) => {
-      const { branchIds, organizerIds } = await assertIdsExist(tx, body);
+      const { organizerIds } = await assertIdsExist(tx, body);
       if (body.publish && organizerIds.length === 0) throw new AdminError('needs_organizer');
       await tx.insert(s.events).values({
         id,
@@ -330,7 +353,7 @@ export const adminRoutes = new Hono<AppEnv>()
         created_by: me.id,
         created_at: t,
       });
-      await writeLinks(tx, id, branchIds, organizerIds);
+      await writeLinks(tx, id, organizerIds);
       await writeTerms(tx, id, body.terms, t);
       await audit(tx, { actorId: me.id, action: 'create_event', targetId: id, details: { title: body.title, published: body.publish }, at: t });
     });
@@ -346,7 +369,7 @@ export const adminRoutes = new Hono<AppEnv>()
     const edit = await db.transaction(async (tx) => {
       // Locking the event makes joins wait, so the joined count below stays true.
       const event = await anyEvent(tx, id, true);
-      const { branchIds, organizerIds } = await assertIdsExist(tx, body);
+      const { organizerIds } = await assertIdsExist(tx, body);
       const currentTerms = await termTexts(tx, id);
       adminRules.assertEventEdit({
         event,
@@ -377,7 +400,7 @@ export const adminRoutes = new Hono<AppEnv>()
           gender_category: body.gender_category,
         })
         .where(eq(s.events.id, id));
-      await writeLinks(tx, id, branchIds, organizerIds);
+      await writeLinks(tx, id, organizerIds);
       const termsChanged = body.terms.length !== currentTerms.length || body.terms.some((x, i) => x !== currentTerms[i]);
       if (termsChanged) await writeTerms(tx, id, body.terms, new Date(t));
       await audit(tx, {
@@ -399,27 +422,31 @@ export const adminRoutes = new Hono<AppEnv>()
     return c.body(null, 204);
   })
 
-  .post('/events/:id/:action{publish|cancel}', async (c) => {
+  .post('/events/:id/:action{publish|cancel|reject}', async (c) => {
     const { db, now } = c.var.deps;
     const me = c.var.user;
     const id = c.req.param('id');
-    const action = c.req.param('action') as 'publish' | 'cancel';
+    const action = c.req.param('action') as 'publish' | 'cancel' | 'reject';
+    const note = (await readBody(c, statusBody)).note || undefined;
     const t = now();
-    const wasDraft = await db.transaction(async (tx) => {
+    const event = await db.transaction(async (tx) => {
       const event = await anyEvent(tx, id, true);
       const [organizers] = await tx.select({ n: count() }).from(s.event_organizers).where(eq(s.event_organizers.event_id, id));
       const status = adminRules.decideStatusChange({ event, action, organizerCount: organizers.n, hasAttendance: await hasAttendance(tx, id), now: t });
       await tx.update(s.events).set({ status }).where(eq(s.events.id, id));
       await audit(tx, {
         actorId: me.id,
-        action: action === 'publish' ? 'publish_event' : 'cancel_event',
+        action: action === 'publish' ? 'publish_event' : action === 'reject' ? 'reject_event' : 'cancel_event',
         targetId: id,
-        details: { title: event.title },
+        details: action === 'reject' ? { title: event.title, note: note ?? null } : { title: event.title },
         at: new Date(t),
       });
-      return event.status === 'draft';
+      return event;
     });
-    if (action === 'cancel' && !wasDraft) notifyEventCancelled(c.var.deps, id, me.id);
+    if (action === 'cancel') notifyEventCancelled(c.var.deps, id, me.id);
+    // Proposed in the app by someone else: tell them what was decided.
+    if (event.created_by !== me.id && action === 'publish') notifyProposalDecided(c.var.deps, id, 'approved');
+    if (event.created_by !== me.id && action === 'reject') notifyProposalDecided(c.var.deps, id, 'rejected', note);
     return c.body(null, 204);
   })
 
@@ -465,7 +492,7 @@ export const adminRoutes = new Hono<AppEnv>()
       const event = await anyEvent(tx, a.event_id);
       const { hours } = adminRules.decideResolution({ attendance: a, event, decision: body.decision, hours: body.hours });
       await tx.update(s.attendance).set({ hours, participant_status: 'confirmed' }).where(eq(s.attendance.id, id));
-      const earned = rules.pointsForAttendance(event, hours, (await pillarWeights(tx, [event.id])).get(event.id)!);
+      const earned = rules.pointsForAttendance(event, hours);
       await creditPoints(tx, { userId: a.user_id, eventId: event.id, earned, reason: 'dispute_resolved', at: t });
       await audit(tx, {
         actorId: me.id,
@@ -477,6 +504,117 @@ export const adminRoutes = new Hono<AppEnv>()
       return { hours };
     });
     notifyDisputeSettled(c.var.deps, id, body.decision, result.hours);
+    return c.body(null, 204);
+  })
+
+  // ---------- members' reports (not the hours report below) ----------
+
+  .get('/reports', async (c) => {
+    const { db } = c.var.deps;
+    const query = reportQuery.safeParse(c.req.query());
+    if (!query.success) throw new HttpError(400, 'invalid_request');
+    const status = query.data.status;
+    const rows = (
+      await db
+        .select()
+        .from(s.reports)
+        .where(status ? eq(s.reports.status, status) : undefined)
+        .orderBy(desc(s.reports.created_at))
+        .limit(500)
+    ).map(iso);
+    const found = await lookup(db, rows.flatMap((r) => [r.reporter_id, r.subject_id, r.handled_by]), rows.map((r) => r.event_id));
+    return c.json<AdminReportRow[]>(
+      rows.map((report) => ({
+        report,
+        reporter: found.withPhone(report.reporter_id),
+        event: found.event(report.event_id),
+        subject: found.withPhone(report.subject_id),
+        handled_by: found.person(report.handled_by),
+      })),
+    );
+  })
+
+  // The note says what was done; the reporter is told only that it was looked at.
+  .post('/reports/:id/handle', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    const { note } = await readBody(c, handleReportBody);
+    const t = new Date(now());
+    await db.transaction(async (tx) => {
+      const [report] = await tx.select().from(s.reports).where(eq(s.reports.id, id)).for('update');
+      if (!report) throw new ApiError('not_found');
+      adminRules.assertCanHandleReport(report);
+      const [reporter] = await tx.select({ full_name: s.users.full_name }).from(s.users).where(eq(s.users.id, report.reporter_id));
+      await tx.update(s.reports).set({ status: 'handled', handled_by: me.id, handled_at: t, handled_note: note }).where(eq(s.reports.id, id));
+      await audit(tx, {
+        actorId: me.id,
+        action: 'handle_report',
+        targetId: id,
+        details: { category: report.category, reporter: reporter?.full_name ?? null, note },
+        at: t,
+      });
+    });
+    notifyReportHandled(c.var.deps, id);
+    return c.body(null, 204);
+  })
+
+  // ---------- warnings ----------
+
+  .get('/warnings', async (c) => {
+    const { db } = c.var.deps;
+    const query = warningQuery.safeParse(c.req.query());
+    if (!query.success) throw new HttpError(400, 'invalid_request');
+    const { status, user_id } = query.data;
+    const rows = (
+      await db
+        .select()
+        .from(s.warnings)
+        .where(and(status ? eq(s.warnings.status, status) : undefined, user_id ? eq(s.warnings.user_id, user_id) : undefined))
+        .orderBy(desc(s.warnings.created_at))
+        .limit(500)
+    ).map(iso);
+    const found = await lookup(db, rows.flatMap((w) => [w.user_id, w.issued_by, w.decided_by]), rows.map((w) => w.event_id));
+    return c.json<AdminWarningRow[]>(
+      rows.map((warning) => ({
+        warning,
+        user: found.withPhone(warning.user_id)!,
+        event: found.event(warning.event_id)!,
+        issued_by: found.person(warning.issued_by),
+        decided_by: found.person(warning.decided_by),
+      })),
+    );
+  })
+
+  // Keep a warning the member appealed, or withdraw one. The member is told, and reads the note in the app.
+  .post('/warnings/:id/decide', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    const body = await readBody(c, decideWarningBody);
+    const t = new Date(now());
+    const status = await db.transaction(async (tx) => {
+      const warning = await warningById(tx, id, { lock: true });
+      if (!warning) throw new ApiError('not_found');
+      const next = adminRules.decideWarning(warning, body.decision);
+      await tx.update(s.warnings).set({ status: next, decided_by: me.id, decided_at: t, decision_note: body.note }).where(eq(s.warnings.id, id));
+      const found = await lookup(tx, [warning.user_id], [warning.event_id]);
+      await audit(tx, {
+        actorId: me.id,
+        action: next === 'upheld' ? 'uphold_warning' : 'withdraw_warning',
+        targetId: id,
+        details: {
+          name: found.person(warning.user_id)?.full_name ?? null,
+          user_id: warning.user_id,
+          event_title: found.event(warning.event_id)?.title ?? null,
+          appealed: warning.status === 'appealed',
+          note: body.note,
+        },
+        at: t,
+      });
+      return next;
+    });
+    notifyWarningDecided(c.var.deps, id, status);
     return c.body(null, 204);
   })
 
@@ -512,16 +650,13 @@ export const adminRoutes = new Hono<AppEnv>()
         gender: user.gender,
         events: 0,
         hours: 0,
-        points: { spiritual: 0, mental: 0, physical: 0 } as Record<Pillar, number>,
         total_points: 0,
       };
       entry.events += 1;
       entry.hours = rules.round2(entry.hours + (a.hours ?? 0));
       // The points these hours earned: the ledger rows for this person at this event.
-      for (const l of ledger.filter((x) => x.user_id === user.id && x.event_id === a.event_id)) {
-        entry.points[l.pillar] = rules.round2(entry.points[l.pillar] + l.points);
-      }
-      entry.total_points = rules.totalOf(entry.points);
+      const earned = rules.totalPoints(ledger.filter((x) => x.user_id === user.id && x.event_id === a.event_id));
+      entry.total_points = rules.round2(entry.total_points + earned);
       report.set(user.id, entry);
     }
     return c.json<HoursReportRow[]>([...report.values()].sort((x, y) => y.hours - x.hours));

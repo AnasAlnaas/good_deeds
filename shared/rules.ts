@@ -16,12 +16,12 @@ import type {
   EventStatus,
   EventTerm,
   Level,
-  Pillar,
   PointsLedgerEntry,
   Registration,
+  ReportCategory,
   User,
+  Warning,
 } from './types';
-import { PILLARS } from './types';
 
 export const MS_HOUR = 3_600_000;
 export const toMs = (iso: string) => new Date(iso).getTime();
@@ -37,7 +37,7 @@ type JoinableEvent = EventTimes & Pick<AppEvent, 'gender_category'>;
 // ---------- event status ----------
 
 export function effectiveStatus(e: EventTimes, now: number): EventStatus {
-  if (e.status === 'cancelled' || e.status === 'draft') return e.status;
+  if (e.status === 'cancelled' || e.status === 'draft' || e.status === 'rejected') return e.status;
   if (now >= toMs(e.ends_at)) return 'finished';
   if (now >= toMs(e.starts_at)) return 'running';
   return 'published';
@@ -51,11 +51,111 @@ export function sortTerms<T extends Pick<EventTerm, 'order_index'>>(terms: T[]):
   return [...terms].sort((a, b) => a.order_index - b.order_index);
 }
 
+/** Drafts and turned-down drafts are seen only by whoever created them. */
+export function isHidden(e: Pick<AppEvent, 'status'>) {
+  return e.status === 'draft' || e.status === 'rejected';
+}
+
+export function canSeeEvent(viewer: Pick<User, 'id'>, e: Pick<AppEvent, 'status' | 'created_by'>) {
+  return !isHidden(e) || e.created_by === viewer.id;
+}
+
+// ---------- creating events in the app ----------
+
+// Owner's decision (2026-10-22): the master file's "level + direct nomination"
+// means a level that allows it (level 5 in placeholders.ts), or being named a
+// supervisor or admin by the association.
+export function canCreateEvents(user: Pick<User, 'role'>, level: Pick<Level, 'can_create_events'>) {
+  return level.can_create_events || user.role === 'supervisor' || user.role === 'admin';
+}
+
+// Owner's decision (2026-10-22): how many proposals one person may have waiting for an admin at once.
+export const MAX_WAITING_PROPOSALS = 3;
+
+/**
+ * A member proposing an event. The creator becomes its supervisor, so they may
+ * choose only an event they could take part in themselves: their own men /
+ * women category, or mixed (owner's decision, 2026-10-22). It must start in the future.
+ */
+export function assertCanProposeEvent(args: {
+  user: Pick<User, 'role' | 'gender'>;
+  level: Pick<Level, 'can_create_events'>;
+  event: Pick<AppEvent, 'starts_at' | 'gender_category'>;
+  /** The creator's events still waiting for an admin (drafts). */
+  waitingCount: number;
+  now: number;
+}) {
+  const { user, event } = args;
+  if (!canCreateEvents(user, args.level)) throw new ApiError('cannot_create_events');
+  if (!canUserJoinCategory(user, event)) throw new ApiError('category_not_allowed');
+  if (toMs(event.starts_at) <= args.now) throw new ApiError('starts_in_past');
+  if (user.role !== 'admin' && args.waitingCount >= MAX_WAITING_PROPOSALS) throw new ApiError('too_many_proposals');
+}
+
+/** Owner's decision (2026-10-22): an admin approves every event made in the app; an admin's own is published at once. */
+export function proposalStatus(user: Pick<User, 'role'>): 'draft' | 'published' {
+  return user.role === 'admin' ? 'published' : 'draft';
+}
+
+/**
+ * The proposer editing or withdrawing their own event while it still waits for
+ * an admin. Someone else's draft is not found, as everywhere else. Once an admin
+ * has decided (published or turned down), only admins change it, in the panel.
+ * An edit is then checked like a new proposal (assertCanProposeEvent), with
+ * this draft left out of the waiting count.
+ */
+export function assertCanChangeProposal<E extends Pick<AppEvent, 'status' | 'created_by'>>(
+  user: Pick<User, 'id'>,
+  e: E | undefined,
+): asserts e is E {
+  if (!e || !canSeeEvent(user, e)) throw new ApiError('not_found');
+  if (e.created_by !== user.id || e.status !== 'draft') throw new ApiError('proposal_not_waiting');
+}
+
+// ---------- the profile ----------
+
+// Sign-up (server/src/routes/auth.ts) and a profile edit take a name and a city alike.
+export const NAME_MIN = 2;
+export const NAME_MAX = 100;
+export const CITY_MAX = 60;
+
+/**
+ * A profile edit, trimmed, keeping only what may change: the name and the city.
+ * Gender never changes (it decides which events a person may join and who sees
+ * their photo), nor does the phone (it is how they sign in).
+ * null = nothing to change, or a name or city that does not fit.
+ */
+export function cleanProfileEdit(edit: { full_name?: string; city?: string }): { full_name?: string; city?: string } | null {
+  const out: { full_name?: string; city?: string } = {};
+  if (edit.full_name !== undefined) {
+    const name = edit.full_name.trim();
+    if (name.length < NAME_MIN || name.length > NAME_MAX) return null;
+    out.full_name = name;
+  }
+  if (edit.city !== undefined) {
+    const city = edit.city.trim();
+    if (city.length < 1 || city.length > CITY_MAX) return null;
+    out.city = city;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+// ---------- profile photos ----------
+
+/** Owner's decision (2026-10-22): a photo is seen by its owner, by admins, and by people of the same gender. */
+export function canSeePhoto(viewer: Pick<User, 'id' | 'gender' | 'role'>, owner: Pick<User, 'id' | 'gender'>) {
+  return viewer.id === owner.id || viewer.role === 'admin' || viewer.gender === owner.gender;
+}
+
+/** Photos are sent as a square JPEG of this many pixels a side, and never bigger than PHOTO_MAX_BYTES. */
+export const PHOTO_SIZE_PX = 512;
+export const PHOTO_MAX_BYTES = 300_000;
+
 // ---------- joining ----------
 
 function assertJoinable(user: Pick<User, 'gender'>, e: JoinableEvent, now: number) {
   const status = effectiveStatus(e, now);
-  if (status === 'finished' || status === 'cancelled' || status === 'draft') throw new ApiError('event_closed');
+  if (status !== 'published' && status !== 'running') throw new ApiError('event_closed');
   if (!canUserJoinCategory(user, e)) throw new ApiError('gender_not_allowed');
 }
 
@@ -132,7 +232,7 @@ export function decideRecordStart(args: {
   actorId: string;
   participantId: string;
   actorIsOrganizer: boolean;
-  event: Pick<AppEvent, 'starts_at' | 'ends_at'>;
+  event: Pick<AppEvent, 'status' | 'starts_at' | 'ends_at'>;
   registration: Registration | undefined;
   attendance: Attendance | undefined;
   startedAt?: number;
@@ -140,6 +240,8 @@ export function decideRecordStart(args: {
 }): Pick<Attendance, 'started_at' | 'start_source'> {
   const { event, now } = args;
   assertRecorder(args);
+  // A cancelled event keeps its time and its joined members, but nobody works at it.
+  if (event.status === 'cancelled') throw new ApiError('event_closed');
   if (now < toMs(event.starts_at)) throw new ApiError('event_not_started');
   if (now > toMs(event.ends_at)) throw new ApiError('event_closed');
   if (args.registration?.status !== 'joined') throw new ApiError('not_joined');
@@ -158,13 +260,14 @@ export function decideRecordEnd(args: {
   actorId: string;
   participantId: string;
   actorIsOrganizer: boolean;
-  event: Pick<AppEvent, 'ends_at'>;
+  event: Pick<AppEvent, 'status' | 'ends_at'>;
   attendance: Attendance | undefined;
   endedAt?: number;
   now: number;
 }): Pick<Attendance, 'ended_at' | 'end_source' | 'hours'> {
   const { attendance: a, now } = args;
   assertRecorder(args);
+  if (args.event.status === 'cancelled') throw new ApiError('event_closed');
   if (!a) throw new ApiError('not_started');
   if (a.ended_at) throw new ApiError('already_ended');
   const endedAt = args.endedAt ?? now;
@@ -197,11 +300,17 @@ export function decideAutoClose(
 // ⚠️ ASSUMPTION: points are credited when the participant confirms (DESIGN.md
 // puts the reward moment there). A disputed record earns nothing until an
 // admin decides — that flow is not built yet.
-export function assertCanConfirm(a: Attendance | undefined, userId: string): asserts a is Attendance {
+/** `event` is the record's event: hours at a cancelled event earn nothing. */
+export function assertCanConfirm(
+  a: Attendance | undefined,
+  userId: string,
+  event: Pick<AppEvent, 'status'> | undefined,
+): asserts a is Attendance {
   if (!a) throw new ApiError('not_found');
   if (a.user_id !== userId) throw new ApiError('not_your_attendance');
   if (!a.ended_at) throw new ApiError('not_started');
   if (a.participant_status !== 'pending') throw new ApiError('already_acted');
+  if (event?.status === 'cancelled') throw new ApiError('event_closed');
 }
 
 export function assertCanDispute(a: Attendance | undefined, userId: string): asserts a is Attendance {
@@ -212,46 +321,15 @@ export function assertCanDispute(a: Attendance | undefined, userId: string): ass
 
 // ---------- points and levels ----------
 
-// ⚠️ PLACEHOLDER: how an event's points split across pillars is not written
-// down yet. Here each branch→pillar link of the event's branches counts once,
-// then the weights are normalised to sum to 1.
-export function pillarWeights(links: Pillar[]): Record<Pillar, number> {
-  const w: Record<Pillar, number> = { spiritual: 0, mental: 0, physical: 0 };
-  for (const p of links) w[p] += 1;
-  const sum = PILLARS.reduce((s, p) => s + w[p], 0) || 1;
-  for (const p of PILLARS) w[p] = w[p] / sum;
-  return w;
-}
-
-export function dominantPillar(w: Record<Pillar, number>): Pillar {
-  return PILLARS.reduce((best, p) => (w[p] > w[best] ? p : best), 'physical' as Pillar);
-}
-
-/** The master file's formula: points = event points × attendance ratio, split by pillar weight. */
-export function pointsForAttendance(
-  event: Pick<AppEvent, 'starts_at' | 'ends_at' | 'base_points'>,
-  hours: number | null,
-  weights: Record<Pillar, number>,
-): Record<Pillar, number> {
+/** The master file's formula: points = event points × attendance ratio. */
+export function pointsForAttendance(event: Pick<AppEvent, 'starts_at' | 'ends_at' | 'base_points'>, hours: number | null): number {
   const duration = (toMs(event.ends_at) - toMs(event.starts_at)) / MS_HOUR;
   const ratio = Math.min(1, (hours ?? 0) / duration);
-  const total = event.base_points * ratio;
-  return {
-    spiritual: round2(total * weights.spiritual),
-    mental: round2(total * weights.mental),
-    physical: round2(total * weights.physical),
-  };
+  return round2(event.base_points * ratio);
 }
 
-export function pointsByPillar(ledger: Pick<PointsLedgerEntry, 'pillar' | 'points'>[]): Record<Pillar, number> {
-  const r: Record<Pillar, number> = { spiritual: 0, mental: 0, physical: 0 };
-  for (const l of ledger) r[l.pillar] += l.points;
-  for (const p of PILLARS) r[p] = round2(r[p]);
-  return r;
-}
-
-export function totalOf(byPillar: Record<Pillar, number>) {
-  return round2(byPillar.spiritual + byPillar.mental + byPillar.physical);
+export function totalPoints(ledger: Pick<PointsLedgerEntry, 'points'>[]): number {
+  return round2(ledger.reduce((sum, l) => sum + l.points, 0));
 }
 
 export function levelFor(levels: Level[], points: number): Level {
@@ -260,4 +338,116 @@ export function levelFor(levels: Level[], points: number): Level {
 
 export function nextLevel(levels: Level[], points: number): Level | undefined {
   return [...levels].sort((a, b) => a.min_points - b.min_points).find((l) => l.min_points > points);
+}
+
+// ---------- reports (بلاغ): a member tells the association ----------
+//
+// Kept apart from warnings, as the master file decides ("فصل البلاغ (عضو) عن
+// الإنذار (مشرف)"). Owner's decision (2026-10-22): a report may be about
+// anything, by category, with an optional note. It may be tied to an event the
+// reporter was at, and name someone at that event. Only admins read reports;
+// the person named is never told and never sees it.
+
+export const REPORT_NOTE_MAX = 1000;
+/** How many of the events a person was at the report screen offers, latest first. */
+export const REPORT_FORM_EVENTS = 20;
+// Owner's decision (2026-10-23): how many of one person's reports may wait for an admin at once, so a flood cannot bury the others.
+export const MAX_OPEN_REPORTS = 5;
+
+/** Text someone typed, trimmed; null when nothing is left. */
+export const cleanText = (text: string | null | undefined) => text?.trim() || null;
+
+// Owner's decision (2026-10-23): like proposing events, supervisors and admins may report whatever their level.
+export function canReport(user: Pick<User, 'role'>, level: Pick<Level, 'can_report'>) {
+  return level.can_report || user.role === 'supervisor' || user.role === 'admin';
+}
+
+/** Someone "at" an event: they joined it or they supervise it. */
+export function wasAtEvent(registration: Pick<Registration, 'status'> | undefined, isOrganizer: boolean) {
+  return isOrganizer || registration?.status === 'joined';
+}
+
+export function assertCanReport(args: {
+  user: Pick<User, 'id' | 'role'>;
+  level: Pick<Level, 'can_report'>;
+  category: ReportCategory;
+  /** Already cleaned (cleanText). */
+  note: string | null;
+  /** The event it is about (null = none), and which of the two people were at it. */
+  event: { reporterWasThere: boolean; subjectWasThere: boolean } | null;
+  subjectId: string | null;
+  /** The reporter's reports still waiting for an admin. */
+  openCount: number;
+}) {
+  if (!canReport(args.user, args.level)) throw new ApiError('cannot_report');
+  // Owner's decision (2026-10-23): the note is optional, except for "something else", which says nothing without one.
+  if (args.category === 'other' && !args.note) throw new ApiError('note_required');
+  if (args.subjectId === args.user.id) throw new ApiError('cannot_report_self');
+  if (args.event && !args.event.reporterWasThere) throw new ApiError('not_at_event');
+  // Someone is named only as one of the people at that event.
+  if (args.subjectId && !args.event?.subjectWasThere) throw new ApiError('person_not_at_event');
+  if (args.openCount >= MAX_OPEN_REPORTS) throw new ApiError('too_many_reports');
+}
+
+// ---------- warnings (إنذار): a supervisor records one ----------
+//
+// Owner's decisions (2026-10-22/23): a supervisor of an event warns someone who
+// joined that event, with a reason. A warning is recorded only: it takes no
+// points and blocks nothing; admins decide what to do about it. The member is
+// told and sees it, and so do admins, nobody else (Superseded_Decisions.md: a
+// warning stays between the association and the member). One kind, no severity.
+// The member may appeal once; an admin keeps the warning or withdraws it.
+// (Build_Plan.md said "the primary supervisor only"; the owner chose any supervisor of the event.)
+
+export const REASON_MAX = 500;
+// Owner's decision (2026-10-23): a warning can be given from the event's start until this many days after it ends.
+export const WARN_DAYS_AFTER_EVENT = 7;
+
+export function assertCanWarn(args: {
+  actorId: string;
+  memberId: string;
+  actorIsOrganizer: boolean;
+  event: Pick<AppEvent, 'status' | 'starts_at' | 'ends_at'>;
+  registration: Pick<Registration, 'status'> | undefined;
+  /** This supervisor already warned this person at this event (a withdrawn warning does not count). */
+  alreadyWarned: boolean;
+  /** Already cleaned (cleanText). */
+  reason: string | null;
+  now: number;
+}) {
+  const { event, now } = args;
+  if (!args.actorIsOrganizer) throw new ApiError('not_organizer');
+  if (args.actorId === args.memberId) throw new ApiError('cannot_warn_self');
+  if (now < toMs(event.starts_at)) throw new ApiError('event_not_started');
+  if (event.status === 'cancelled' || now > toMs(event.ends_at) + WARN_DAYS_AFTER_EVENT * 24 * MS_HOUR) {
+    throw new ApiError('event_closed');
+  }
+  if (args.registration?.status !== 'joined') throw new ApiError('not_joined');
+  // Owner's decision (2026-10-23): one warning per supervisor, person and event, so a second tap does not give two.
+  // Kept per supervisor so one supervisor's refusal never tells another that a warning exists.
+  if (args.alreadyWarned) throw new ApiError('already_warned');
+  if (!args.reason) throw new ApiError('reason_required');
+}
+
+/** The member appeals their own warning, once, with a reason. */
+export function assertCanAppeal(w: Warning | undefined, userId: string, reason: string | null): asserts w is Warning {
+  if (!w) throw new ApiError('not_found');
+  if (w.user_id !== userId) throw new ApiError('not_your_warning');
+  if (w.status === 'withdrawn') throw new ApiError('warning_withdrawn');
+  if (w.status !== 'active') throw new ApiError('already_appealed');
+  if (!reason) throw new ApiError('reason_required');
+}
+
+// ---------- deleting an account ----------
+
+/** The name a deleted account shows wherever its records remain (reports, warnings, the admin log). */
+export const DELETED_NAME = 'حساب محذوف';
+
+/**
+ * What a deleted account keeps of its profile: nothing personal. The row
+ * stays, so attendance, points, reports and warnings still add up, but they
+ * no longer say who it was. Gender stays: events and photos were decided by it.
+ */
+export function erasedProfile(): Pick<User, 'full_name' | 'phone' | 'email' | 'city' | 'avatar_url'> {
+  return { full_name: DELETED_NAME, phone: '', email: null, city: '', avatar_url: null };
 }

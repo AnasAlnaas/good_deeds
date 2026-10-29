@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "check:api": "tsx scripts/check-api.ts && tsx scripts/check-admin.ts",
     "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
     "make-admin": "tsx scripts/make-admin.ts"
   },
@@ -19,11 +20,12 @@
     "@types/node": "^24.19.2",
     "@types/pg": "^8.23.1",
     "drizzle-kit": "^0.31.11",
-    "typescript": "^7.0.2"
+    "typescript": "~6.0.3"
   },
   "dependencies": {
-    "@electric-sql/pglite": "^0.5.11",
+    "@electric-sql/pglite": "^0.5.12",
     "@hono/node-server": "^2.1.5",
+    "@vercel/functions": "^3.10.4",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.13",
     "pg": "^8.23.1",

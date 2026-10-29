@@ -1,7 +1,7 @@
 import { useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 
-import type { EventStatus, Pillar } from '../../shared/types';
+import type { EventStatus } from '../../shared/types';
 import { failureCode } from './api';
 import { t, type ErrorCode } from './strings';
 
@@ -27,30 +27,17 @@ export function Badge({ tone = 'neutral', children }: { tone?: Tone; children: R
   return <span className={`badge badge-${tone}`}>{children}</span>;
 }
 
-const STATUS_TONE: Record<EventStatus, Tone> = { draft: 'neutral', published: 'primary', running: 'danger', finished: 'success', cancelled: 'warning' };
+const STATUS_TONE: Record<EventStatus, Tone> = {
+  draft: 'neutral',
+  published: 'primary',
+  running: 'danger',
+  finished: 'success',
+  cancelled: 'warning',
+  rejected: 'warning',
+};
 
 export function StatusBadge({ status }: { status: EventStatus }) {
   return <Badge tone={STATUS_TONE[status]}>{t.status[status]}</Badge>;
-}
-
-export function PillarBar({ weights }: { weights: Record<Pillar, number> }) {
-  const order: Pillar[] = ['spiritual', 'mental', 'physical'];
-  const sum = order.reduce((s, p) => s + weights[p], 0) || 1;
-  return (
-    <div className="pillar-bar" role="img" aria-label={order.map((p) => `${t.pillar[p]} ${Math.round((weights[p] / sum) * 100)}%`).join('، ')}>
-      {order.map((p) => weights[p] > 0 && <span key={p} className={`pillar-${p}`} style={{ flexGrow: weights[p] }} />)}
-    </div>
-  );
-}
-
-export function PillarDots({ pillars }: { pillars: Pillar[] }) {
-  return (
-    <span className="pillar-dots">
-      {pillars.map((p) => (
-        <span key={p} className={`dot dot-${p}`} title={t.pillar[p]} />
-      ))}
-    </span>
-  );
 }
 
 export function PageHeader({ title, body, actions }: { title: string; body?: string; actions?: ReactNode }) {

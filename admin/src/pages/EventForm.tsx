@@ -7,7 +7,7 @@ import type { GenderCategory } from '../../../shared/types';
 import { api } from '../api';
 import { fill, fromLocalInput, toLocalInput } from '../format';
 import { t } from '../strings';
-import { Button, ErrorNote, Field, Notice, PageHeader, PillarDots, QueryState, useAction } from '../ui';
+import { Button, ErrorNote, Field, Notice, PageHeader, QueryState, useAction } from '../ui';
 
 const TRIPOLI = { lat: 32.8872, lng: 13.1913 };
 
@@ -39,7 +39,6 @@ function initial(existing: AdminEventDetail | undefined): EventInput {
       ends_at: new Date(start.getTime() + 3 * 3_600_000).toISOString(),
       capacity: 20,
       gender_category: 'mixed',
-      branch_ids: [],
       organizer_ids: [],
       terms: [],
     };
@@ -56,7 +55,6 @@ function initial(existing: AdminEventDetail | undefined): EventInput {
     ends_at: e.ends_at,
     capacity: e.capacity,
     gender_category: e.gender_category,
-    branch_ids: existing.branches.map((b) => b.id),
     organizer_ids: existing.organizers.map((o) => o.id),
     terms: existing.terms.map((x) => x.text ?? ''),
   };
@@ -84,7 +82,6 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
     !!v.ends_at &&
     Date.parse(v.ends_at) > Date.parse(v.starts_at) &&
     v.capacity >= 1 &&
-    v.branch_ids.length > 0 &&
     v.terms.every((x) => x.trim().length > 0);
 
   const submit = async (publish: boolean) => {
@@ -185,20 +182,6 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
               ))}
             </select>
           </Field>
-        </div>
-      </section>
-
-      <section className="card">
-        <h2>{t.form.branches}</h2>
-        <p className="small muted">{t.form.branchesHint}</p>
-        <div className="branch-grid">
-          {meta.branches.map((b) => (
-            <label key={b.id} className="check">
-              <input type="checkbox" checked={v.branch_ids.includes(b.id)} onChange={() => set('branch_ids', toggle(v.branch_ids, b.id))} />
-              <span>{b.name_ar}</span>
-              <PillarDots pillars={b.pillars} />
-            </label>
-          ))}
         </div>
       </section>
 

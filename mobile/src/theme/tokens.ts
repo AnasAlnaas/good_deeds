@@ -2,22 +2,29 @@
 // if a value is missing, add it here (and to DESIGN.md) first.
 
 export const colors = {
-  primary: '#103048', // logo navy — buttons, header, active state
+  primary: '#103048', // logo navy — buttons, active state, dark chips
   primaryPressed: '#0A2134',
-  primarySoft: '#E7ECF1',
+  primarySoft: '#E3E9EF',
 
-  spiritual: '#0E7C74', // روحي
-  mental: '#B45309', // عقلي
-  physical: '#0A7A3E', // بدني
+  // The green accent: map pins, the chosen filter, highlight cards, progress.
+  // Text and icons on it are accentInk, never white (white on this green is unreadable).
+  accent: '#4ADE80',
+  accentPressed: '#3BCB6E',
+  accentSoft: '#DCFCE7',
+  accentInk: '#0B3B1F',
+
+  // The map's blue-grey and the frosted panels floating over it.
+  slate: '#3E5366',
+  glass: 'rgba(255, 255, 255, 0.86)',
 
   link: '#1B7FB0', // links and info only
   brandGreen: '#12A150', // the logo itself only — never for buttons or text
 
   ink: '#111827',
   inkMuted: '#4B5563', // never lighter than this
-  surface: '#FFFFFF',
-  surfaceAlt: '#F4F5F6',
-  border: '#DFE3E8',
+  surface: '#FFFFFF', // cards
+  surfaceAlt: '#ECEFF2', // the page behind the cards
+  border: '#DCE1E6',
 
   success: '#0A7A3E',
   warning: '#B45309',
@@ -40,18 +47,23 @@ export const type = {
   bodyStrong: { fontSize: 16, fontFamily: fonts.plex600, lineHeight: 26 },
   caption: { fontSize: 14, fontFamily: fonts.plex400, lineHeight: 22 },
   metric: { fontSize: 34, fontFamily: fonts.readex700, lineHeight: 40 },
+  // The one big number on a green highlight card.
+  hero: { fontSize: 48, fontFamily: fonts.readex700, lineHeight: 58 },
 } as const;
 
 export type TypeVariant = keyof typeof type;
 
 export const space = { xs: 4, sm: 8, md: 16, lg: 24, xl: 32, xxl: 48 } as const;
-export const radius = { card: 14, input: 10, pill: 999 } as const;
+export const radius = { card: 24, input: 16, pill: 999 } as const;
 
 // Smallest touch target: supervisors record attendance standing in the sun.
 export const touch = 48;
 
-export const pillarColor = {
-  spiritual: colors.spiritual,
-  mental: colors.mental,
-  physical: colors.physical,
+// A soft lift for what floats over the map or the page.
+export const shadow = {
+  shadowColor: '#0B1A28',
+  shadowOpacity: 0.12,
+  shadowRadius: 16,
+  shadowOffset: { width: 0, height: 6 },
+  elevation: 4,
 } as const;

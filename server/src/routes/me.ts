@@ -1,25 +1,63 @@
-// The signed-in person: profile, points and level, their attendance records,
-// confirming or disputing recorded hours, and deleting the account.
+// The signed-in person: profile (name and city) and photo, points and level, their attendance
+// records, confirming or disputing recorded hours, their reports and warnings,
+// and deleting the account.
+// Also other people's photos, for those allowed to see them.
 
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-import type { AttendanceItem, AttendanceResponse, ConfirmResponse, MeResponse } from '../../../shared/api';
+import type {
+  AttendanceItem,
+  AttendanceResponse,
+  ConfirmResponse,
+  MeResponse,
+  MyReport,
+  MyWarning,
+  PhotoResponse,
+  ProfileResponse,
+} from '../../../shared/api';
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
-import type { Attendance } from '../../../shared/types';
+import type { Attendance, User } from '../../../shared/types';
 import { requireUser } from '../auth';
 import type { Database } from '../db/client';
-import { allLevels, attendanceById, creditPoints, findEvent, ledgerOf, pillarWeights, publicUser } from '../db/queries';
+import { allLevels, attendanceById, creditPoints, findEvent, findUser, ledgerOf, publicUser, shownTo } from '../db/queries';
 import { iso } from '../db/rows';
 import * as s from '../db/schema';
-import { type AppEnv, readBody } from '../http';
+import { type AppEnv, HttpError, readBody } from '../http';
+import { photoUrl, readPhoto } from '../photo';
+import { asMyReports, asMyWarnings } from './reports';
 
 const pushToken = z.string().regex(/^Expo(nent)?PushToken\[[^\]]+\]$/);
 const pushTokenBody = z.object({ token: pushToken, lang: z.enum(['ar', 'en']) });
+const photoBody = z.object({ jpeg_base64: z.string().min(1) });
+// Anything else (gender, phone, role) is refused, not quietly dropped; the lengths are the rule's (rules.cleanProfileEdit).
+const profileBody = z.object({ full_name: z.string().optional(), city: z.string().optional() }).strict();
 
-async function toItems(db: Database, records: Attendance[]): Promise<AttendanceItem[]> {
+/** The admin log keeps decisions, not people: a deleted account's name becomes rules.DELETED_NAME there too. */
+async function eraseNameFromAdminLog(tx: Database, userId: string) {
+  const a = s.admin_actions;
+  const rename = (key: string) => sql`jsonb_set(${a.details}, ${`{${key}}`}::text[], ${JSON.stringify(rules.DELETED_NAME)}::jsonb)`;
+  // Role changes and removed photos name their target; a warning decision names the member.
+  await tx
+    .update(a)
+    .set({ details: rename('name') })
+    .where(
+      or(
+        and(inArray(a.action, ['change_role', 'remove_photo']), eq(a.target_id, userId)),
+        and(inArray(a.action, ['uphold_warning', 'withdraw_warning']), sql`${a.details}->>'user_id' = ${userId}`),
+      ),
+    );
+  // A handled report names whoever sent it.
+  const sent = tx.select({ id: s.reports.id }).from(s.reports).where(eq(s.reports.reporter_id, userId));
+  await tx
+    .update(a)
+    .set({ details: rename('reporter') })
+    .where(and(eq(a.action, 'handle_report'), inArray(a.target_id, sent)));
+}
+
+async function toItems(db: Database, viewer: User, records: Attendance[]): Promise<AttendanceItem[]> {
   if (records.length === 0) return [];
   const eventIds = [...new Set(records.map((a) => a.event_id))];
   const events = await db.select().from(s.events).where(inArray(s.events.id, eventIds));
@@ -27,7 +65,6 @@ async function toItems(db: Database, records: Attendance[]): Promise<AttendanceI
     .select(publicUser)
     .from(s.users)
     .where(inArray(s.users.id, [...new Set(records.map((a) => a.recorded_by))]));
-  const weights = await pillarWeights(db, eventIds);
   const eventById = new Map(events.map((e) => [e.id, iso(e)]));
   const recorderById = new Map(recorders.map((u) => [u.id, u]));
   return records.map((a) => {
@@ -35,8 +72,8 @@ async function toItems(db: Database, records: Attendance[]): Promise<AttendanceI
     return {
       attendance: a,
       event: { id: e.id, title: e.title, address_text: e.address_text, starts_at: e.starts_at, ends_at: e.ends_at, base_points: e.base_points },
-      recorded_by: recorderById.get(a.recorded_by) ?? null,
-      points: rules.pointsForAttendance(e, a.hours, weights.get(e.id)!),
+      recorded_by: recorderById.has(a.recorded_by) ? shownTo(viewer, recorderById.get(a.recorded_by)!) : null,
+      points: rules.pointsForAttendance(e, a.hours),
     };
   });
 }
@@ -47,20 +84,24 @@ export const meRoutes = new Hono<AppEnv>()
   .get('/', async (c) => {
     const { db } = c.var.deps;
     const user = c.var.user;
-    const byPillar = rules.pointsByPillar(await ledgerOf(db, user.id));
-    const total = rules.totalOf(byPillar);
+    const total = rules.totalPoints(await ledgerOf(db, user.id));
     const levels = await allLevels(db);
+    const level = rules.levelFor(levels, total);
     const confirmed = await db
       .select({ hours: s.attendance.hours })
       .from(s.attendance)
       .where(and(eq(s.attendance.user_id, user.id), eq(s.attendance.participant_status, 'confirmed')));
+    const [warnings] = await db.select({ n: count() }).from(s.warnings).where(eq(s.warnings.user_id, user.id));
     return c.json<MeResponse>({
       user,
-      points_by_pillar: byPillar,
       total_points: total,
-      level: rules.levelFor(levels, total),
+      level,
       next_level: rules.nextLevel(levels, total) ?? null,
       confirmed_hours: rules.round2(confirmed.reduce((sum, r) => sum + (r.hours ?? 0), 0)),
+      can_create_events: rules.canCreateEvents(user, level),
+      create_events_level: levels.find((l) => l.can_create_events)?.level ?? null,
+      can_report: rules.canReport(user, level),
+      warnings: warnings.n,
     });
   })
 
@@ -71,17 +112,76 @@ export const meRoutes = new Hono<AppEnv>()
       .from(s.attendance)
       .where(eq(s.attendance.user_id, c.var.user.id))
       .orderBy(desc(s.attendance.started_at));
-    return c.json<AttendanceItem[]>(await toItems(db, rows.map((r) => iso(r) as Attendance)));
+    return c.json<AttendanceItem[]>(await toItems(db, c.var.user, rows.map((r) => iso(r) as Attendance)));
   })
 
-  // App Store and Google Play require account deletion. Soft delete, as in Data_Model.md.
+  // The reports this person made, and whether an admin has looked at them.
+  .get('/reports', async (c) => {
+    const { db } = c.var.deps;
+    const rows = await db.select().from(s.reports).where(eq(s.reports.reporter_id, c.var.user.id)).orderBy(desc(s.reports.created_at));
+    return c.json<MyReport[]>(await asMyReports(db, c.var.user, rows.map(iso)));
+  })
+
+  // The warnings this person was given. Nobody else's are ever sent to the app.
+  .get('/warnings', async (c) => {
+    const { db } = c.var.deps;
+    const rows = await db.select().from(s.warnings).where(eq(s.warnings.user_id, c.var.user.id)).orderBy(desc(s.warnings.created_at));
+    return c.json<MyWarning[]>(await asMyWarnings(db, c.var.user, rows.map(iso)));
+  })
+
+  // The name and the city, checked as at sign-up. Gender and phone stay as they are.
+  .patch('/', async (c) => {
+    const { db } = c.var.deps;
+    const edit = rules.cleanProfileEdit(await readBody(c, profileBody));
+    if (!edit) throw new HttpError(400, 'invalid_request');
+    const [row] = await db.update(s.users).set(edit).where(eq(s.users.id, c.var.user.id)).returning();
+    return c.json<ProfileResponse>({ user: iso(row) });
+  })
+
+  // A new profile photo replaces the old one. Its metadata is removed (src/photo.ts).
+  .put('/photo', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const jpeg = readPhoto((await readBody(c, photoBody)).jpeg_base64);
+    if (!jpeg) throw new HttpError(400, 'photo_invalid');
+    const t = new Date(now());
+    const avatar_url = photoUrl(me.id, t);
+    await db.transaction(async (tx) => {
+      await tx
+        .insert(s.user_photos)
+        .values({ user_id: me.id, jpeg, updated_at: t })
+        .onConflictDoUpdate({ target: s.user_photos.user_id, set: { jpeg, updated_at: t } });
+      await tx.update(s.users).set({ avatar_url }).where(eq(s.users.id, me.id));
+    });
+    return c.json<PhotoResponse>({ avatar_url });
+  })
+
+  .delete('/photo', async (c) => {
+    const { db } = c.var.deps;
+    const me = c.var.user;
+    await db.transaction(async (tx) => {
+      await tx.delete(s.user_photos).where(eq(s.user_photos.user_id, me.id));
+      await tx.update(s.users).set({ avatar_url: null }).where(eq(s.users.id, me.id));
+    });
+    return c.body(null, 204);
+  })
+
+  // App Store and Google Play require account deletion. The row stays (Data_Model.md:
+  // users.deleted_at) so hours and points still add up, but everything personal is
+  // erased (rules.erasedProfile), here and in the names the admin log copied.
   .delete('/', async (c) => {
     const { db, now } = c.var.deps;
-    const userId = c.var.user.id;
+    const { id: userId, phone } = c.var.user;
     await db.transaction(async (tx) => {
-      await tx.update(s.users).set({ deleted_at: new Date(now()) }).where(eq(s.users.id, userId));
+      await tx
+        .update(s.users)
+        .set({ ...rules.erasedProfile(), deleted_at: new Date(now()) })
+        .where(eq(s.users.id, userId));
       await tx.update(s.registrations).set({ status: 'cancelled' }).where(eq(s.registrations.user_id, userId));
       await tx.delete(s.push_tokens).where(eq(s.push_tokens.user_id, userId));
+      await tx.delete(s.user_photos).where(eq(s.user_photos.user_id, userId));
+      await tx.delete(s.login_codes).where(eq(s.login_codes.phone, phone));
+      await eraseNameFromAdminLog(tx, userId);
     });
     return c.body(null, 204);
   })
@@ -115,7 +215,7 @@ export const attendanceRoutes = new Hono<AppEnv>()
     const a = await attendanceById(db, c.req.param('id'));
     if (!a) throw new ApiError('not_found');
     if (a.user_id !== c.var.user.id) throw new ApiError('not_your_attendance');
-    const [item] = await toItems(db, [a]);
+    const [item] = await toItems(db, c.var.user, [a]);
     return c.json<AttendanceItem>(item);
   })
 
@@ -126,9 +226,10 @@ export const attendanceRoutes = new Hono<AppEnv>()
     const t = now();
     const result = await db.transaction(async (tx) => {
       const a = await attendanceById(tx, id, { lock: true });
-      rules.assertCanConfirm(a, me.id);
+      const [recordEvent] = a ? await tx.select({ status: s.events.status }).from(s.events).where(eq(s.events.id, a.event_id)) : [];
+      rules.assertCanConfirm(a, me.id, recordEvent);
       const event = await findEvent(tx, a.event_id);
-      const earned = rules.pointsForAttendance(event, a.hours, (await pillarWeights(tx, [event.id])).get(event.id)!);
+      const earned = rules.pointsForAttendance(event, a.hours);
       await tx
         .update(s.attendance)
         .set({ participant_status: 'confirmed', participant_acted_at: new Date(t) })
@@ -159,3 +260,21 @@ export const attendanceRoutes = new Hono<AppEnv>()
     return c.json<AttendanceResponse>({ attendance });
   });
 
+
+export const userRoutes = new Hono<AppEnv>()
+  .use(requireUser)
+
+  // Someone's photo, for whoever may see it (rules.canSeePhoto). Anyone else is
+  // told there is none, so the answer does not reveal that a photo exists.
+  .get('/:id/photo', async (c) => {
+    const { db } = c.var.deps;
+    const owner = await findUser(db, c.req.param('id'));
+    const [photo] = owner ? await db.select().from(s.user_photos).where(eq(s.user_photos.user_id, owner.id)) : [];
+    if (!owner || owner.deleted_at || !photo || !rules.canSeePhoto(c.var.user, owner)) throw new ApiError('not_found');
+    return c.body(new Uint8Array(photo.jpeg), 200, {
+      'Content-Type': 'image/jpeg',
+      // The address changes with every new photo, so a copy never goes stale; it stays on this device only.
+      'Cache-Control': 'private, max-age=31536000, immutable',
+      'X-Content-Type-Options': 'nosniff',
+    });
+  });

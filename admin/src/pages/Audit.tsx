@@ -2,9 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 
 import type { AuditEntry } from '../../../shared/admin-api';
-import type { Role } from '../../../shared/types';
+import type { ReportCategory, Role } from '../../../shared/types';
 import { api } from '../api';
-import { dateTime, num } from '../format';
+import { dateTime, fill, num } from '../format';
 import { t } from '../strings';
 import { PageHeader, QueryState } from '../ui';
 
@@ -64,6 +64,15 @@ function Details({ entry: e }: { entry: AuditEntry }) {
     case 'publish_event':
     case 'cancel_event':
       return <Link to={`/events/${e.target_id}`}>{str('title')}</Link>;
+    case 'remove_photo':
+      return <>{str('name')}</>;
+    case 'reject_event':
+      return (
+        <>
+          <Link to={`/events/${e.target_id}`}>{str('title')}</Link>
+          {str('note') && ` · «${str('note')}»`}
+        </>
+      );
     case 'update_event': {
       const changed = Array.isArray(d.changed) ? (d.changed as string[]) : [];
       const labels = [...new Set(changed.map((k) => t.audit.fields[k] ?? k))];
@@ -78,6 +87,20 @@ function Details({ entry: e }: { entry: AuditEntry }) {
         <>
           {str('event_title')} · {t.audit.decisions[str('decision')] ?? str('decision')}: {num(Number(d.hours_before ?? 0))} ← {num(Number(d.hours_after ?? 0))}{' '}
           {t.event.hours} · «{str('note')}»
+        </>
+      );
+    case 'handle_report':
+      return (
+        <>
+          {t.reportCategory[str('category') as ReportCategory] ?? str('category')}
+          {str('reporter') && ` · ${fill(t.reports.from, { name: str('reporter') })}`} · «{str('note')}»
+        </>
+      );
+    case 'uphold_warning':
+    case 'withdraw_warning':
+      return (
+        <>
+          {str('user_id') ? <Link to={`/warnings?user=${str('user_id')}`}>{str('name')}</Link> : str('name')} · {str('event_title')} · «{str('note')}»
         </>
       );
   }

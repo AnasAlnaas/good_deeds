@@ -4,20 +4,35 @@
 
 import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
 
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, count, desc, eq, gt, isNull, lt, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
 import type { LoginResponse, RequestCodeResponse } from '../../../shared/api';
+import * as rules from '../../../shared/rules';
 import { signToken } from '../auth';
+import type { Database } from '../db/client';
 import { newId } from '../db/queries';
 import { iso } from '../db/rows';
 import * as s from '../db/schema';
-import { type AppEnv, HttpError, readBody } from '../http';
+import { type AppDeps, type AppEnv, HttpError, readBody } from '../http';
 
 const CODE_MINUTES = 10;
 const MAX_ATTEMPTS = 5;
 const RESEND_AFTER_MS = 60_000;
+/** Spent and expired codes are deleted this long after they expire. */
+const KEEP_EXPIRED_MS = 24 * 60 * 60_000;
+
+// A code is one of a million. Without a daily cap, a new code every minute with
+// 5 tries each is 7,200 guesses a day, enough to take over a phone's account in
+// weeks. Per phone, over the last 24 hours:
+const DAY_MS = 86_400_000;
+const MAX_CODES_PER_DAY = 5;
+const MAX_FAILED_PER_DAY = 10;
+// Per network address, over the last hour: codes sent to any phone, so nobody
+// can send SMS to many numbers from one place.
+const HOUR_MS = 3_600_000;
+const MAX_CODES_PER_ADDRESS = 20;
 
 const phone = z.string().regex(/^\+[1-9]\d{7,14}$/, 'international format, e.g. +218912345678');
 const requestCodeBody = z.object({ phone });
@@ -26,9 +41,9 @@ const verifyCodeBody = z.object({
   code: z.string().regex(/^\d{6}$/),
   profile: z
     .object({
-      full_name: z.string().trim().min(2).max(100),
+      full_name: z.string().trim().min(rules.NAME_MIN).max(rules.NAME_MAX),
       gender: z.enum(['male', 'female']),
-      city: z.string().trim().min(1).max(60),
+      city: z.string().trim().min(1).max(rules.CITY_MAX),
     })
     .optional(),
 });
@@ -40,6 +55,29 @@ function hashCode(secret: string, phoneNumber: string, code: string) {
 
 function sameHash(a: string, b: string) {
   return a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+
+/** The codes sent to a phone in the last 24 hours, and the wrong codes tried against them. */
+async function phoneDay(q: Database, phoneNumber: string, t: number) {
+  const [row] = await q
+    .select({ codes: count(), failed: sql<string>`coalesce(sum(${s.login_codes.attempts}), 0)` })
+    .from(s.login_codes)
+    .where(and(eq(s.login_codes.phone, phoneNumber), gt(s.login_codes.created_at, new Date(t - DAY_MS))));
+  return { codes: row.codes, failed: Number(row.failed) };
+}
+
+// Codes sent per network address, kept in this process's memory (one list per app).
+const sentFrom = new WeakMap<AppDeps, Map<string, number[]>>();
+
+function recentFrom(deps: AppDeps, address: string, t: number) {
+  let all = sentFrom.get(deps);
+  if (!all) sentFrom.set(deps, (all = new Map()));
+  if (all.size > 10_000) {
+    for (const [key, times] of all) if (times.every((x) => t - x >= HOUR_MS)) all.delete(key);
+  }
+  const times = (all.get(address) ?? []).filter((x) => t - x < HOUR_MS);
+  all.set(address, times);
+  return times;
 }
 
 export const authRoutes = new Hono<AppEnv>()
@@ -57,6 +95,13 @@ export const authRoutes = new Hono<AppEnv>()
     if (latest && !latest.consumed_at && t - latest.created_at.getTime() < RESEND_AFTER_MS) {
       throw new HttpError(429, 'code_recently_sent');
     }
+    const day = await phoneDay(db, body.phone, t);
+    if (day.codes >= MAX_CODES_PER_DAY || day.failed >= MAX_FAILED_PER_DAY) throw new HttpError(429, 'try_later');
+    const address = c.var.deps.clientIp?.(c);
+    const fromHere = address ? recentFrom(c.var.deps, address, t) : [];
+    if (fromHere.length >= MAX_CODES_PER_ADDRESS) throw new HttpError(429, 'try_later');
+    // Old codes are of no use: clear them now and then, without a separate job.
+    await db.delete(s.login_codes).where(lt(s.login_codes.expires_at, new Date(t - KEEP_EXPIRED_MS)));
     const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
     await db.insert(s.login_codes).values({
       id: newId(),
@@ -65,6 +110,7 @@ export const authRoutes = new Hono<AppEnv>()
       expires_at: new Date(t + CODE_MINUTES * 60_000),
       created_at: new Date(t),
     });
+    fromHere.push(t);
     await sendLoginCode(body.phone, code);
     // The same answer whether or not the phone has an account.
     return c.json<RequestCodeResponse>({ expires_in_seconds: CODE_MINUTES * 60 });
@@ -83,6 +129,8 @@ export const authRoutes = new Hono<AppEnv>()
         .limit(1)
         .for('update');
       if (!code || code.expires_at.getTime() <= t) return { error: 'code_expired' as const };
+      // Read after the lock, so wrong codes sent at once each see the others.
+      if ((await phoneDay(tx, body.phone, t)).failed >= MAX_FAILED_PER_DAY) return { error: 'try_later' as const };
       if (code.attempts >= MAX_ATTEMPTS) return { error: 'too_many_attempts' as const };
       if (!sameHash(code.code_hash, hashCode(jwtSecret, body.phone, body.code))) {
         await tx.update(s.login_codes).set({ attempts: code.attempts + 1 }).where(eq(s.login_codes.id, code.id));
@@ -106,7 +154,8 @@ export const authRoutes = new Hono<AppEnv>()
     });
     // Errors are returned, not thrown, so the failed-attempt count is saved.
     if (result.error) {
-      throw new HttpError(result.error === 'profile_required' ? 409 : result.error === 'too_many_attempts' ? 429 : 401, result.error);
+      const status = result.error === 'profile_required' ? 409 : result.error === 'too_many_attempts' || result.error === 'try_later' ? 429 : 401;
+      throw new HttpError(status, result.error);
     }
     return c.json<LoginResponse>({ token: await signToken(result.user!.id, jwtSecret), user: result.user! });
   });

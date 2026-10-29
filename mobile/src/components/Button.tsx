@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { colors, radius, space, touch } from '@/theme/tokens';
 import { Txt } from './Txt';
 
-type Variant = 'primary' | 'secondary' | 'danger' | 'quiet';
+type Variant = 'primary' | 'accent' | 'secondary' | 'danger' | 'quiet';
 
 interface Props {
   label: string;
@@ -16,8 +16,9 @@ interface Props {
 
 const look: Record<Variant, { bg: string; pressed: string; fg: string; border: string }> = {
   primary: { bg: colors.primary, pressed: colors.primaryPressed, fg: colors.surface, border: colors.primary },
-  secondary: { bg: colors.surface, pressed: colors.primarySoft, fg: colors.primary, border: colors.primary },
-  danger: { bg: colors.surface, pressed: colors.surfaceAlt, fg: colors.danger, border: colors.danger },
+  accent: { bg: colors.accent, pressed: colors.accentPressed, fg: colors.accentInk, border: colors.accent },
+  secondary: { bg: colors.surface, pressed: colors.primarySoft, fg: colors.primary, border: colors.surface },
+  danger: { bg: colors.surface, pressed: colors.surfaceAlt, fg: colors.danger, border: colors.surface },
   quiet: { bg: 'transparent', pressed: colors.primarySoft, fg: colors.primary, border: 'transparent' },
 };
 
@@ -46,12 +47,12 @@ export function Button({ label, onPress, variant = 'primary', disabled, icon }: 
 
 const styles = StyleSheet.create({
   base: {
-    minHeight: touch,
-    borderRadius: radius.input,
+    minHeight: touch + 4,
+    borderRadius: radius.pill,
     borderWidth: 1,
     paddingHorizontal: space.md,
     justifyContent: 'center',
   },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space.sm },
-  disabled: { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
+  disabled: { backgroundColor: colors.primarySoft, borderColor: colors.primarySoft },
 });

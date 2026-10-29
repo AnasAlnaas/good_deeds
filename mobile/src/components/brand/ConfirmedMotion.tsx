@@ -2,16 +2,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
-import { PILLARS, type Pillar } from '@/data/types';
-import { colors, pillarColor } from '@/theme/tokens';
+import { colors } from '@/theme/tokens';
 import { ease, lerp, seg, useTimeline, type MotionProps } from './motion';
 import { Plus } from './shapes';
 
 // Success — the participant confirmed their hours: the app's one reward moment
-// (DESIGN.md). A seal pops, then points burst out of it in the pillar colours,
-// shared out by what this attendance actually earned. Timed to land with the
-// 600 ms PillarBar fill under it on the confirm screen. Afterwards the seal
-// sends out a slow glow.
+// (DESIGN.md). A seal pops, then points burst out of it in greens and navy.
+// Timed to land with the 600 ms level bar fill under it on the confirm screen.
+// Afterwards the seal sends out a slow glow.
 
 const W = 160;
 const H = 140;
@@ -22,16 +20,9 @@ const COUNT = 14;
 const C = { x: W / 2, y: H / 2 };
 const SEAL = 76;
 
-interface Props extends MotionProps {
-  // Points per pillar for this attendance (any scale). Pillars at 0 get no
-  // particles; leave it out for an even mix.
-  values?: Record<Pillar, number>;
-}
-
-export function ConfirmedMotion({ size = 150, play = true, onDone, values }: Props) {
+export function ConfirmedMotion({ size = 150, play = true, onDone }: MotionProps) {
   const u = size / W;
   const { t, idle } = useTimeline(play, DURATION, IDLE, onDone);
-  const colorsOut = particleColors(values);
 
   const seal = useAnimatedStyle(() => ({
     opacity: seg(t.get(), 0, 100),
@@ -55,7 +46,7 @@ export function ConfirmedMotion({ size = 150, play = true, onDone, values }: Pro
           halo,
         ]}
       />
-      {colorsOut.map((color, i) => (
+      {Array.from({ length: COUNT }, (_, i) => PARTICLE_COLORS[i % PARTICLE_COLORS.length]).map((color, i) => (
         <Particle key={i} index={i} color={color} u={u} t={t} />
       ))}
       <Animated.View
@@ -72,22 +63,8 @@ export function ConfirmedMotion({ size = 150, play = true, onDone, values }: Pro
   );
 }
 
-// Shares COUNT particles between the pillars in proportion to `values`,
-// interleaved so the colours mix around the circle instead of clumping.
-function particleColors(values?: Record<Pillar, number>) {
-  const live = PILLARS.filter((p) => (values ? values[p] > 0 : true));
-  const pillars = live.length ? live : PILLARS;
-  const total = pillars.reduce((sum, p) => sum + (values?.[p] || 1), 0);
-  const share = Object.fromEntries(pillars.map((p) => [p, (values?.[p] || 1) / total])) as Record<Pillar, number>;
-  const used = Object.fromEntries(pillars.map((p) => [p, 0])) as Record<Pillar, number>;
-  return Array.from({ length: COUNT }, (_, i) => {
-    const next = pillars.reduce((best, p) =>
-      share[p] * (i + 1) - used[p] > share[best] * (i + 1) - used[best] ? p : best,
-    );
-    used[next]++;
-    return pillarColor[next];
-  });
-}
+// The burst's colours, mixed around the circle.
+const PARTICLE_COLORS = [colors.accent, colors.brandGreen, colors.primary];
 
 function Particle({ index, color, u, t }: { index: number; color: string; u: number; t: SharedValue<number> }) {
   // Fixed per index, so the burst looks scattered but plays the same every time.
