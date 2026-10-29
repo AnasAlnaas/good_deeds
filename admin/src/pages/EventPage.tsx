@@ -105,14 +105,6 @@ export function EventPage() {
         </section>
 
         <section className="card">
-          <h2>{t.event.branches}</h2>
-          <ul className="stack" style={{ margin: 0, paddingInlineStart: 18 }}>
-            {d.branches.map((b) => (
-              <li key={b.id}>
-                {b.name_ar}
-              </li>
-            ))}
-          </ul>
           <h2>{t.event.terms}</h2>
           {e.terms_locked_at && <p className="small muted">{t.event.termsLocked}</p>}
           {d.terms.length ? (

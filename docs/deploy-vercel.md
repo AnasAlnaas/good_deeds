@@ -50,22 +50,13 @@ need your account and a browser.
 
 `https://good-deeds-api.vercel.app/api/health` answers `{"ok":true,…}`.
 
-## 2. The tables (from this PC)
+## 2. The tables
 
-Copy `DATABASE_URL_UNPOOLED` from `good-deeds-api` → **Settings → Environment
-Variables** into `server/.env` as `DATABASE_URL` (the file is never committed;
-the unpooled address suits migrations). Then, in `server/`:
-
-```bash
-npm run db:migrate
-```
-
-```bash
-npm run db:seed -- --reference
-```
-
-That makes the tables and adds the branches of faith and the levels. The demo
-people and events are never loaded into this database.
+Nothing to do: every Vercel build runs `npm run db:migrate` first
+(`server/vercel.json`), which applies new migrations and adds the levels if they
+are missing. It uses Neon's direct address, `DATABASE_URL_UNPOOLED`. The demo
+people and events are never loaded into this database. The branches of faith
+are not loaded either: they come back with the course before joining events.
 
 ## 3. The scheduled job
 
@@ -115,8 +106,7 @@ Expo project once (expo.dev → the project → **Credentials** → Android → 
 ## Later changes
 
 - **Code:** `git push`; both projects redeploy.
-- **A new migration** (`npm run db:generate` made one): `npm run db:migrate`
-  first, then push.
+- **A new migration** (`npm run db:generate` made one): just push; the build applies it.
 
 ## What to know about the free plan
 

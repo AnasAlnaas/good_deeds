@@ -50,6 +50,13 @@
       "when": 1793182736273,
       "tag": "0006_remove_pillars",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793297008882,
+      "tag": "0007_branches_off_events",
+      "breakpoints": true
     }
   ]
 }

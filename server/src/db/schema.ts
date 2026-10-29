@@ -121,15 +121,6 @@ export const event_organizers = pgTable(
   (t) => [primaryKey({ columns: [t.event_id, t.user_id] }), index('event_organizers_user').on(t.user_id)],
 );
 
-export const event_branches = pgTable(
-  'event_branches',
-  {
-    event_id: text('event_id').notNull().references(() => events.id),
-    branch_id: text('branch_id').notNull().references(() => branches.id),
-  },
-  (t) => [primaryKey({ columns: [t.event_id, t.branch_id] })],
-);
-
 export const event_terms = pgTable(
   'event_terms',
   {

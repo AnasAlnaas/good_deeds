@@ -23,6 +23,10 @@ export interface User {
   deleted_at: string | null;
 }
 
+/**
+ * A branch of faith (شعب الإيمان). Not linked to events: the branches are what
+ * the short course before joining events teaches (still to be designed).
+ */
 export interface Branch {
   id: string;
   name_ar: string;
@@ -61,11 +65,6 @@ export interface AppEvent {
 export interface EventOrganizer {
   event_id: string;
   user_id: string;
-}
-
-export interface EventBranch {
-  event_id: string;
-  branch_id: string;
 }
 
 export interface EventTerm {
@@ -190,7 +189,6 @@ export interface Db {
   branches: Branch[];
   events: AppEvent[];
   event_organizers: EventOrganizer[];
-  event_branches: EventBranch[];
   event_terms: EventTerm[];
   registrations: Registration[];
   term_acceptances: TermAcceptance[];

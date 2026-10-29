@@ -137,7 +137,6 @@ const proposal = (over: Partial<EventProposal> = {}): EventProposal => ({
   ends_at: new Date(NOW + 75 * HOUR).toISOString(),
   capacity: 15,
   gender_category: 'mixed',
-  branch_ids: ['b01'],
   terms: ['أحضر قفازيك.'],
   ...over,
 });
@@ -179,13 +178,12 @@ expectError('he edits it after an admin turned it down', 'proposal_not_waiting',
 expectError('a supervisor edits a published event he runs', 'proposal_not_waiting', () => server.editProposal(three, 'u_khaled', 'e02', edited, NOW));
 expectError('or withdraws it', 'proposal_not_waiting', () => server.withdrawProposal(three, 'u_khaled', 'e02'));
 const withdrawn = server.withdrawProposal(three, 'u_khaled', draft.id);
-expectEqual('he withdraws it: gone, with its terms, branches and supervisors', [
+expectEqual('he withdraws it: gone, with its terms and supervisors', [
   withdrawn.events.some((e) => e.id === draft.id),
   withdrawn.event_terms.some((x) => x.event_id === draft.id),
-  withdrawn.event_branches.some((x) => x.event_id === draft.id),
   withdrawn.event_organizers.some((x) => x.event_id === draft.id),
   server.waitingProposals(withdrawn, 'u_khaled'),
-], [false, false, false, false, 2]);
+], [false, false, false, 2]);
 expectError('withdrawn twice', 'not_found', () => server.withdrawProposal(withdrawn, 'u_khaled', draft.id));
 
 console.log('\n— editing the profile');

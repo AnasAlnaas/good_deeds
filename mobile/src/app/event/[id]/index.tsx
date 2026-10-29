@@ -152,13 +152,6 @@ export default function EventDetail() {
         <Button variant="accent" icon="navigate" label={s.event.directions} onPress={() => openDirections(event)} />
       </Card>
 
-      <SectionTitle>{s.event.branches}</SectionTitle>
-      <Row>
-        {event.branches.map((b) => (
-          <Badge key={b.id} label={lang === 'ar' ? b.name_ar : b.name_en} color={colors.ink} />
-        ))}
-      </Row>
-
       <SectionTitle>{s.event.participants}</SectionTitle>
       {participants.length === 0 ? (
         <Txt color={colors.inkMuted}>{s.event.noParticipants}</Txt>

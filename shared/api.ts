@@ -9,7 +9,6 @@ import type { AdminErrorCode, ApiErrorCode } from './errors';
 import type {
   AppEvent,
   Attendance,
-  Branch,
   EventStatus,
   EventTerm,
   Gender,
@@ -104,7 +103,6 @@ export interface EventProposal {
   ends_at: string; // ISO
   capacity: number;
   gender_category: GenderCategory;
-  branch_ids: string[];
   /** In order; each one is accepted on its own screen. */
   terms: string[];
 }
@@ -118,7 +116,6 @@ export interface ProposeEventResponse {
 
 /** GET /api/events/form: what the event form offers. */
 export interface EventFormMeta {
-  branches: Branch[];
   /** Event types, their fixed points (shared/placeholders.ts until Points_And_Levels.md is in) and their class. */
   subtypes: { id: string; base_points: number; event_class: EventClassId }[];
   /** false = the event waits for an admin's approval. */
@@ -132,7 +129,6 @@ export interface EventFormMeta {
 export interface EventDetail extends EventSummary {
   description: string;
   terms_locked_at: string | null;
-  branches: Branch[];
   terms: EventTerm[];
   participants: PublicUser[];
   my_registration: Registration | null;

@@ -11,7 +11,6 @@ import * as rules from '../../../shared/rules';
 import {
   type AppEvent,
   type Attendance,
-  type Branch,
   type EventTerm,
   type Level,
   type Registration,
@@ -48,11 +47,6 @@ export async function findEventFor(q: Database, id: string, viewer: Pick<User, '
   const [row] = await q.select().from(s.events).where(eq(s.events.id, id));
   if (!row || !rules.canSeeEvent(viewer, row)) throw new ApiError('not_found');
   return iso(row);
-}
-
-/** The branches of faith an event form offers. */
-export async function activeBranches(q: Database): Promise<Branch[]> {
-  return q.select().from(s.branches).where(eq(s.branches.is_active, true)).orderBy(asc(s.branches.id));
 }
 
 export async function findUser(q: Database, id: string): Promise<User | undefined> {

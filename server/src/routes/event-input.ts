@@ -25,7 +25,6 @@ const proposalFields = z.object({
   ends_at: isoTime,
   capacity: z.number().int().min(1).max(10_000),
   gender_category: z.enum(['male', 'female', 'mixed']),
-  branch_ids: z.array(z.string()).min(1).max(20),
   terms: z.array(z.string().trim().min(1).max(1000)).max(30),
 });
 
@@ -38,22 +37,18 @@ export const proposalInput = proposalFields.refine(endsAfterStart);
 export const eventInput = proposalFields.extend({ organizer_ids: z.array(z.string()).max(20) }).refine(endsAfterStart);
 export type EventInput = z.infer<typeof eventInput>;
 
-/** Every id must name an existing branch / an active person, or the request is invalid. */
-export async function assertIdsExist(q: Database, input: { branch_ids: string[]; organizer_ids: string[] }) {
-  const branchIds = [...new Set(input.branch_ids)];
+/** Every id must name an active person, or the request is invalid. */
+export async function assertIdsExist(q: Database, input: { organizer_ids: string[] }) {
   const organizerIds = [...new Set(input.organizer_ids)];
-  const branches = await q.select({ id: s.branches.id }).from(s.branches).where(inArray(s.branches.id, branchIds));
   const people = organizerIds.length
     ? await q.select({ id: s.users.id }).from(s.users).where(and(inArray(s.users.id, organizerIds), isNull(s.users.deleted_at)))
     : [];
-  if (branches.length !== branchIds.length || people.length !== organizerIds.length) throw new HttpError(400, 'invalid_request');
-  return { branchIds, organizerIds };
+  if (people.length !== organizerIds.length) throw new HttpError(400, 'invalid_request');
+  return { organizerIds };
 }
 
-export async function writeLinks(q: Database, eventId: string, branchIds: string[], organizerIds: string[]) {
-  await q.delete(s.event_branches).where(eq(s.event_branches.event_id, eventId));
+export async function writeLinks(q: Database, eventId: string, organizerIds: string[]) {
   await q.delete(s.event_organizers).where(eq(s.event_organizers.event_id, eventId));
-  await q.insert(s.event_branches).values(branchIds.map((branch_id) => ({ event_id: eventId, branch_id })));
   if (organizerIds.length) await q.insert(s.event_organizers).values(organizerIds.map((user_id) => ({ event_id: eventId, user_id })));
 }
 

@@ -230,7 +230,6 @@ const proposal = (over: Partial<EventProposal> = {}): EventProposal => ({
   ends_at: iso(h.clock() + 75 * HOUR),
   capacity: 15,
   gender_category: 'mixed',
-  branch_ids: ['b01', 'b16'],
   terms: ['أحضر قفازيك.'],
   ...over,
 });
@@ -242,10 +241,8 @@ await expectError('or opens the form', 'cannot_create_events', call('GET', '/eve
 await expectError('a man proposes a women-only event', 'category_not_allowed', call('POST', '/events', khaled, proposal({ gender_category: 'female' })));
 await expectError('an event that has already started', 'starts_in_past', call('POST', '/events', khaled, proposal({ starts_at: iso(h.clock() - HOUR) })));
 await expectError('a type that does not exist', 'invalid_request', call('POST', '/events', khaled, proposal({ subtype: 'party' })));
-await expectError('no branch of faith', 'invalid_request', call('POST', '/events', khaled, proposal({ branch_ids: [] })));
-await expectError('a branch that does not exist', 'invalid_request', call('POST', '/events', khaled, proposal({ branch_ids: ['b99'] })));
 const form: EventFormMeta = await expectOk('the form', call('GET', '/events/form', khaled));
-expectEqual('it says the event waits for approval', [form.publishes_directly, form.waiting, form.max_waiting, form.branches.length], [false, 0, 3, 20]);
+expectEqual('it says the event waits for approval', [form.publishes_directly, form.waiting, form.max_waiting], [false, 0, 3]);
 const proposed = await expectOk('a supervisor proposes an event', call('POST', '/events', khaled, proposal()));
 expectEqual('it waits for an admin', proposed.status, 'draft');
 const asCreator = ((await call('GET', '/events', khaled)).body as EventSummary[]).find((e) => e.id === proposed.id);
@@ -263,7 +260,7 @@ expectEqual('is published at once', [byAdmin.status, ((await call('GET', '/event
 
 console.log('\n— the proposer edits or withdraws his waiting event');
 const edited = (over: Partial<EventProposal> = {}) =>
-  proposal({ title: 'حلقة تلاوة في الحديقة', subtype: 'quran_circle', branch_ids: ['b01'], terms: ['أحضر مصحفك.', 'احضر قبل الموعد بربع ساعة.'], ...over });
+  proposal({ title: 'حلقة تلاوة في الحديقة', subtype: 'quran_circle', terms: ['أحضر مصحفك.', 'احضر قبل الموعد بربع ساعة.'], ...over });
 const editDraft = (token: string, id: string, body = edited()) => call('PUT', `/events/${id}`, token, body);
 await expectError('a member edits his proposal', 'not_found', editDraft(ahmad, proposed.id));
 await expectError('or withdraws it', 'not_found', call('DELETE', `/events/${proposed.id}`, ahmad));
@@ -275,11 +272,10 @@ await expectError('ending before it starts', 'invalid_request', editDraft(khaled
 await expectOk('an admin adds a supervisor to it in the panel', call('PUT', `/admin/events/${proposed.id}`, admin, { ...proposal(), organizer_ids: ['u_khaled', 'u_fatima'] }));
 await expectOk('he edits it while three wait (it does not count itself)', editDraft(khaled, proposed.id));
 const afterEdit: EventDetail = (await call('GET', `/events/${proposed.id}`, khaled)).body;
-expectEqual('the edit shows, with the points of its new type, still waiting', [afterEdit.title, afterEdit.status, afterEdit.base_points, afterEdit.branches.map((b) => b.id), afterEdit.terms.map((x) => x.text)], [
+expectEqual('the edit shows, with the points of its new type, still waiting', [afterEdit.title, afterEdit.status, afterEdit.base_points, afterEdit.terms.map((x) => x.text)], [
   'حلقة تلاوة في الحديقة',
   'draft',
   20,
-  ['b01'],
   ['أحضر مصحفك.', 'احضر قبل الموعد بربع ساعة.'],
 ]);
 const draftOrganizers = ((await call('GET', `/admin/events/${proposed.id}`, admin)).body as AdminEventDetail).organizers.map((o) => o.id).sort();

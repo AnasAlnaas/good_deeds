@@ -69,7 +69,6 @@ const inputFrom = (d: AdminEventDetail): EventInput => ({
   ends_at: d.event.ends_at,
   capacity: d.event.capacity,
   gender_category: d.event.gender_category,
-  branch_ids: d.branches.map((b) => b.id),
   organizer_ids: d.organizers.map((o) => o.id),
   terms: d.terms.map((t) => t.text ?? ''),
 });
@@ -106,7 +105,7 @@ await expectError('someone who does not exist', 'not_found', call('PATCH', '/adm
 // ---------------------------------------------------------------------------
 console.log('\n— creating events');
 const meta = (await call('GET', '/admin/meta', admin)).body;
-expectEqual('form choices', [meta.branches.length, meta.subtypes.find((x: { id: string }) => x.id === 'street_cleanup')?.base_points], [20, 30]);
+expectEqual('form choices', [meta.subtypes.find((x: { id: string }) => x.id === 'street_cleanup')?.base_points], [30]);
 const base: CreateEventBody = {
   title: 'حملة نظافة تجريبية',
   description: 'تنظيف الساحة.',
@@ -118,13 +117,11 @@ const base: CreateEventBody = {
   ends_at: iso(NOW + 51 * HOUR),
   capacity: 10,
   gender_category: 'mixed',
-  branch_ids: ['b01'],
   organizer_ids: [],
   terms: ['البند الأول', 'البند الثاني'],
   publish: false,
 };
 await expectError('ends before it starts', 'invalid_request', call('POST', '/admin/events', admin, { ...base, ends_at: iso(NOW) }));
-await expectError('a branch that does not exist', 'invalid_request', call('POST', '/admin/events', admin, { ...base, branch_ids: ['b99'] }));
 await expectError('published with nobody to record attendance', 'needs_organizer', call('POST', '/admin/events', admin, { ...base, publish: true }));
 const { id } = await expectOk('save a draft', call('POST', '/admin/events', admin, base));
 const draft = await detail(id);

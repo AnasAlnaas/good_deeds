@@ -41,7 +41,6 @@ function blank(): Values {
     starts_at: start.toISOString(),
     ends_at: new Date(start.getTime() + 3 * HOUR).toISOString(),
     gender_category: 'mixed',
-    branch_ids: [],
     terms: [],
   };
 }
@@ -57,7 +56,6 @@ function valuesOf(e: EventDetail): Values {
     starts_at: e.starts_at,
     ends_at: e.ends_at,
     gender_category: e.gender_category,
-    branch_ids: e.branches.map((b) => b.id),
     terms: e.terms.map((x) => x.text ?? ''),
   };
 }
@@ -89,7 +87,6 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
     v.title.trim().length >= 3 &&
     v.description.trim().length > 0 &&
     v.address_text.trim().length > 0 &&
-    v.branch_ids.length > 0 &&
     starts.getTime() > now &&
     ends.getTime() > starts.getTime() &&
     Number.isInteger(seats) &&
@@ -209,21 +206,6 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
       <Txt variant="caption" color={colors.inkMuted}>
         {fmt(s.newEvent.typePoints, { points: count(points, s.units.point) })}
       </Txt>
-
-      <SectionTitle>{s.newEvent.branches}</SectionTitle>
-      <Txt variant="caption" color={colors.inkMuted}>
-        {s.newEvent.branchesHint}
-      </Txt>
-      <Row>
-        {meta.branches.map((b) => (
-          <Chip
-            key={b.id}
-            label={lang === 'ar' ? b.name_ar : b.name_en}
-            selected={v.branch_ids.includes(b.id)}
-            onPress={() => set('branch_ids', v.branch_ids.includes(b.id) ? v.branch_ids.filter((x) => x !== b.id) : [...v.branch_ids, b.id])}
-          />
-        ))}
-      </Row>
 
       <SectionTitle>{s.newEvent.place}</SectionTitle>
       <Field label={s.newEvent.address} placeholder={s.newEvent.addressPlaceholder} value={v.address_text} maxLength={200} onChangeText={(t) => set('address_text', t)} />

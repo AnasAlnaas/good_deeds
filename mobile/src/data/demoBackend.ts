@@ -94,8 +94,7 @@ function reportableEvents(db: Db, me: User): ReportFormMeta['events'] {
 
 /** The server's request checks on an event form (server/src/routes/event-input.ts), briefly. */
 function checkProposal(db: Db, body: EventProposal) {
-  const known = body.branch_ids.length > 0 && body.branch_ids.every((id) => db.branches.some((b) => b.id === id));
-  if (!(body.subtype in BASE_POINTS_BY_SUBTYPE) || !known || rules.toMs(body.ends_at) <= rules.toMs(body.starts_at)) {
+  if (!(body.subtype in BASE_POINTS_BY_SUBTYPE) || rules.toMs(body.ends_at) <= rules.toMs(body.starts_at)) {
     throw new BackendError('invalid_request');
   }
 }
@@ -144,7 +143,6 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
           ...summary(db, me, e, now),
           description: e.description,
           terms_locked_at: e.terms_locked_at,
-          branches: server.eventBranches(db, id),
           terms: server.eventTerms(db, id),
           participants: server.joinedUsers(db, id).map((u) => publicUser(me, u)),
           my_registration: reg ?? null,
@@ -158,7 +156,6 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
         const { db, me } = read();
         if (!server.canCreateEvents(db, me)) throw new ApiError('cannot_create_events');
         return {
-          branches: db.branches.filter((b) => b.is_active),
           subtypes: eventSubtypes(),
           publishes_directly: rules.proposalStatus(me) === 'published',
           waiting: server.waitingProposals(db, me.id),

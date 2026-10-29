@@ -107,7 +107,6 @@ export const t = {
     points: '{n} نقطة',
     category: 'الفئة',
     seats: '{joined} من {capacity}',
-    branches: 'شعب الإيمان',
     terms: 'شروط الانضمام',
     termsLocked: 'وافق عليها مشارك، فلا تُعدّل بعد اليوم.',
     noTerms: 'لا شروط.',
@@ -143,8 +142,7 @@ export const t = {
     ends: 'ينتهي',
     capacity: 'عدد المقاعد',
     category: 'الفئة',
-    branches: 'شعب الإيمان',
-    branchesHint: 'اختر شعبة واحدة على الأقل.',
+
     supervisors: 'المشرفون',
     supervisorsHint: 'يسجّل المشرف حضور المشاركين. لا تُنشر فعالية بلا مشرف.',
     searchPeople: 'ابحث بالاسم أو الهاتف',

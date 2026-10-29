@@ -28,7 +28,6 @@ import { requireUser } from '../auth';
 import type { Database } from '../db/client';
 import {
   acceptedTermIds,
-  activeBranches,
   attendanceOf,
   findEvent,
   findEventFor,
@@ -47,7 +46,7 @@ import { iso } from '../db/rows';
 import * as s from '../db/schema';
 import { type AppEnv, readBody } from '../http';
 import { notifyHoursToConfirm, notifyWarningGiven } from '../notify';
-import { assertIdsExist, proposalInput, writeLinks, writeTerms } from './event-input';
+import { proposalInput, writeLinks, writeTerms } from './event-input';
 
 const recordTimeBody = z.object({ at: z.iso.datetime({ offset: true }).optional() });
 // An empty reason is the rule's to refuse (reason_required), as in the offline demo.
@@ -102,7 +101,6 @@ export const eventRoutes = new Hono<AppEnv>()
     const me = c.var.user;
     if (!rules.canCreateEvents(me, await levelOf(db, me.id))) throw new ApiError('cannot_create_events');
     return c.json<EventFormMeta>({
-      branches: await activeBranches(db),
       subtypes: eventSubtypes(),
       publishes_directly: rules.proposalStatus(me) === 'published',
       waiting: await waitingProposals(db, me.id),
@@ -127,7 +125,6 @@ export const eventRoutes = new Hono<AppEnv>()
         waitingCount: await waitingProposals(tx, me.id),
         now: t,
       });
-      const { branchIds } = await assertIdsExist(tx, { branch_ids: body.branch_ids, organizer_ids: [] });
       await tx.insert(s.events).values({
         id,
         title: body.title,
@@ -147,7 +144,7 @@ export const eventRoutes = new Hono<AppEnv>()
         created_at: new Date(t),
       });
       // Whoever proposes an event supervises it; an admin can add others from the panel.
-      await writeLinks(tx, id, branchIds, [me.id]);
+      await writeLinks(tx, id, [me.id]);
       await writeTerms(tx, id, body.terms, new Date(t));
     });
     return c.json<ProposeEventResponse>({ id, status }, 201);
@@ -174,7 +171,6 @@ export const eventRoutes = new Hono<AppEnv>()
         waitingCount: (await waitingProposals(tx, me.id)) - 1,
         now: t,
       });
-      const { branchIds } = await assertIdsExist(tx, { branch_ids: body.branch_ids, organizer_ids: [] });
       const organizers = await tx
         .select({ user_id: s.event_organizers.user_id })
         .from(s.event_organizers)
@@ -195,14 +191,14 @@ export const eventRoutes = new Hono<AppEnv>()
           base_points: BASE_POINTS_BY_SUBTYPE[body.subtype],
         })
         .where(eq(s.events.id, id));
-      await writeLinks(tx, id, branchIds, organizers.map((o) => o.user_id));
+      await writeLinks(tx, id, organizers.map((o) => o.user_id));
       // Nobody can join a draft, so nobody has accepted its terms yet.
       await writeTerms(tx, id, body.terms, new Date(t));
     });
     return c.json<ProposeEventResponse>({ id, status: 'draft' });
   })
 
-  // Withdrawn: the draft is deleted, with its own rows (branches, supervisors, terms).
+  // Withdrawn: the draft is deleted, with its own rows (supervisors, terms).
   // Nothing else can point at a draft: nobody can join it or be at it (findEvent
   // hides it), so it has no registrations, attendance, points, reports or warnings;
   // should anything ever, its foreign key refuses the delete and nothing changes.
@@ -217,7 +213,6 @@ export const eventRoutes = new Hono<AppEnv>()
       const [row] = await tx.select().from(s.events).where(eq(s.events.id, id)).for('update');
       rules.assertCanChangeProposal(me, row);
       await tx.delete(s.event_terms).where(eq(s.event_terms.event_id, id));
-      await tx.delete(s.event_branches).where(eq(s.event_branches.event_id, id));
       await tx.delete(s.event_organizers).where(eq(s.event_organizers.event_id, id));
       await tx.delete(s.events).where(eq(s.events.id, id));
     });
@@ -230,17 +225,11 @@ export const eventRoutes = new Hono<AppEnv>()
     const id = c.req.param('id');
     const event = await findEventFor(db, id, me);
     const [summary] = await summarize(db, me, [event], now());
-    const branches = await db
-      .select({ branch: s.branches })
-      .from(s.event_branches)
-      .innerJoin(s.branches, eq(s.branches.id, s.event_branches.branch_id))
-      .where(eq(s.event_branches.event_id, id));
     const registration = await registrationOf(db, id, me.id);
     return c.json<EventDetail>({
       ...summary,
       description: event.description,
       terms_locked_at: event.terms_locked_at,
-      branches: branches.map((r) => r.branch),
       terms: await termsOf(db, id),
       participants: (await joinedUsers(db, id)).map((u) => shownTo(me, u)),
       my_registration: registration ?? null,

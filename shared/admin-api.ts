@@ -7,7 +7,6 @@ import type { EventClassId } from './classes';
 import type {
   AppEvent,
   Attendance,
-  Branch,
   EventStatus,
   EventTerm,
   Registration,
@@ -36,7 +35,6 @@ export interface AdminOverview {
 
 /** GET /api/admin/meta: what the event form offers. */
 export interface AdminMeta {
-  branches: Branch[];
   /** Event types, their fixed points (shared/placeholders.ts until Points_And_Levels.md is in) and their class. */
   subtypes: { id: string; base_points: number; event_class: EventClassId }[];
   /** Everyone who can be named a supervisor of an event. */
@@ -99,7 +97,6 @@ export interface StatusChangeBody {
 
 /** GET /api/admin/events/:id */
 export interface AdminEventDetail extends AdminEventRow {
-  branches: Branch[];
   terms: EventTerm[];
   participants: { user: PublicUser & Pick<User, 'phone'>; registration: Registration; attendance: Attendance | null }[];
 }

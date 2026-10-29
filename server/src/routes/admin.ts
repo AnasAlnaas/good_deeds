@@ -27,7 +27,7 @@ import * as rules from '../../../shared/rules';
 import { type AppEvent, type Attendance } from '../../../shared/types';
 import { requireUser } from '../auth';
 import type { Database } from '../db/client';
-import { activeBranches, creditPoints, joinedCounts, newId, publicUser, warningById } from '../db/queries';
+import { creditPoints, joinedCounts, newId, publicUser, warningById } from '../db/queries';
 import { iso } from '../db/rows';
 import * as s from '../db/schema';
 import { type AppEnv, HttpError, readBody } from '../http';
@@ -193,7 +193,6 @@ export const adminRoutes = new Hono<AppEnv>()
       .where(isNull(s.users.deleted_at))
       .orderBy(asc(s.users.full_name));
     return c.json<AdminMeta>({
-      branches: await activeBranches(db),
       subtypes: eventSubtypes(),
       people,
     });
@@ -301,11 +300,6 @@ export const adminRoutes = new Hono<AppEnv>()
     const { db, now } = c.var.deps;
     const id = c.req.param('id');
     const event = await anyEvent(db, id);
-    const branches = await db
-      .select({ branch: s.branches })
-      .from(s.event_branches)
-      .innerJoin(s.branches, eq(s.branches.id, s.event_branches.branch_id))
-      .where(eq(s.event_branches.event_id, id));
     const terms = await db.select().from(s.event_terms).where(eq(s.event_terms.event_id, id)).orderBy(asc(s.event_terms.order_index));
     const registrations = await db
       .select({ registration: s.registrations, ...publicUser, phone: s.users.phone })
@@ -320,7 +314,6 @@ export const adminRoutes = new Hono<AppEnv>()
       joined_count: (await joinedCounts(db, [id])).get(id) ?? 0,
       organizers: (await organizersOf(db, [id])).get(id) ?? [],
       creator: (await creatorsOf(db, [event])).get(event.created_by) ?? null,
-      branches: branches.map(({ branch }) => branch),
       terms: terms.map(iso),
       participants: registrations.map((r) => {
         const a = attendance.find((x) => x.user_id === r.id);
@@ -340,7 +333,7 @@ export const adminRoutes = new Hono<AppEnv>()
     const t = new Date(now());
     const id = newId();
     await db.transaction(async (tx) => {
-      const { branchIds, organizerIds } = await assertIdsExist(tx, body);
+      const { organizerIds } = await assertIdsExist(tx, body);
       if (body.publish && organizerIds.length === 0) throw new AdminError('needs_organizer');
       await tx.insert(s.events).values({
         id,
@@ -360,7 +353,7 @@ export const adminRoutes = new Hono<AppEnv>()
         created_by: me.id,
         created_at: t,
       });
-      await writeLinks(tx, id, branchIds, organizerIds);
+      await writeLinks(tx, id, organizerIds);
       await writeTerms(tx, id, body.terms, t);
       await audit(tx, { actorId: me.id, action: 'create_event', targetId: id, details: { title: body.title, published: body.publish }, at: t });
     });
@@ -376,7 +369,7 @@ export const adminRoutes = new Hono<AppEnv>()
     const edit = await db.transaction(async (tx) => {
       // Locking the event makes joins wait, so the joined count below stays true.
       const event = await anyEvent(tx, id, true);
-      const { branchIds, organizerIds } = await assertIdsExist(tx, body);
+      const { organizerIds } = await assertIdsExist(tx, body);
       const currentTerms = await termTexts(tx, id);
       adminRules.assertEventEdit({
         event,
@@ -407,7 +400,7 @@ export const adminRoutes = new Hono<AppEnv>()
           gender_category: body.gender_category,
         })
         .where(eq(s.events.id, id));
-      await writeLinks(tx, id, branchIds, organizerIds);
+      await writeLinks(tx, id, organizerIds);
       const termsChanged = body.terms.length !== currentTerms.length || body.terms.some((x, i) => x !== currentTerms[i]);
       if (termsChanged) await writeTerms(tx, id, body.terms, new Date(t));
       await audit(tx, {

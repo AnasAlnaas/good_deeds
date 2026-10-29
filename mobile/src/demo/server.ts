@@ -43,11 +43,6 @@ export function eventTerms(db: Db, eventId: string): EventTerm[] {
   return rules.sortTerms(db.event_terms.filter((x) => x.event_id === eventId));
 }
 
-export function eventBranches(db: Db, eventId: string) {
-  const ids = db.event_branches.filter((x) => x.event_id === eventId).map((x) => x.branch_id);
-  return db.branches.filter((b) => ids.includes(b.id));
-}
-
 export function isOrganizer(db: Db, eventId: string, userId: string) {
   return db.event_organizers.some((o) => o.event_id === eventId && o.user_id === userId);
 }
@@ -156,15 +151,13 @@ export function proposeEvent(db: Db, userId: string, input: EventProposal, now: 
   };
   next.events.push(event);
   next.event_organizers.push({ event_id: event.id, user_id: userId });
-  writeBranchesAndTerms(next, event.id, input, at);
+  writeTerms(next, event.id, input, at);
   return { db: next, event };
 }
 
-/** Replaces an event's branches and terms (in `next`, already a copy). */
-function writeBranchesAndTerms(next: Db, eventId: string, input: EventProposal, at: string) {
-  next.event_branches = next.event_branches.filter((x) => x.event_id !== eventId);
+/** Replaces an event's terms (in `next`, already a copy). */
+function writeTerms(next: Db, eventId: string, input: EventProposal, at: string) {
   next.event_terms = next.event_terms.filter((x) => x.event_id !== eventId);
-  for (const branch_id of new Set(input.branch_ids)) next.event_branches.push({ event_id: eventId, branch_id });
   input.terms.forEach((text, i) =>
     next.event_terms.push({ id: newId('term'), event_id: eventId, order_index: i + 1, text, image_url: null, audio_url: null, created_at: at }),
   );
@@ -199,7 +192,7 @@ export function editProposal(db: Db, userId: string, eventId: string, input: Eve
     gender_category: input.gender_category,
     base_points: BASE_POINTS_BY_SUBTYPE[input.subtype],
   });
-  writeBranchesAndTerms(next, eventId, input, new Date(now).toISOString());
+  writeTerms(next, eventId, input, new Date(now).toISOString());
   return next;
 }
 
@@ -209,7 +202,6 @@ export function withdrawProposal(db: Db, userId: string, eventId: string): Db {
   const next = clone(db);
   next.events = next.events.filter((e) => e.id !== eventId);
   next.event_organizers = next.event_organizers.filter((x) => x.event_id !== eventId);
-  next.event_branches = next.event_branches.filter((x) => x.event_id !== eventId);
   next.event_terms = next.event_terms.filter((x) => x.event_id !== eventId);
   return next;
 }
