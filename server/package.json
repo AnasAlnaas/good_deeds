@@ -20,7 +20,7 @@
     "@types/node": "^24.19.2",
     "@types/pg": "^8.23.1",
     "drizzle-kit": "^0.31.11",
-    "typescript": "^7.0.2"
+    "typescript": "~6.0.3"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.12",
