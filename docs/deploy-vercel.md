@@ -4,7 +4,7 @@ What runs where:
 
 | Part | Where | Cost |
 |---|---|---|
-| The API (`server/`) | Vercel project `good-deeds-api`, a Vercel Function (`server/index.ts`) in Frankfurt | Free (Hobby) |
+| The API (`server/`) | Vercel project `good-deeds-api` (<https://good-deeds-api-ashy.vercel.app>), a Vercel Function (`server/index.ts`) in Frankfurt | Free (Hobby) |
 | The admin panel (`admin/`) | Vercel project `good-deeds-admin`, static files | Free (Hobby) |
 | The database | Postgres at Neon, made from inside Vercel | Free: 0.5 GB |
 | The app | A test APK pointing at the API's address | Free |
@@ -33,6 +33,10 @@ need your account and a browser.
    | `TRUST_PROXY` | `1` (Vercel sets the caller's address itself) |
    | `LOGIN_CODE_DELIVERY` | `console` (testing only, see step 4) |
    | `CORS_ORIGINS` | the admin panel's address, after step 5, e.g. `https://good-deeds-admin.vercel.app` |
+   | `VERCEL_EXPERIMENTAL_BACKENDS` | `1`: Vercel's Hono build mode that bundles the server (its imports have no `.js` endings, which the default mode needs) |
+
+   Also **Settings → Deployment Protection → Vercel Authentication**: set it to
+   **Only Preview Deployments**, or the app cannot reach the API's address.
 
 5. **Add New → Project → Import** `good_deeds` again:
    - **Project name:** `good-deeds-admin`
