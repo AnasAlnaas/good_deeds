@@ -1,8 +1,10 @@
-// Events, joining (with the terms one by one) and the supervisor's roster.
+// Events, proposing one in the app (and the proposer editing or withdrawing it
+// while it waits for an admin), joining (with the terms one by one) and
+// the supervisor's roster, where they record attendance and give warnings.
 // Every change runs in a transaction: the rows are read (and locked), the
 // shared rule decides, and the result is written, or nothing is.
 
-import { and, asc, eq, inArray, isNull, ne } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, notInArray, or } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
@@ -10,38 +12,49 @@ import type {
   AcceptTermResponse,
   AttendanceResponse,
   EventDetail,
+  EventFormMeta,
   EventSummary,
+  ProposeEventResponse,
   RegistrationResponse,
   RosterResponse,
+  WarningResponse,
 } from '../../../shared/api';
+import { classOf, eventSubtypes } from '../../../shared/classes';
 import { ApiError } from '../../../shared/errors';
+import { BASE_POINTS_BY_SUBTYPE } from '../../../shared/placeholders';
 import * as rules from '../../../shared/rules';
-import { type AppEvent, PILLARS, type Registration, type User } from '../../../shared/types';
+import { type AppEvent, type Registration, type User } from '../../../shared/types';
 import { requireUser } from '../auth';
 import type { Database } from '../db/client';
 import {
   acceptedTermIds,
   attendanceOf,
   findEvent,
+  findEventFor,
   isOrganizer,
   joinedCounts,
   joinedUsers,
+  levelOf,
   newId,
-  pillarWeights,
   registrationOf,
+  shownTo,
   termsOf,
+  waitingProposals,
+  warnedBy,
 } from '../db/queries';
 import { iso } from '../db/rows';
 import * as s from '../db/schema';
 import { type AppEnv, readBody } from '../http';
-import { notifyHoursToConfirm } from '../notify';
+import { notifyHoursToConfirm, notifyWarningGiven } from '../notify';
+import { proposalInput, writeLinks, writeTerms } from './event-input';
 
 const recordTimeBody = z.object({ at: z.iso.datetime({ offset: true }).optional() });
+// An empty reason is the rule's to refuse (reason_required), as in the offline demo.
+const warnBody = z.object({ reason: z.string().max(rules.REASON_MAX) });
 
 async function summarize(db: Database, me: User, events: AppEvent[], now: number): Promise<EventSummary[]> {
   const ids = events.map((e) => e.id);
   if (ids.length === 0) return [];
-  const weights = await pillarWeights(db, ids);
   const counts = await joinedCounts(db, ids);
   const mine = await db
     .select({ event_id: s.registrations.event_id, status: s.registrations.status })
@@ -56,16 +69,15 @@ async function summarize(db: Database, me: User, events: AppEvent[], now: number
 
   return events.map((e) => {
     const { description, status, terms_locked_at, created_by, created_at, ...shown } = e;
-    const w = weights.get(e.id)!;
     return {
       ...shown,
       status: rules.effectiveStatus(e, now),
       joined_count: counts.get(e.id) ?? 0,
-      pillar_weights: w,
-      dominant_pillar: rules.dominantPillar(w),
+      event_class: classOf(e.subtype),
       can_join_category: rules.canUserJoinCategory(me, e),
       my_registration_status: myStatus.get(e.id) ?? null,
       i_organize: iOrganize.has(e.id),
+      i_created: e.created_by === me.id,
     };
   });
 }
@@ -75,38 +87,151 @@ export const eventRoutes = new Hono<AppEnv>()
 
   .get('/', async (c) => {
     const { db, now } = c.var.deps;
-    const rows = await db.select().from(s.events).where(ne(s.events.status, 'draft')).orderBy(asc(s.events.starts_at));
-    return c.json<EventSummary[]>(await summarize(db, c.var.user, rows.map(iso), now()));
+    const me = c.var.user;
+    // Drafts and turned-down drafts: only their creator sees them.
+    const visible = or(notInArray(s.events.status, ['draft', 'rejected']), eq(s.events.created_by, me.id));
+    const rows = await db.select().from(s.events).where(visible).orderBy(asc(s.events.starts_at));
+    return c.json<EventSummary[]>(await summarize(db, me, rows.map(iso), now()));
+  })
+
+  // ---------- proposing an event (before /:id, which would take "form" for an id) ----------
+
+  .get('/form', async (c) => {
+    const { db } = c.var.deps;
+    const me = c.var.user;
+    if (!rules.canCreateEvents(me, await levelOf(db, me.id))) throw new ApiError('cannot_create_events');
+    return c.json<EventFormMeta>({
+      subtypes: eventSubtypes(),
+      publishes_directly: rules.proposalStatus(me) === 'published',
+      waiting: await waitingProposals(db, me.id),
+      max_waiting: rules.MAX_WAITING_PROPOSALS,
+    });
+  })
+
+  .post('/', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const body = await readBody(c, proposalInput);
+    const t = now();
+    const id = newId();
+    const status = rules.proposalStatus(me);
+    await db.transaction(async (tx) => {
+      // Locking the person makes two proposals sent at once count each other.
+      await tx.select({ id: s.users.id }).from(s.users).where(eq(s.users.id, me.id)).for('update');
+      rules.assertCanProposeEvent({
+        user: me,
+        level: await levelOf(tx, me.id),
+        event: body,
+        waitingCount: await waitingProposals(tx, me.id),
+        now: t,
+      });
+      await tx.insert(s.events).values({
+        id,
+        title: body.title,
+        description: body.description,
+        subtype: body.subtype,
+        image_url: null,
+        lat: body.lat,
+        lng: body.lng,
+        address_text: body.address_text,
+        starts_at: new Date(body.starts_at),
+        ends_at: new Date(body.ends_at),
+        capacity: body.capacity,
+        gender_category: body.gender_category,
+        base_points: BASE_POINTS_BY_SUBTYPE[body.subtype],
+        status,
+        created_by: me.id,
+        created_at: new Date(t),
+      });
+      // Whoever proposes an event supervises it; an admin can add others from the panel.
+      await writeLinks(tx, id, [me.id]);
+      await writeTerms(tx, id, body.terms, new Date(t));
+    });
+    return c.json<ProposeEventResponse>({ id, status }, 201);
+  })
+
+  // ---------- the proposer's own event, while it waits for an admin ----------
+
+  // The same form and checks as proposing it. The supervisors stay as they are (an admin may have added some).
+  .put('/:id', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    const body = await readBody(c, proposalInput);
+    const t = now();
+    await db.transaction(async (tx) => {
+      // Locking the event makes an admin's decision on it wait for this edit, or this edit see the decision.
+      const [row] = await tx.select().from(s.events).where(eq(s.events.id, id)).for('update');
+      rules.assertCanChangeProposal(me, row);
+      rules.assertCanProposeEvent({
+        user: me,
+        level: await levelOf(tx, me.id),
+        event: body,
+        // This draft is one of those waiting; editing it adds none.
+        waitingCount: (await waitingProposals(tx, me.id)) - 1,
+        now: t,
+      });
+      const organizers = await tx
+        .select({ user_id: s.event_organizers.user_id })
+        .from(s.event_organizers)
+        .where(eq(s.event_organizers.event_id, id));
+      await tx
+        .update(s.events)
+        .set({
+          title: body.title,
+          description: body.description,
+          subtype: body.subtype,
+          lat: body.lat,
+          lng: body.lng,
+          address_text: body.address_text,
+          starts_at: new Date(body.starts_at),
+          ends_at: new Date(body.ends_at),
+          capacity: body.capacity,
+          gender_category: body.gender_category,
+          base_points: BASE_POINTS_BY_SUBTYPE[body.subtype],
+        })
+        .where(eq(s.events.id, id));
+      await writeLinks(tx, id, organizers.map((o) => o.user_id));
+      // Nobody can join a draft, so nobody has accepted its terms yet.
+      await writeTerms(tx, id, body.terms, new Date(t));
+    });
+    return c.json<ProposeEventResponse>({ id, status: 'draft' });
+  })
+
+  // Withdrawn: the draft is deleted, with its own rows (supervisors, terms).
+  // Nothing else can point at a draft: nobody can join it or be at it (findEvent
+  // hides it), so it has no registrations, attendance, points, reports or warnings;
+  // should anything ever, its foreign key refuses the delete and nothing changes.
+  // Marking it 'rejected' instead would tell its proposer "not approved", and
+  // admins of a decision nobody made. An admin's earlier edit of it stays in the
+  // audit log under its title (admin_actions.target_id is not a foreign key).
+  .delete('/:id', async (c) => {
+    const { db } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    await db.transaction(async (tx) => {
+      const [row] = await tx.select().from(s.events).where(eq(s.events.id, id)).for('update');
+      rules.assertCanChangeProposal(me, row);
+      await tx.delete(s.event_terms).where(eq(s.event_terms.event_id, id));
+      await tx.delete(s.event_organizers).where(eq(s.event_organizers.event_id, id));
+      await tx.delete(s.events).where(eq(s.events.id, id));
+    });
+    return c.body(null, 204);
   })
 
   .get('/:id', async (c) => {
     const { db, now } = c.var.deps;
     const me = c.var.user;
     const id = c.req.param('id');
-    const event = await findEvent(db, id);
+    const event = await findEventFor(db, id, me);
     const [summary] = await summarize(db, me, [event], now());
-    const branches = await db
-      .select({ branch: s.branches })
-      .from(s.event_branches)
-      .innerJoin(s.branches, eq(s.branches.id, s.event_branches.branch_id))
-      .where(eq(s.event_branches.event_id, id));
-    const links = branches.length
-      ? await db
-          .select()
-          .from(s.branch_pillars)
-          .where(inArray(s.branch_pillars.branch_id, branches.map((r) => r.branch.id)))
-      : [];
     const registration = await registrationOf(db, id, me.id);
     return c.json<EventDetail>({
       ...summary,
       description: event.description,
       terms_locked_at: event.terms_locked_at,
-      branches: branches.map((r) => ({
-        ...r.branch,
-        pillars: PILLARS.filter((p) => links.some((l) => l.branch_id === r.branch.id && l.pillar === p)),
-      })),
       terms: await termsOf(db, id),
-      participants: await joinedUsers(db, id),
+      participants: (await joinedUsers(db, id)).map((u) => shownTo(me, u)),
       my_registration: registration ?? null,
       my_accepted_term_ids: await acceptedTermIds(db, registration?.id),
       my_attendance: (await attendanceOf(db, id, me.id)) ?? null,
@@ -215,10 +340,46 @@ export const eventRoutes = new Hono<AppEnv>()
     const people = await joinedUsers(db, id);
     const rows = await db.select().from(s.attendance).where(eq(s.attendance.event_id, id));
     const byUser = new Map(rows.map((r) => [r.user_id, iso(r)]));
+    const warned = await warnedBy(db, id, me.id);
     return c.json<RosterResponse>({
       event: summary,
-      participants: people.map((user) => ({ user, attendance: byUser.get(user.id) ?? null })),
+      participants: people.map((user) => ({
+        user: shownTo(me, user),
+        attendance: byUser.get(user.id) ?? null,
+        i_warned: warned.has(user.id),
+      })),
     });
+  })
+
+  // A supervisor of this event warns someone who joined it. Only that member and admins see it.
+  .post('/:id/warnings/:userId', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const { id, userId } = c.req.param();
+    const reason = rules.cleanText((await readBody(c, warnBody)).reason);
+    const t = now();
+    const warning = await db.transaction(async (tx) => {
+      const event = await findEvent(tx, id);
+      // Locking the registration makes a second tap wait, so it finds the first warning.
+      const registration = await registrationOf(tx, id, userId, { lock: true });
+      rules.assertCanWarn({
+        actorId: me.id,
+        memberId: userId,
+        actorIsOrganizer: await isOrganizer(tx, id, me.id),
+        event,
+        registration,
+        alreadyWarned: (await warnedBy(tx, id, me.id)).has(userId),
+        reason,
+        now: t,
+      });
+      const [row] = await tx
+        .insert(s.warnings)
+        .values({ id: newId(), user_id: userId, issued_by: me.id, event_id: id, reason: reason!, status: 'active', created_at: new Date(t) })
+        .returning();
+      return iso(row);
+    });
+    notifyWarningGiven(c.var.deps, warning.id);
+    return c.json<WarningResponse>({ warning }, 201);
   })
 
   .post('/:id/attendance/:userId/start', async (c) => {
@@ -228,7 +389,8 @@ export const eventRoutes = new Hono<AppEnv>()
     const body = await readBody(c, recordTimeBody);
     const t = now();
     const attendance = await db.transaction(async (tx) => {
-      const event = await findEvent(tx, id);
+      // Locking the event makes an admin cancelling it wait for this start, or this start see the cancellation.
+      const event = await findEvent(tx, id, { lock: true });
       const registration = await registrationOf(tx, id, userId, { lock: true });
       const start = rules.decideRecordStart({
         actorId: me.id,

@@ -1,11 +1,8 @@
-/* Tokens from mobile/src/theme/tokens.ts (DESIGN.md). Pillar colours are for pillars only. */
+/* Tokens from mobile/src/theme/tokens.ts (DESIGN.md). */
 :root {
   --primary: #103048;
   --primary-pressed: #0a2134;
   --primary-soft: #e7ecf1;
-  --spiritual: #0e7c74;
-  --mental: #b45309;
-  --physical: #0a7a3e;
   --ink: #111827;
   --ink-muted: #4b5563;
   --surface: #ffffff;
@@ -128,6 +125,7 @@ dl.facts dd { margin: 0; }
 .btn-quiet { background: transparent; color: var(--primary); }
 .btn-quiet:hover { background: var(--primary-soft); }
 .btn-small { min-height: 32px; padding: 0 10px; font-size: 13px; }
+.avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex: none; display: inline-flex; align-items: center; justify-content: center; background: var(--primary-soft); color: var(--primary); font-weight: 700; }
 :focus-visible { outline: 3px solid #1b7fb0; outline-offset: 2px; }
 
 .field { display: grid; gap: 4px; }
@@ -178,11 +176,6 @@ tfoot td { font-weight: 600; background: var(--surface-alt); }
 td.num, th.num { text-align: end; font-variant-numeric: tabular-nums; }
 .empty { padding: 32px; text-align: center; color: var(--ink-muted); }
 
-.pillar-bar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: var(--border); min-width: 80px; }
-.pillar-spiritual, .dot-spiritual { background: var(--spiritual); }
-.pillar-mental, .dot-mental { background: var(--mental); }
-.pillar-physical, .dot-physical { background: var(--physical); }
-.pillar-dots { display: inline-flex; gap: 4px; vertical-align: middle; }
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -192,7 +185,6 @@ td.num, th.num { text-align: end; font-variant-numeric: tabular-nums; }
 .chip-remove button { border: 0; background: transparent; cursor: pointer; font-size: 16px; line-height: 1; color: var(--ink-muted); }
 
 .pick-list { max-height: 240px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-input); padding: 4px 12px; }
-.branch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 16px; }
 .term-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: start; }
 .term-tools { display: grid; gap: 4px; }
 ol.terms { margin: 0; padding-inline-start: 22px; display: grid; gap: 6px; }

@@ -1,0 +1,63 @@
+import { useState } from 'react';
+
+import { Button } from '@/components/Button';
+import { CityPicker } from '@/components/CityPicker';
+import { Screen } from '@/components/Screen';
+import { Txt } from '@/components/Txt';
+import { Card, Field, InfoRow } from '@/components/ui';
+import { goBack } from '@/lib/goBack';
+import { useApp, useMe } from '@/state/app';
+import { useAction } from '@/state/useAction';
+import { colors } from '@/theme/tokens';
+import * as rules from '../../../shared/rules';
+
+// Keeps a phone number left-to-right inside Arabic text (DESIGN.md: isolate Latin and digits).
+const ltr = (text: string) => `⁦${text}⁩`;
+
+// The name and the city, checked as at sign-up (rules.cleanProfileEdit).
+// Gender and phone are shown, not edited: gender decides which events a person
+// may join and who sees their photo, and the phone is how they sign in.
+
+export default function EditProfileScreen() {
+  const { s } = useApp();
+  const me = useMe();
+  const { run, busy } = useAction();
+  const [fullName, setFullName] = useState(me.full_name);
+  const [city, setCity] = useState(me.city);
+  const [checked, setChecked] = useState(false);
+  const nameWrong = checked && !rules.cleanName(fullName);
+  const cityWrong = checked && !rules.cleanCity(city);
+
+  const save = async () => {
+    const edit = rules.cleanProfileEdit({ full_name: fullName, city });
+    setChecked(true);
+    if (!edit) return;
+    if (await run((b) => b.updateProfile(edit))) goBack('/profile');
+  };
+
+  const footer = <Button icon="checkmark" label={s.editProfile.save} disabled={busy} onPress={save} />;
+
+  return (
+    <Screen back title={s.editProfile.title} footer={footer}>
+      <Field
+        label={s.editProfile.fullName}
+        value={fullName}
+        maxLength={rules.NAME_MAX}
+        onChangeText={setFullName}
+        error={nameWrong ? s.login.nameInvalid : null}
+      />
+      <CityPicker label={s.editProfile.city} value={city} onChange={setCity} error={cityWrong ? s.login.cityInvalid : null} />
+
+      <Card>
+        <InfoRow icon="person-outline" label={s.editProfile.gender} value={me.gender === 'male' ? s.login.male : s.login.female} />
+        <Txt variant="caption" color={colors.inkMuted}>
+          {s.editProfile.genderFixed}
+        </Txt>
+        <InfoRow icon="call-outline" label={s.editProfile.phone} value={ltr(me.phone)} />
+        <Txt variant="caption" color={colors.inkMuted}>
+          {s.editProfile.phoneFixed}
+        </Txt>
+      </Card>
+    </Screen>
+  );
+}

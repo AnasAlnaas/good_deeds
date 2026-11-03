@@ -37,14 +37,14 @@ Every motion graphic takes `size` (width in points), `play` and `onDone`.
 | `AnimatedLogo` | splash / welcome: pin drops, seedling grows, leaves sway | 1.7 s |
 | `MapPinsMotion` | slide 1 "Volunteer events near you" | 2.0 s |
 | `AttendanceMotion` | slide 2 "A supervisor records your attendance" | 2.0 s |
-| `PillarsMotion` | slide 3 "Three pillars, built in you" | 1.7 s |
+| `GrowthMotion` | slide 3 "Your good works grow" | 1.7 s |
 
 After the intro, each one settles into a quiet loop: a pulse, a bob or floating points.
 
 - `play={false}` rewinds to the empty first frame, and setting it back to `true` replays. Use this in a pager so each slide plays when it arrives.
 - With the system's reduce-motion setting on, a graphic shows its finished frame and stays still.
 - All of them are decorative and hidden from screen readers. The slide text carries the meaning.
-- They follow RTL wherever order matters: the roster rows, the time strip and the pillar order.
+- They follow RTL wherever order matters: the roster rows, the time strip and the growing columns.
 
 ## Success moments
 
@@ -54,10 +54,10 @@ These replaced the static `checkmark-circle` on the three success screens. Each 
 |---|---|---|---|
 | `JoinedMotion` | terms, after joining | 1.3 s, then a slow ripple | calm: the pin lands on a calendar day |
 | `RecordedMotion` | supervisor's record screen | 0.65 s | quick stamp, plus a play/stop badge for start/end |
-| `ConfirmedMotion` | confirm hours | 1.1 s, then a slow glow | the one reward moment: seal and a points burst in the pillar colours |
+| `ConfirmedMotion` | confirm hours | 1.1 s, then a slow glow | the one reward moment: seal and a points burst in greens and navy |
 
 - The record screen goes back 900 ms after success. The stamp finishes at 650 ms, so it stays visible for a beat. Don't lengthen it without lengthening that timer.
-- `ConfirmedMotion` gets `values={preview}`, the per-pillar points that screen already computes, so the burst's colours match what was earned. The burst peaks while the `PillarBar` below it fills (600 ms), and the two read as one moment.
+- The burst peaks while the level `ProgressBar` below it fills (600 ms), and the two read as one moment.
 
 ## Files (`assets/brand/`)
 

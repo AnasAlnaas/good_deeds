@@ -7,7 +7,7 @@
 
 import { AdminError } from './errors';
 import { MS_HOUR, effectiveStatus, round2, toMs } from './rules';
-import type { AppEvent, Attendance, EventStatus, Role } from './types';
+import type { AppEvent, Attendance, EventStatus, Report, Role, Warning } from './types';
 
 // ---------- roles ----------
 
@@ -39,7 +39,7 @@ export function assertEventEdit(args: {
 }) {
   const { event, next, now } = args;
   const status = effectiveStatus(event, now);
-  if (status === 'finished' || status === 'cancelled') throw new AdminError('event_not_editable');
+  if (status === 'finished' || status === 'cancelled' || status === 'rejected') throw new AdminError('event_not_editable');
   const termsChanged = next.terms.length !== args.currentTerms.length || next.terms.some((t, i) => t !== args.currentTerms[i]);
   if (event.terms_locked_at && termsChanged) throw new AdminError('terms_locked');
   if (args.joinedCount > 0 && next.gender_category !== event.gender_category) throw new AdminError('category_locked');
@@ -54,12 +54,13 @@ export function assertEventEdit(args: {
 
 /**
  * draft → published: only with at least one supervisor, or nobody could record attendance.
- * draft / published → cancelled: only before any attendance was recorded (recorded hours are
+ * draft → rejected: turned down (a member's proposal) or dropped; it never shows in the app.
+ * published → cancelled: only before any attendance was recorded (recorded hours are
  * someone's work; they are settled, not erased). A finished event stays as it is.
  */
 export function decideStatusChange(args: {
   event: AppEvent;
-  action: 'publish' | 'cancel';
+  action: 'publish' | 'cancel' | 'reject';
   organizerCount: number;
   hasAttendance: boolean;
   now: number;
@@ -71,7 +72,12 @@ export function decideStatusChange(args: {
     if (args.organizerCount === 0) throw new AdminError('needs_organizer');
     return 'published';
   }
-  if (status === 'cancelled' || status === 'finished' || args.hasAttendance) throw new AdminError('invalid_status_change');
+  if (action === 'reject') {
+    if (event.status !== 'draft') throw new AdminError('invalid_status_change');
+    return 'rejected';
+  }
+  if (status !== 'published' && status !== 'running') throw new AdminError('invalid_status_change');
+  if (args.hasAttendance) throw new AdminError('invalid_status_change');
   return 'cancelled';
 }
 
@@ -98,4 +104,23 @@ export function decideResolution(args: {
   const hours = args.hours ?? -1;
   if (!(hours >= 0 && hours <= max)) throw new AdminError('hours_out_of_range');
   return { hours: round2(hours) };
+}
+
+// ---------- reports and warnings ----------
+
+/** A report is handled once. The admin's note says what was done; it stays with the association. */
+export function assertCanHandleReport(report: Pick<Report, 'status'>) {
+  if (report.status !== 'open') throw new AdminError('already_handled');
+}
+
+/**
+ * An admin's decision on a warning. `uphold` answers an appeal: the warning
+ * stands and cannot be appealed again. `withdraw` takes it back, after an
+ * appeal or on the admin's own (given by mistake, say). Returns the new status.
+ */
+export function decideWarning(warning: Pick<Warning, 'status'>, decision: 'uphold' | 'withdraw'): 'upheld' | 'withdrawn' {
+  if (warning.status === 'withdrawn') throw new AdminError('already_withdrawn');
+  if (decision === 'withdraw') return 'withdrawn';
+  if (warning.status !== 'appealed') throw new AdminError('not_appealed');
+  return 'upheld';
 }

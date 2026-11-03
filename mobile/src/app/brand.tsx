@@ -59,7 +59,7 @@ export default function BrandGallery() {
           <RecordedMotion key={`re-${run}`} size={150} mode="end" />
         </Labeled>
         <Labeled label="Confirmed">
-          <ConfirmedMotion key={`conf-${run}`} size={150} values={{ spiritual: 2, mental: 1, physical: 3 }} />
+          <ConfirmedMotion key={`conf-${run}`} size={150} />
         </Labeled>
       </View>
 

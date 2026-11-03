@@ -1,4 +1,4 @@
-// npm run make-admin -- +218912345678
+// npm run make-admin -- 0912345678
 // Gives the admin role to the person who signed up with this phone number
 // (they sign up in the app first). This is how the first admin is made on a
 // real server; after that, admins change roles in the admin panel.
@@ -10,6 +10,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 
 import { openDatabase } from '../src/db/client';
 import * as s from '../src/db/schema';
+import { libyanMobile } from '../../shared/rules';
 import { env } from '../src/env';
 
 const phone = process.argv[2] ?? '';

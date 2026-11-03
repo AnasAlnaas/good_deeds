@@ -46,6 +46,15 @@
         }
       ],
       "expo-secure-store",
+      "./plugins/withFastGradle",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "يفتح التطبيق صورك لتختار منها صورة حسابك. The app opens your photos so you can choose your profile photo.",
+          "cameraPermission": "يفتح التطبيق الكاميرا لتلتقط صورة حسابك. The app opens the camera so you can take your profile photo.",
+          "microphonePermission": false
+        }
+      ],
       [
         "expo-notifications",
         {

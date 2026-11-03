@@ -1,11 +1,22 @@
 // Tries to break the admin panel's rules through the API: non-admins knocking,
 // an admin changing their own role, edits that would change what people
-// already agreed to, settling a dispute twice. Every attempt must be refused,
+// already agreed to, settling a dispute twice, a supervisor closing a report,
+// keeping a warning nobody appealed. Every attempt must be refused,
 // and every decision must land in the audit log.
 // Run: npm run check:api (runs this after check-api.ts)
 
-import type { EventDetail, EventSummary } from '../../shared/api';
-import type { AdminEventDetail, AdminOverview, AdminUserRow, AuditEntry, CreateEventBody, EventInput } from '../../shared/admin-api';
+import type { EventDetail, EventSummary, MyReport, MyWarning } from '../../shared/api';
+import type {
+  AdminEventDetail,
+  AdminEventRow,
+  AdminOverview,
+  AdminReportRow,
+  AdminUserRow,
+  AdminWarningRow,
+  AuditEntry,
+  CreateEventBody,
+  EventInput,
+} from '../../shared/admin-api';
 import type { PushMessage } from '../src/push';
 import { startHarness } from './harness';
 
@@ -58,7 +69,6 @@ const inputFrom = (d: AdminEventDetail): EventInput => ({
   ends_at: d.event.ends_at,
   capacity: d.event.capacity,
   gender_category: d.event.gender_category,
-  branch_ids: d.branches.map((b) => b.id),
   organizer_ids: d.organizers.map((o) => o.id),
   terms: d.terms.map((t) => t.text ?? ''),
 });
@@ -95,7 +105,7 @@ await expectError('someone who does not exist', 'not_found', call('PATCH', '/adm
 // ---------------------------------------------------------------------------
 console.log('\n— creating events');
 const meta = (await call('GET', '/admin/meta', admin)).body;
-expectEqual('form choices', [meta.branches.length, meta.subtypes.find((x: { id: string }) => x.id === 'street_cleanup')?.base_points], [20, 30]);
+expectEqual('form choices', [meta.subtypes.find((x: { id: string }) => x.id === 'street_cleanup')?.base_points], [30]);
 const base: CreateEventBody = {
   title: 'حملة نظافة تجريبية',
   description: 'تنظيف الساحة.',
@@ -107,13 +117,11 @@ const base: CreateEventBody = {
   ends_at: iso(NOW + 51 * HOUR),
   capacity: 10,
   gender_category: 'mixed',
-  branch_ids: ['b01'],
   organizer_ids: [],
   terms: ['البند الأول', 'البند الثاني'],
   publish: false,
 };
 await expectError('ends before it starts', 'invalid_request', call('POST', '/admin/events', admin, { ...base, ends_at: iso(NOW) }));
-await expectError('a branch that does not exist', 'invalid_request', call('POST', '/admin/events', admin, { ...base, branch_ids: ['b99'] }));
 await expectError('published with nobody to record attendance', 'needs_organizer', call('POST', '/admin/events', admin, { ...base, publish: true }));
 const { id } = await expectOk('save a draft', call('POST', '/admin/events', admin, base));
 const draft = await detail(id);
@@ -233,5 +241,152 @@ expectEqual('and what changed', [log.filter((e) => e.action === 'update_event').
   'member',
   'supervisor',
 ]);
+
+// ---------------------------------------------------------------------------
+console.log('\n— events proposed in the app');
+const { organizer_ids: _, publish: __, ...proposal } = base;
+await eventNews();
+const approved = (await call('POST', '/events', khaled, { ...proposal, title: 'تنظيف حديقة الحي' })).body.id;
+const turnedDown = (await call('POST', '/events', khaled, { ...proposal, title: 'سقيا الماء في السوق' })).body.id;
+expectEqual('the overview counts them', ((await call('GET', '/admin/overview', admin)).body as AdminOverview).proposals_waiting, 2);
+const rows: AdminEventRow[] = (await call('GET', '/admin/events', admin)).body;
+const row = rows.find((r) => r.event.id === approved);
+expectEqual('with who proposed it, as its supervisor', [row?.event.status, row?.creator?.id, row?.creator?.role, row?.organizers.map((o) => o.id)], [
+  'draft',
+  'u_khaled',
+  'supervisor',
+  ['u_khaled'],
+]);
+await expectError('cancel a proposal (it is turned down instead)', 'invalid_status_change', call('POST', `/admin/events/${approved}/cancel`, admin));
+await expectOk('approve one: publish it', call('POST', `/admin/events/${approved}/publish`, admin));
+expectEqual('everyone sees it now', ((await call('GET', '/events', ahmad)).body as EventSummary[]).some((e) => e.id === approved), true);
+const approval = await eventNews();
+expectEqual('only its creator is told', [who(approval), approval[0]?.data.type, bodyFor(approval, 'khaled')], [
+  ['khaled'],
+  'event_approved',
+  'اعتمدت إدارة الجمعية «تنظيف حديقة الحي»، وهي الآن على الخريطة.',
+]);
+await expectError('a reason longer than the limit', 'invalid_request', call('POST', `/admin/events/${turnedDown}/reject`, admin, { note: 'س'.repeat(501) }));
+await expectOk('turn the other down, with a reason', call('POST', `/admin/events/${turnedDown}/reject`, admin, { note: 'المكان مزدحم وقت السوق؛ اقترح موعداً صباحياً.' }));
+const refusal = await eventNews();
+expectEqual('its creator is told why', [who(refusal), refusal[0]?.data.type, bodyFor(refusal, 'khaled')], [
+  ['khaled'],
+  'event_rejected',
+  'لم تعتمد إدارة الجمعية «سقيا الماء في السوق». السبب: المكان مزدحم وقت السوق؛ اقترح موعداً صباحياً.',
+]);
+expectEqual('it stays out of the app for everyone else', ((await call('GET', '/events', ahmad)).body as EventSummary[]).some((e) => e.id === turnedDown), false);
+expectEqual('its creator sees it was not approved', (await call('GET', `/events/${turnedDown}`, khaled)).body.status, 'rejected');
+await expectError('nobody can join it', 'not_found', call('POST', `/events/${turnedDown}/join`, khaled));
+await expectError('turn down a published event', 'invalid_status_change', call('POST', `/admin/events/${approved}/reject`, admin));
+await expectError('publish a turned-down event', 'invalid_status_change', call('POST', `/admin/events/${turnedDown}/publish`, admin));
+await expectError('edit a turned-down event', 'event_not_editable', call('PUT', `/admin/events/${turnedDown}`, admin, inputFrom(await detail(turnedDown))));
+expectEqual('none wait any more', ((await call('GET', '/admin/overview', admin)).body as AdminOverview).proposals_waiting, 0);
+const latest: AuditEntry[] = (await call('GET', '/admin/audit', admin)).body;
+expectEqual('both decisions are in the audit log, the reason too', [latest[0].action, latest[0].details.note, latest[1].action], [
+  'reject_event',
+  'المكان مزدحم وقت السوق؛ اقترح موعداً صباحياً.',
+  'publish_event',
+]);
+
+// ---------------------------------------------------------------------------
+console.log('\n— removing an unsuitable profile photo');
+// A JPEG header is enough: the server checks the file's segments, it does not decode the picture.
+const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x04, 1, 1, 0xff, 0xda, 0x00, 0x08, 1, 1, 0, 0, 0x3f, 0, 0x12, 0xff, 0xd9]);
+const { avatar_url: photo } = (await call('PUT', '/me/photo', mariam, { jpeg_base64: jpeg.toString('base64') })).body;
+const mariamRow = ((await call('GET', `/admin/users?q=${encodeURIComponent('مريم')}`, admin)).body as AdminUserRow[])[0];
+expectEqual('the members list shows her photo', mariamRow?.avatar_url, photo);
+expectEqual('an admin sees it, though a man', (await h.raw(photo, admin)).status, 200);
+await expectError('a supervisor removes it', 'forbidden', call('DELETE', '/admin/users/u_mariam/photo', khaled));
+await expectOk('an admin removes it', call('DELETE', '/admin/users/u_mariam/photo', admin));
+expectEqual('gone from her profile and the server', [(await call('GET', '/me', mariam)).body.user.avatar_url, (await h.raw(photo, admin)).status], [null, 404]);
+await expectError('remove it twice', 'not_found', call('DELETE', '/admin/users/u_mariam/photo', admin));
+await settle();
+expectEqual('she is told, in her phone\'s language', pushes.filter((p) => p.data.type === 'photo_removed').map((p) => [p.to, p.title]), [
+  ['ExponentPushToken[mariam]', 'Your photo was removed'],
+]);
+const removal = ((await call('GET', '/admin/audit', admin)).body as AuditEntry[])[0];
+expectEqual('the removal is in the audit log', [removal.action, removal.target_id, removal.details.name], ['remove_photo', 'u_mariam', 'مريم علي']);
+await expectOk('she can add another', call('PUT', '/me/photo', mariam, { jpeg_base64: jpeg.toString('base64') }));
+
+// ---------------------------------------------------------------------------
+console.log("\n— members' reports");
+const overviewNow = async (): Promise<AdminOverview> => (await call('GET', '/admin/overview', admin)).body;
+const filed: MyReport = (await call('POST', '/reports', ahmad, { category: 'safety', event_id: 'e01', subject_id: 'u_khaled', note: 'لا قفازات تكفي الجميع.' })).body;
+await expectError('a supervisor opens the reports', 'forbidden', call('GET', '/admin/reports', khaled));
+const open: AdminReportRow[] = (await call('GET', '/admin/reports?status=open', admin)).body;
+expectEqual('the admin sees it: who sent it, about which event, who is named', open.map((r) => [r.report.id, r.reporter?.id, r.reporter?.phone, r.event?.id, r.subject?.id]), [
+  [filed.report.id, 'u_ahmad', '+218911000000', 'e01', 'u_khaled'],
+]);
+expectEqual('the overview counts it', (await overviewNow()).open_reports, 1);
+await expectError('a status that does not exist', 'invalid_request', call('GET', '/admin/reports?status=lost', admin));
+const handle = (token: string, note: string) => call('POST', `/admin/reports/${filed.report.id}/handle`, token, { note });
+await expectError('a non-admin closes a report', 'forbidden', handle(khaled, 'تم.'));
+await expectError('closed without a note', 'invalid_request', handle(admin, '  '));
+await expectOk('an admin marks it handled, with what was done', handle(admin, 'كلّمنا المشرف ووفّرنا قفازات إضافية.'));
+await expectError('handled twice', 'already_handled', handle(admin, 'مكرر.'));
+await settle();
+expectEqual('the reporter is told it was looked at, not what was done', pushes.filter((p) => p.data.type === 'report_handled').map((p) => [p.to, p.body]), [
+  ['ExponentPushToken[ahmad]', 'راجعت إدارة الجمعية بلاغك. جزاك الله خيراً على حرصك.'],
+]);
+expectEqual('the supervisor he named is told nothing', pushes.some((p) => p.to === 'ExponentPushToken[khaled]' && !!p.data.report_id), false);
+const seenByReporter = ((await call('GET', '/me/reports', ahmad)).body as MyReport[])[0];
+expectEqual('he sees it reviewed, without the admin note', [seenByReporter.report.status, 'handled_note' in seenByReporter.report], ['handled', false]);
+const handled: AdminReportRow[] = (await call('GET', '/admin/reports?status=handled', admin)).body;
+expectEqual('the admin sees who handled it and how', handled.map((r) => [r.handled_by?.id, r.report.handled_note]), [['u_admin', 'كلّمنا المشرف ووفّرنا قفازات إضافية.']]);
+expectEqual('none open now', (await overviewNow()).open_reports, 0);
+
+// ---------------------------------------------------------------------------
+console.log('\n— warnings and appeals');
+const w1 = (await call('POST', '/events/e01/warnings/u_ahmad', khaled, { reason: 'غادر دون إبلاغ المشرف.' })).body.warning;
+const w2 = (await call('POST', '/events/e01/warnings/u_mariam', khaled, { reason: 'تأخرت ساعة.' })).body.warning;
+await expectError('a supervisor reads the warnings list', 'forbidden', call('GET', '/admin/warnings', khaled));
+const hisWarnings: AdminWarningRow[] = (await call('GET', '/admin/warnings?user_id=u_ahmad', admin)).body;
+expectEqual("one member's warnings, with who gave them and where", hisWarnings.map((r) => [r.warning.id, r.user.id, r.issued_by?.id, r.event.id]), [[w1.id, 'u_ahmad', 'u_khaled', 'e01']]);
+const warningsOf = async (q: string) => ((await call('GET', `/admin/users?q=${encodeURIComponent(q)}`, admin)).body as AdminUserRow[])[0]?.warnings;
+expectEqual('the members list counts them', [await warningsOf('أحمد'), await warningsOf('مريم')], [1, 1]);
+const decide = (id: string, decision: 'uphold' | 'withdraw', note = 'رُوجع.') => call('POST', `/admin/warnings/${id}/decide`, admin, { decision, note });
+await expectError('keep a warning nobody appealed', 'not_appealed', decide(w1.id, 'uphold'));
+await expectOk('he appeals', call('POST', `/warnings/${w1.id}/appeal`, ahmad, { reason: 'أبلغت المشرف المساعد قبل أن أغادر.' }));
+expectEqual('the overview counts the appeal', (await overviewNow()).appealed_warnings, 1);
+const appeals: AdminWarningRow[] = (await call('GET', '/admin/warnings?status=appealed', admin)).body;
+expectEqual('with his reason', appeals.map((r) => [r.warning.id, r.warning.appeal_reason]), [[w1.id, 'أبلغت المشرف المساعد قبل أن أغادر.']]);
+await expectError('a decision without a note', 'invalid_request', decide(w1.id, 'uphold', ''));
+await expectError('a supervisor decides', 'forbidden', call('POST', `/admin/warnings/${w1.id}/decide`, khaled, { decision: 'withdraw', note: 'سحبته.' }));
+await expectOk('an admin keeps it', decide(w1.id, 'uphold', 'لم يكن في الفعالية مشرف مساعد.'));
+await expectError('he appeals again', 'already_appealed', call('POST', `/warnings/${w1.id}/appeal`, ahmad, { reason: 'مرة أخرى.' }));
+await expectOk('an admin withdraws the other, unasked', decide(w2.id, 'withdraw', 'سُجّل بالخطأ.'));
+await expectError('withdraw it twice', 'already_withdrawn', decide(w2.id, 'withdraw'));
+await expectError('she appeals a withdrawn warning', 'warning_withdrawn', call('POST', `/warnings/${w2.id}/appeal`, mariam, { reason: 'لم أتأخر.' }));
+await settle();
+expectEqual("each is told, in their phone's language", pushes.filter((p) => p.data.type === 'warning_decided').map((p) => [p.to, p.title]), [
+  ['ExponentPushToken[ahmad]', 'رُوجع تظلّمك'],
+  ['ExponentPushToken[mariam]', 'A warning was withdrawn'],
+]);
+const kept: MyWarning = (await call('GET', `/warnings/${w1.id}`, ahmad)).body;
+expectEqual('he reads why in the app, not which admin decided', [kept.warning.status, kept.warning.decision_note, 'decided_by' in kept.warning], [
+  'upheld',
+  'لم يكن في الفعالية مشرف مساعد.',
+  false,
+]);
+expectEqual('the members list counts only warnings that stand', [await warningsOf('أحمد'), await warningsOf('مريم')], [1, 0]);
+await expectOk('a withdrawn warning may be given again', call('POST', '/events/e01/warnings/u_mariam', khaled, { reason: 'تأخرت ساعتين.' }));
+const decisions: AuditEntry[] = (await call('GET', '/admin/audit', admin)).body;
+expectEqual('every decision is in the audit log', decisions.slice(0, 3).map((e) => [e.action, e.details.note]), [
+  ['withdraw_warning', 'سُجّل بالخطأ.'],
+  ['uphold_warning', 'لم يكن في الفعالية مشرف مساعد.'],
+  ['handle_report', 'كلّمنا المشرف ووفّرنا قفازات إضافية.'],
+]);
+
+console.log('\n— a cancelled event');
+// Last, since it moves the clock (and so closes open attendance):
+// a cancelled event's members stay joined and its supervisors stay, but nobody may work at it.
+{
+  const tokenOf: Record<string, string> = { u_ahmad: ahmad, u_mariam: mariam, u_khaled: khaled, u_f1: f1 };
+  const gone = await detail(id);
+  const recorder = gone.organizers.find((o) => tokenOf[o.id])!.id;
+  const member = gone.participants.find((p) => p.registration.status === 'joined' && p.user.id !== recorder)!.user.id;
+  h.setClock(Date.parse(gone.event.starts_at) + 30 * 60_000);
+  await expectError('its supervisor records a start there anyway', 'event_closed', call('POST', `/events/${id}/attendance/${member}/start`, tokenOf[recorder]));
+}
 
 await h.done();

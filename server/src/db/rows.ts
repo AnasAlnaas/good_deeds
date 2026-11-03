@@ -31,14 +31,14 @@ type Row<Table extends { $inferSelect: object }> = Iso<Table['$inferSelect']>;
 export type SchemaMatchesSharedTypes = [
   Assert<Same<Row<typeof s.users>, T.User>>,
   Assert<Same<Row<typeof s.branches>, T.Branch>>,
-  Assert<Same<Row<typeof s.branch_pillars>, T.BranchPillar>>,
   Assert<Same<Row<typeof s.events>, T.AppEvent>>,
   Assert<Same<Row<typeof s.event_organizers>, T.EventOrganizer>>,
-  Assert<Same<Row<typeof s.event_branches>, T.EventBranch>>,
   Assert<Same<Row<typeof s.event_terms>, T.EventTerm>>,
   Assert<Same<Row<typeof s.registrations>, T.Registration>>,
   Assert<Same<Row<typeof s.term_acceptances>, T.TermAcceptance>>,
   Assert<Same<Row<typeof s.attendance>, T.Attendance>>,
   Assert<Same<Row<typeof s.points_ledger>, T.PointsLedgerEntry>>,
   Assert<Same<Row<typeof s.levels>, T.Level>>,
+  Assert<Same<Row<typeof s.reports>, T.Report>>,
+  Assert<Same<Row<typeof s.warnings>, T.Warning>>,
 ];

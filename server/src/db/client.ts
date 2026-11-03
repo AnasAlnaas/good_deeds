@@ -23,6 +23,8 @@ export type Database = PgDatabase<PgQueryResultHKT, typeof schema>;
 export interface Connection {
   kind: 'postgres' | 'pglite';
   db: Database;
+  /** The Postgres connections (absent for PGlite), for a host that manages idle ones (Vercel). */
+  pool?: pg.Pool;
   /** Applies the migrations in drizzle/ that have not run yet. */
   migrate(): Promise<void>;
   close(): Promise<void>;
@@ -34,7 +36,7 @@ export function openDatabase(opts: { url?: string; dataDir?: string }): Connecti
   if (opts.url) {
     const pool = new pg.Pool({ connectionString: opts.url });
     const db = drizzlePg(pool, { schema });
-    return { kind: 'postgres', db, migrate: () => migratePg(db, { migrationsFolder }), close: () => pool.end() };
+    return { kind: 'postgres', db, pool, migrate: () => migratePg(db, { migrationsFolder }), close: () => pool.end() };
   }
   let unlock = () => {};
   if (opts.dataDir) {

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router';
 
 import type { AdminUserRow } from '../../../shared/admin-api';
 import type { Role } from '../../../shared/types';
@@ -7,7 +8,7 @@ import { api } from '../api';
 import { useAuth } from '../auth';
 import { fill, num } from '../format';
 import { t } from '../strings';
-import { ErrorNote, PageHeader, QueryState, useAction } from '../ui';
+import { Button, ErrorNote, PageHeader, QueryState, useAction } from '../ui';
 
 export function Users() {
   const { session } = useAuth();
@@ -26,6 +27,9 @@ export function Users() {
       run(() => api.changeRole(u.id, { role }));
     }
   };
+  const removePhoto = (u: AdminUserRow) => {
+    if (window.confirm(fill(t.users.removePhotoConfirm, { name: u.full_name }))) run(() => api.removePhoto(u.id));
+  };
 
   return (
     <>
@@ -39,6 +43,7 @@ export function Users() {
           <table>
             <thead>
               <tr>
+                <th>{t.users.photo}</th>
                 <th>{t.users.name}</th>
                 <th>{t.users.phone}</th>
                 <th>{t.users.city}</th>
@@ -46,6 +51,7 @@ export function Users() {
                 <th className="num">{t.users.level}</th>
                 <th className="num">{t.users.points}</th>
                 <th className="num">{t.users.hours}</th>
+                <th className="num">{t.users.warnings}</th>
               </tr>
             </thead>
             <tbody>
@@ -53,6 +59,16 @@ export function Users() {
                 const self = u.id === session?.user.id;
                 return (
                   <tr key={u.id}>
+                    <td>
+                      <div className="row">
+                        <MemberPhoto user={u} />
+                        {u.avatar_url && (
+                          <Button variant="quiet" className="btn-small" disabled={busy} onClick={() => removePhoto(u)}>
+                            {t.users.removePhoto}
+                          </Button>
+                        )}
+                      </div>
+                    </td>
                     <td>
                       {u.full_name}
                       {self && <span className="small muted"> ({t.users.you})</span>}
@@ -76,6 +92,10 @@ export function Users() {
                     <td className="num">{u.level}</td>
                     <td className="num">{num(u.total_points)}</td>
                     <td className="num">{num(u.confirmed_hours)}</td>
+                    <td className="num">
+                      {/* Withdrawn warnings are not counted, but the member's page lists them too. */}
+                      <Link to={`/warnings?user=${u.id}`}>{u.warnings}</Link>
+                    </td>
                   </tr>
                 );
               })}
@@ -86,5 +106,43 @@ export function Users() {
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * A member's photo, or the first letter of their name. The photo is fetched
+ * with the sign-in token and shown from a local copy; clicking it opens it full size.
+ */
+function MemberPhoto({ user }: { user: Pick<AdminUserRow, 'full_name' | 'avatar_url'> }) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    if (!user.avatar_url) return;
+    const abort = new AbortController();
+    let local: string | null = null;
+    api
+      .photo(user.avatar_url, abort.signal)
+      .then((blob) => {
+        local = URL.createObjectURL(blob);
+        setSrc(local);
+      })
+      .catch(() => {}); // no photo after all: the letter stays
+    return () => {
+      abort.abort();
+      if (local) URL.revokeObjectURL(local);
+      setSrc(null);
+    };
+  }, [user.avatar_url]);
+
+  if (!src) {
+    return (
+      <span className="avatar" aria-hidden="true">
+        {user.full_name.charAt(0)}
+      </span>
+    );
+  }
+  return (
+    <a href={src} target="_blank" rel="noreferrer" title={fill(t.users.openPhoto, { name: user.full_name })}>
+      <img className="avatar" src={src} alt={fill(t.users.openPhoto, { name: user.full_name })} />
+    </a>
   );
 }

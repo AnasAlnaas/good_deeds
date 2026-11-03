@@ -25,17 +25,37 @@ export function Overview() {
         <>
           <div className="stats">
             <Stat n={o.open_disputes} label={t.overview.disputes} alert={o.open_disputes > 0} to="/disputes" />
+            <Stat n={o.proposals_waiting} label={t.overview.proposals} alert={o.proposals_waiting > 0} to="/events?status=draft" />
+            <Stat n={o.open_reports} label={t.overview.reports} alert={o.open_reports > 0} to="/reports" />
+            <Stat n={o.appealed_warnings} label={t.overview.appeals} alert={o.appealed_warnings > 0} to="/warnings?status=appealed" />
             <Stat n={o.running_events} label={t.overview.running} to="/events" />
             <Stat n={o.upcoming_events} label={t.overview.upcoming} to="/events" />
             <Stat n={o.draft_events} label={t.overview.drafts} to="/events" />
             <Stat n={o.awaiting_confirmation} label={t.overview.awaiting} />
             <Stat n={o.users} label={t.overview.users} to="/users" />
           </div>
-          {o.open_disputes > 0 && (
-            <div>
-              <Link className="btn btn-secondary" to="/disputes">
-                {t.overview.reviewDisputes}
-              </Link>
+          {(o.open_disputes > 0 || o.proposals_waiting > 0 || o.open_reports > 0 || o.appealed_warnings > 0) && (
+            <div className="actions">
+              {o.open_disputes > 0 && (
+                <Link className="btn btn-secondary" to="/disputes">
+                  {t.overview.reviewDisputes}
+                </Link>
+              )}
+              {o.proposals_waiting > 0 && (
+                <Link className="btn btn-secondary" to="/events?status=draft">
+                  {t.overview.reviewProposals}
+                </Link>
+              )}
+              {o.open_reports > 0 && (
+                <Link className="btn btn-secondary" to="/reports">
+                  {t.overview.reviewReports}
+                </Link>
+              )}
+              {o.appealed_warnings > 0 && (
+                <Link className="btn btn-secondary" to="/warnings?status=appealed">
+                  {t.overview.reviewAppeals}
+                </Link>
+              )}
             </div>
           )}
         </>

@@ -1,22 +1,27 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { Alert, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
+import { Avatar } from '@/components/Avatar';
 import { Button } from '@/components/Button';
-import { PillarBar } from '@/components/PillarBar';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
 import { Badge, Card, InfoRow, QueryState, Row, SectionTitle } from '@/components/ui';
-import { useEvent } from '@/data/queries';
+import { useEvent, useMeSummary } from '@/data/queries';
 import { dayTimeRange, fmt } from '@/i18n/format';
+import * as dialog from '@/lib/dialog';
+import { openDirections } from '@/lib/directions';
+import { goBack } from '@/lib/goBack';
 import { useApp } from '@/state/app';
 import { useAction } from '@/state/useAction';
-import { colors, pillarColor, space } from '@/theme/tokens';
+import { classIcon, className } from '@/theme/classes';
+import { colors, space } from '@/theme/tokens';
 
 export default function EventDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { s, lang, now } = useApp();
   const { run, busy } = useAction();
   const query = useEvent(id);
+  const summary = useMeSummary();
   if (!query.data) {
     return (
       <Screen back>
@@ -34,18 +39,58 @@ export default function EventDetail() {
   const organizer = event.i_organize;
   const forMe = event.can_join_category;
   const open = status === 'published' || status === 'running';
+  // Someone who was at the event may report a problem there (a report about anything else starts from the profile).
+  const canReport =
+    !!summary.data?.can_report && (organizer || reg?.status === 'joined') && status !== 'draft' && status !== 'rejected';
 
   const join = async () => {
     if (await run((b) => b.startJoin(event.id))) router.push(`/event/${event.id}/terms`);
   };
   const cancel = () =>
-    Alert.alert(s.event.cancelJoinTitle, s.event.cancelJoinBody, [
-      { text: s.cancel, style: 'cancel' },
-      { text: s.event.cancelJoin, style: 'destructive', onPress: () => run((b) => b.cancelJoin(event.id)) },
-    ]);
+    dialog.confirm({
+      title: s.event.cancelJoinTitle,
+      message: s.event.cancelJoinBody,
+      cancel: s.cancel,
+      action: s.event.cancelJoin,
+      destructive: true,
+      onConfirm: () => run((b) => b.cancelJoin(event.id)),
+    });
+  // The proposer's own event, while it waits for an admin: deleted, so there is nothing left to show.
+  const withdraw = () =>
+    dialog.confirm({
+      title: s.event.withdrawTitle,
+      message: s.event.withdrawBody,
+      cancel: s.cancel,
+      action: s.event.withdraw,
+      destructive: true,
+      onConfirm: async () => {
+        if (await run((b) => b.withdrawProposal(event.id))) goBack('/events');
+      },
+    });
 
   let footer;
-  if (organizer) {
+  if (status === 'draft') {
+    // Only its creator sees an event that is not published, and may change it until an admin decides.
+    footer = (
+      <>
+        <Txt color={colors.inkMuted} align="center">
+          {s.event.waiting}
+        </Txt>
+        {event.i_created && (
+          <>
+            <Button variant="secondary" icon="create-outline" label={s.event.edit} disabled={busy} onPress={() => router.push(`/event/${event.id}/edit`)} />
+            <Button variant="danger" icon="trash-outline" label={s.event.withdraw} disabled={busy} onPress={withdraw} />
+          </>
+        )}
+      </>
+    );
+  } else if (status === 'rejected') {
+    footer = (
+      <Txt color={colors.danger} align="center">
+        {s.event.rejected}
+      </Txt>
+    );
+  } else if (organizer) {
     footer = (
       <>
         <Txt variant="caption" color={colors.inkMuted} align="center">
@@ -87,9 +132,10 @@ export default function EventDetail() {
       <Row>
         <Badge
           label={s.status[status]}
-          color={status === 'running' ? colors.danger : colors.primary}
-          icon={status === 'running' ? 'radio-button-on' : undefined}
+          color={status === 'running' ? colors.danger : status === 'draft' ? colors.warning : status === 'rejected' ? colors.inkMuted : colors.primary}
+          icon={status === 'running' ? 'radio-button-on' : status === 'draft' ? 'hourglass-outline' : undefined}
         />
+        <Badge label={className(event.event_class, lang)} color={colors.primary} icon={classIcon(event.event_class)} />
         <Badge label={s.category[event.gender_category]} color={colors.inkMuted} />
       </Row>
       <Txt variant="screenTitle">{event.title}</Txt>
@@ -103,32 +149,36 @@ export default function EventDetail() {
           label={s.event.participants}
           value={full ? s.event.full : fmt(s.event.seats, { joined: event.joined_count, capacity: event.capacity })}
         />
+        <Button variant="accent" icon="navigate" label={s.event.directions} onPress={() => openDirections(event)} />
       </Card>
-
-      <SectionTitle>{s.event.pillars}</SectionTitle>
-      <PillarBar values={event.pillar_weights} height={14} />
-
-      <SectionTitle>{s.event.branches}</SectionTitle>
-      {event.branches.map((b) => (
-        <View key={b.id} style={styles.branch}>
-          <Txt style={styles.flex}>{lang === 'ar' ? b.name_ar : b.name_en}</Txt>
-          {b.pillars.map((p) => (
-            <Badge key={p} label={s.pillar[p]} color={pillarColor[p]} />
-          ))}
-        </View>
-      ))}
 
       <SectionTitle>{s.event.participants}</SectionTitle>
       {participants.length === 0 ? (
         <Txt color={colors.inkMuted}>{s.event.noParticipants}</Txt>
       ) : (
-        <Txt color={colors.inkMuted}>{participants.map((u) => u.full_name).join(lang === 'ar' ? '، ' : ', ')}</Txt>
+        <View style={styles.people}>
+          {participants.map((u) => (
+            <View key={u.id} style={styles.person}>
+              <Avatar user={u} size={32} />
+              <Txt variant="caption">{u.full_name}</Txt>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {canReport && (
+        <Button
+          variant="quiet"
+          icon="flag-outline"
+          label={s.event.report}
+          onPress={() => router.push({ pathname: '/reports/new', params: { eventId: event.id } })}
+        />
       )}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  branch: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  flex: { flex: 1 },
+  people: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  person: { flexDirection: 'row', alignItems: 'center', gap: space.xs, paddingEnd: space.sm },
 });

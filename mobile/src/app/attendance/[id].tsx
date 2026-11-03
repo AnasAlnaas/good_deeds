@@ -1,51 +1,55 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { ConfirmedMotion } from '@/components/brand';
 import { Button } from '@/components/Button';
-import { PillarBar } from '@/components/PillarBar';
+import { ProgressBar } from '@/components/ProgressBar';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
 import { Badge, Card, InfoRow, QueryState } from '@/components/ui';
 import { useAttendance, useMeSummary } from '@/data/queries';
-import { PILLARS, type Pillar } from '@/data/types';
 import { count, day, fmt, num, time } from '@/i18n/format';
+import * as dialog from '@/lib/dialog';
 import { useApp } from '@/state/app';
 import { useAction } from '@/state/useAction';
-import { colors, pillarColor, space } from '@/theme/tokens';
+import { colors, radius, space } from '@/theme/tokens';
 
 // Screen 17: the participant confirms or disputes what the supervisor recorded.
-// Confirming is the app's one reward moment: the pillar bar fills over 600ms.
+// Confirming is the app's one reward moment: the level bar fills over 600ms.
 export default function ConfirmHours() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { s, now } = useApp();
   const { run, busy } = useAction();
   const query = useAttendance(id);
   const summary = useMeSummary();
-  const [reward, setReward] = useState<{ before: number; earned: Record<Pillar, number> } | null>(null);
+  const [reward, setReward] = useState<{ before: number; earned: number } | null>(null);
 
   if (reward) {
-    const earnedTotal = PILLARS.reduce((sum, p) => sum + reward.earned[p], 0);
-    const after = summary.data?.total_points ?? reward.before + earnedTotal;
+    const after = summary.data?.total_points ?? reward.before + reward.earned;
+    // How far into the current level, before and after: the bar fills between the two.
+    const level = summary.data?.level;
+    const next = summary.data?.next_level;
+    const within = (points: number) =>
+      level && next ? Math.min(1, Math.max(0, (points - level.min_points) / (next.min_points - level.min_points))) : 1;
     return (
       <Screen footer={<Button label={s.confirm.done} onPress={() => router.back()} />}>
         <View style={styles.reward}>
-          <ConfirmedMotion values={reward.earned} />
+          <ConfirmedMotion />
           <Txt variant="screenTitle" align="center">
             {s.confirm.confirmed}
           </Txt>
           <Txt variant="sectionTitle" align="center" color={colors.primary}>
-            {fmt(s.confirm.earned, { points: count(earnedTotal, s.units.point) })}
+            {fmt(s.confirm.earned, { points: count(reward.earned, s.units.point) })}
           </Txt>
-          <View style={styles.fullWidth}>
-            <PillarBar
-              values={summary.data?.points_by_pillar ?? reward.earned}
-              height={20}
-              fill={1}
-              animateFrom={after > 0 ? reward.before / after : 0}
-            />
-          </View>
+          {level && (
+            <View style={styles.fullWidth}>
+              <Txt variant="caption" color={colors.inkMuted} align="center">
+                {fmt(s.profile.level, { n: level.level })}
+              </Txt>
+              <ProgressBar value={within(after)} animateFrom={within(reward.before)} height={16} />
+            </View>
+          )}
         </View>
       </Screen>
     );
@@ -59,7 +63,6 @@ export default function ConfirmHours() {
     );
   }
   const { attendance: a, event, recorded_by: supervisor, points: preview } = query.data;
-  const previewTotal = PILLARS.reduce((sum, p) => sum + preview[p], 0);
 
   const confirm = async () => {
     const before = summary.data?.total_points ?? 0;
@@ -67,10 +70,14 @@ export default function ConfirmHours() {
     if (done) setReward({ before, earned: done.value.points_earned });
   };
   const dispute = () =>
-    Alert.alert(s.confirm.disputeTitle, s.confirm.disputeBody, [
-      { text: s.cancel, style: 'cancel' },
-      { text: s.confirm.dispute, style: 'destructive', onPress: () => run((b) => b.disputeAttendance(a.id)) },
-    ]);
+    dialog.confirm({
+      title: s.confirm.disputeTitle,
+      message: s.confirm.disputeBody,
+      cancel: s.cancel,
+      action: s.confirm.dispute,
+      destructive: true,
+      onConfirm: () => run((b) => b.disputeAttendance(a.id)),
+    });
 
   const pending = a.participant_status === 'pending' && !!a.ended_at;
 
@@ -107,20 +114,14 @@ export default function ConfirmHours() {
       {a.participant_status === 'disputed' && <Txt color={colors.inkMuted}>{s.confirm.disputedBody}</Txt>}
 
       {pending && (
-        <Card>
-          <Txt variant="caption" color={colors.inkMuted}>
+        <View style={styles.earn}>
+          <Txt variant="caption" color={colors.accentInk}>
             {s.confirm.willEarn}
           </Txt>
-          <Txt variant="metric" tabular>
-            {num(previewTotal)}
+          <Txt variant="hero" color={colors.accentInk} tabular>
+            {num(preview)}
           </Txt>
-          <PillarBar values={preview} height={14} />
-          <View style={styles.split}>
-            {PILLARS.filter((p: Pillar) => preview[p] > 0).map((p) => (
-              <Badge key={p} label={`${s.pillar[p]} ${num(preview[p])}`} color={pillarColor[p]} />
-            ))}
-          </View>
-        </Card>
+        </View>
       )}
     </Screen>
   );
@@ -128,6 +129,6 @@ export default function ConfirmHours() {
 
 const styles = StyleSheet.create({
   reward: { alignItems: 'center', gap: space.md, paddingVertical: space.xxl },
-  fullWidth: { alignSelf: 'stretch', marginTop: space.lg },
-  split: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  fullWidth: { alignSelf: 'stretch', marginTop: space.lg, gap: space.sm },
+  earn: { backgroundColor: colors.accent, borderRadius: radius.card, padding: space.md + space.xs, gap: space.xs },
 });

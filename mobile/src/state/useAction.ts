@@ -1,8 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Alert } from 'react-native';
 
 import { type Backend, errorCode } from '@/data/backend';
+import * as dialog from '@/lib/dialog';
 import { useApp } from './app';
 
 /**
@@ -23,7 +23,7 @@ export function useAction() {
     try {
       return { value: await change(backend) };
     } catch (e) {
-      Alert.alert(s.errorTitle, s.errors[errorCode(e)]);
+      dialog.notify(s.errorTitle, s.errors[errorCode(e)]);
       return null;
     } finally {
       await queryClient.invalidateQueries();

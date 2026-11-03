@@ -1,6 +1,6 @@
 // Fills the database. `seedDemo` loads the same demo data as the offline app
 // (development and tests). `seedReference` loads only what production needs:
-// the branches of faith, their pillars, and the levels.
+// the levels. (The branches of faith come with the course, later.)
 
 import { sql } from 'drizzle-orm';
 
@@ -10,8 +10,8 @@ import { dated } from './rows';
 import * as s from './schema';
 
 const ALL_TABLES = [
-  'admin_actions', 'push_tokens', 'login_codes', 'points_ledger', 'attendance', 'term_acceptances', 'registrations', 'event_terms',
-  'event_branches', 'event_organizers', 'events', 'levels', 'branch_pillars', 'branches', 'users',
+  'reports', 'warnings', 'admin_actions', 'user_photos', 'push_tokens', 'login_codes', 'points_ledger', 'attendance', 'term_acceptances', 'registrations', 'event_terms',
+  'event_organizers', 'events', 'levels', 'branches', 'users',
 ];
 
 /** Deletes every row. Development and tests only. */
@@ -22,8 +22,6 @@ export async function clearAll(db: Database) {
 export async function seedReference(db: Database) {
   const d = buildSeed(Date.now());
   await db.transaction(async (tx) => {
-    await tx.insert(s.branches).values(d.branches).onConflictDoNothing();
-    await tx.insert(s.branch_pillars).values(d.branch_pillars).onConflictDoNothing();
     await tx.insert(s.levels).values(d.levels).onConflictDoNothing();
   });
 }
@@ -49,12 +47,9 @@ export async function seedDemo(db: Database, nowMs: number) {
   const d = buildSeed(nowMs);
   await db.transaction(async (tx) => {
     await tx.insert(s.users).values([...d.users.map(dated), { ...DEV_ADMIN, created_at: new Date(nowMs) }]);
-    await tx.insert(s.branches).values(d.branches);
-    await tx.insert(s.branch_pillars).values(d.branch_pillars);
     await tx.insert(s.levels).values(d.levels);
     await tx.insert(s.events).values(d.events.map(dated));
     await tx.insert(s.event_organizers).values(d.event_organizers);
-    await tx.insert(s.event_branches).values(d.event_branches);
     await tx.insert(s.event_terms).values(d.event_terms.map(dated));
     await tx.insert(s.registrations).values(d.registrations.map(dated));
     await tx.insert(s.term_acceptances).values(d.term_acceptances.map(dated));

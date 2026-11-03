@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 
 import type { EventStatus } from '../../../shared/types';
 import { api } from '../api';
@@ -8,12 +8,14 @@ import { fill, range } from '../format';
 import { t } from '../strings';
 import { PageHeader, QueryState, StatusBadge } from '../ui';
 
-const FILTERS: (EventStatus | 'all')[] = ['all', 'running', 'published', 'draft', 'finished', 'cancelled'];
+const FILTERS: (EventStatus | 'all')[] = ['all', 'running', 'published', 'draft', 'finished', 'cancelled', 'rejected'];
 
 export function Events() {
   const navigate = useNavigate();
   const query = useQuery({ queryKey: ['events'], queryFn: api.events });
-  const [filter, setFilter] = useState<EventStatus | 'all'>('all');
+  // ?status=draft opens on the drafts (the overview's link to proposals waiting).
+  const [params] = useSearchParams();
+  const [filter, setFilter] = useState<EventStatus | 'all'>(() => FILTERS.find((f) => f === params.get('status')) ?? 'all');
   const rows = (query.data ?? []).filter((r) => filter === 'all' || r.effective_status === filter);
 
   return (
@@ -48,11 +50,12 @@ export function Events() {
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ event: e, effective_status, joined_count, organizers }) => (
+              {rows.map(({ event: e, effective_status, joined_count, organizers, creator }) => (
                 <tr key={e.id} className="clickable" onClick={() => navigate(`/events/${e.id}`)}>
                   <td>
                     <Link to={`/events/${e.id}`}>{e.title}</Link>
                     <div className="small muted">{e.address_text}</div>
+                    {creator && creator.role !== 'admin' && <div className="small">{fill(t.events.proposedBy, { name: creator.full_name })}</div>}
                   </td>
                   <td className="small">{range(e.starts_at, e.ends_at)}</td>
                   <td>

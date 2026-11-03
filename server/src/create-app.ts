@@ -1,23 +1,31 @@
 // The API as one Hono app. It does not know where it runs: src/node.ts serves
-// it on a VPS or a laptop, and the same app can be mounted on Vercel later.
+// it on a VPS or a laptop, index.ts on Vercel.
 // Tests build it with an in-memory database and a fixed clock.
 
 import { Hono } from 'hono';
 import { bearerAuth } from 'hono/bearer-auth';
+import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 
 import type { ErrorBody } from '../../shared/api';
+import { PHOTO_MAX_BYTES } from '../../shared/rules';
 import { type AppDeps, type AppEnv, errorResponse } from './http';
 import { closeDueAndNotify } from './notify';
 import { adminRoutes } from './routes/admin';
 import { authRoutes } from './routes/auth';
 import { eventRoutes } from './routes/events';
-import { attendanceRoutes, meRoutes } from './routes/me';
+import { attendanceRoutes, meRoutes, userRoutes } from './routes/me';
+import { reportRoutes, warningRoutes } from './routes/reports';
+
+// The largest body any request needs: a profile photo, base64 (4 bytes for every 3)
+// in JSON, with room to spare. Anything bigger is refused before it is read into memory.
+const MAX_BODY_BYTES = Math.ceil((PHOTO_MAX_BYTES * 4) / 3) + 64 * 1024;
 
 export function createApp(deps: AppDeps) {
   const app = new Hono<AppEnv>().basePath('/api');
 
   app.use(cors({ origin: deps.corsOrigins.length ? deps.corsOrigins : '*' }));
+  app.use(bodyLimit({ maxSize: MAX_BODY_BYTES, onError: (c) => c.json<ErrorBody>({ error: 'too_large' }, 413) }));
   app.use(async (c, next) => {
     c.set('deps', deps);
     await next();
@@ -31,11 +39,15 @@ export function createApp(deps: AppDeps) {
   app.route('/events', eventRoutes);
   app.route('/me', meRoutes);
   app.route('/attendance', attendanceRoutes);
+  app.route('/users', userRoutes);
+  app.route('/reports', reportRoutes);
+  app.route('/warnings', warningRoutes);
   app.route('/admin', adminRoutes);
 
-  // For an outside scheduler (e.g. Vercel Cron). On a VPS, src/node.ts runs the same job on a timer.
+  // For a scheduler: Vercel Cron calls it with GET, other schedulers may POST.
+  // On a VPS, src/node.ts runs the same job on a timer.
   if (deps.cronSecret) {
-    app.post('/internal/tick', bearerAuth({ token: deps.cronSecret }), async (c) =>
+    app.on(['GET', 'POST'], '/internal/tick', bearerAuth({ token: deps.cronSecret }), async (c) =>
       c.json({ closed: await closeDueAndNotify(deps) }),
     );
   }

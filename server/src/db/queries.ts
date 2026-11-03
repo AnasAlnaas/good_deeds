@@ -4,11 +4,19 @@
 
 import { randomUUID } from 'node:crypto';
 
-import { and, asc, count, eq, inArray, isNull, lte } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNull, lte, ne } from 'drizzle-orm';
 
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
-import { type AppEvent, type Attendance, type EventTerm, type Level, PILLARS, type Pillar, type Registration, type User } from '../../../shared/types';
+import {
+  type AppEvent,
+  type Attendance,
+  type EventTerm,
+  type Level,
+  type Registration,
+  type User,
+  type Warning,
+} from '../../../shared/types';
 import type { PublicUser } from '../../../shared/api';
 import type { Database } from './client';
 import { iso } from './rows';
@@ -21,11 +29,23 @@ export const newId = () => randomUUID();
 /** The columns of a user that other people may see (shared/api.ts PublicUser). */
 export const publicUser = { id: s.users.id, full_name: s.users.full_name, avatar_url: s.users.avatar_url, gender: s.users.gender };
 
-/** Drafts are not visible to anyone yet. */
+/** A person as `viewer` may see them: the photo only where rules.canSeePhoto allows it. */
+export function shownTo(viewer: Pick<User, 'id' | 'gender' | 'role'>, person: PublicUser): PublicUser {
+  return person.avatar_url && !rules.canSeePhoto(viewer, person) ? { ...person, avatar_url: null } : person;
+}
+
+/** Drafts and turned-down drafts are nobody's to act on in the app (only their creator may look: findEventFor). */
 export async function findEvent(q: Database, id: string, opts: Lock = {}): Promise<AppEvent> {
   const query = q.select().from(s.events).where(eq(s.events.id, id));
   const [row] = opts.lock ? await query.for('update') : await query;
-  if (!row || row.status === 'draft') throw new ApiError('not_found');
+  if (!row || rules.isHidden(row)) throw new ApiError('not_found');
+  return iso(row);
+}
+
+/** An event as `viewer` may see it: their own drafts included. */
+export async function findEventFor(q: Database, id: string, viewer: Pick<User, 'id'>): Promise<AppEvent> {
+  const [row] = await q.select().from(s.events).where(eq(s.events.id, id));
+  if (!row || !rules.canSeeEvent(viewer, row)) throw new ApiError('not_found');
   return iso(row);
 }
 
@@ -80,6 +100,37 @@ export async function isOrganizer(q: Database, eventId: string, userId: string) 
   return rows.length > 0;
 }
 
+/** Joined the event or supervises it (rules.wasAtEvent). A deleted account was at nothing. */
+export async function wasAtEvent(q: Database, eventId: string, userId: string) {
+  const user = await findUser(q, userId);
+  if (!user || user.deleted_at) return false;
+  return rules.wasAtEvent(await registrationOf(q, eventId, userId), await isOrganizer(q, eventId, userId));
+}
+
+/** How many of a person's reports still wait for an admin. */
+export async function openReports(q: Database, userId: string) {
+  const [row] = await q
+    .select({ n: count() })
+    .from(s.reports)
+    .where(and(eq(s.reports.reporter_id, userId), eq(s.reports.status, 'open')));
+  return row.n;
+}
+
+export async function warningById(q: Database, id: string, opts: Lock = {}): Promise<Warning | undefined> {
+  const query = q.select().from(s.warnings).where(eq(s.warnings.id, id));
+  const [row] = opts.lock ? await query.for('update') : await query;
+  return row && iso(row);
+}
+
+/** The people one supervisor warned at one event (withdrawn warnings left out). */
+export async function warnedBy(q: Database, eventId: string, issuerId: string): Promise<Set<string>> {
+  const rows = await q
+    .select({ user_id: s.warnings.user_id })
+    .from(s.warnings)
+    .where(and(eq(s.warnings.event_id, eventId), eq(s.warnings.issued_by, issuerId), ne(s.warnings.status, 'withdrawn')));
+  return new Set(rows.map((r) => r.user_id));
+}
+
 /** People with a `joined` registration, deleted accounts left out. */
 export async function joinedUsers(q: Database, eventId: string): Promise<PublicUser[]> {
   return q
@@ -101,50 +152,50 @@ export async function joinedCounts(q: Database, eventIds: string[]): Promise<Map
   return new Map(rows.map((r) => [r.event_id, r.n]));
 }
 
-/** Each event's pillar weights, from the pillars of its branches of faith. */
-export async function pillarWeights(q: Database, eventIds: string[]): Promise<Map<string, Record<Pillar, number>>> {
-  const links = new Map<string, Pillar[]>(eventIds.map((id) => [id, []]));
-  if (eventIds.length > 0) {
-    const rows = await q
-      .select({ event_id: s.event_branches.event_id, pillar: s.branch_pillars.pillar })
-      .from(s.event_branches)
-      .innerJoin(s.branch_pillars, eq(s.branch_pillars.branch_id, s.event_branches.branch_id))
-      .where(inArray(s.event_branches.event_id, eventIds));
-    for (const r of rows) links.get(r.event_id)!.push(r.pillar);
-  }
-  return new Map([...links].map(([id, pillars]) => [id, rules.pillarWeights(pillars)]));
-}
-
 export async function allLevels(q: Database): Promise<Level[]> {
   return q.select().from(s.levels).orderBy(asc(s.levels.min_points));
 }
 
+/** A person's level by the points in their ledger (as GET /api/me shows it). */
+export async function levelOf(q: Database, userId: string): Promise<Level> {
+  return rules.levelFor(await allLevels(q), rules.totalPoints(await ledgerOf(q, userId)));
+}
+
+/** How many of a person's events still wait for an admin. */
+export async function waitingProposals(q: Database, userId: string) {
+  const [row] = await q
+    .select({ n: count() })
+    .from(s.events)
+    .where(and(eq(s.events.created_by, userId), eq(s.events.status, 'draft')));
+  return row.n;
+}
+
 /**
- * Adds points for confirmed hours to the ledger (one row per pillar, only ever
- * added) and updates the person's total and level.
+ * Adds points for confirmed hours to the ledger (only ever added) and updates
+ * the person's total and level.
  */
 export async function creditPoints(
   q: Database,
-  args: { userId: string; eventId: string; earned: Record<Pillar, number>; reason: string; at: Date },
+  args: { userId: string; eventId: string; earned: number; reason: string; at: Date },
 ): Promise<{ total: number; level: Level }> {
-  const rows = PILLARS.filter((p) => args.earned[p] > 0).map((p) => ({
-    id: newId(),
-    user_id: args.userId,
-    event_id: args.eventId,
-    pillar: p,
-    points: args.earned[p],
-    reason: args.reason,
-    created_at: args.at,
-  }));
-  if (rows.length) await q.insert(s.points_ledger).values(rows);
-  const total = rules.totalOf(rules.pointsByPillar(await ledgerOf(q, args.userId)));
+  if (args.earned > 0) {
+    await q.insert(s.points_ledger).values({
+      id: newId(),
+      user_id: args.userId,
+      event_id: args.eventId,
+      points: args.earned,
+      reason: args.reason,
+      created_at: args.at,
+    });
+  }
+  const total = rules.totalPoints(await ledgerOf(q, args.userId));
   const level = rules.levelFor(await allLevels(q), total);
   await q.update(s.users).set({ total_points: total, level: level.level }).where(eq(s.users.id, args.userId));
   return { total, level };
 }
 
 export async function ledgerOf(q: Database, userId: string) {
-  return q.select({ pillar: s.points_ledger.pillar, points: s.points_ledger.points }).from(s.points_ledger).where(eq(s.points_ledger.user_id, userId));
+  return q.select({ points: s.points_ledger.points }).from(s.points_ledger).where(eq(s.points_ledger.user_id, userId));
 }
 
 /**

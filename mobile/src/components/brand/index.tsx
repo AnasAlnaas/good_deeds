@@ -1,7 +1,7 @@
 import { AttendanceMotion } from './AttendanceMotion';
+import { GrowthMotion } from './GrowthMotion';
 import { MapPinsMotion } from './MapPinsMotion';
 import type { MotionProps } from './motion';
-import { PillarsMotion } from './PillarsMotion';
 
 export { AnimatedLogo } from './AnimatedLogo';
 export { ConfirmedMotion } from './ConfirmedMotion';
@@ -10,10 +10,10 @@ export { Logo } from './Logo';
 export { LogoMark, type MarkVariant } from './LogoMark';
 export type { MotionProps } from './motion';
 export { RecordedMotion } from './RecordedMotion';
-export { AttendanceMotion, MapPinsMotion, PillarsMotion };
+export { AttendanceMotion, GrowthMotion, MapPinsMotion };
 
 // One graphic per onboarding slide, in the order of s.onboarding.slides.
-export const onboardingMotions = [MapPinsMotion, AttendanceMotion, PillarsMotion] as const;
+export const onboardingMotions = [MapPinsMotion, AttendanceMotion, GrowthMotion] as const;
 
 // Drop-in for the onboarding screen: <OnboardingArt index={i} />.
 // Pass active={false} for slides that are mounted but off screen (a pager),

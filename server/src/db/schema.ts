@@ -6,6 +6,7 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   check,
+  customType,
   doublePrecision,
   index,
   integer,
@@ -19,11 +20,10 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 
-export const pillar = pgEnum('pillar', ['spiritual', 'mental', 'physical']);
 export const gender = pgEnum('gender', ['male', 'female']);
 export const genderCategory = pgEnum('gender_category', ['male', 'female', 'mixed']);
 export const role = pgEnum('role', ['member', 'supervisor', 'admin']);
-export const eventStatus = pgEnum('event_status', ['draft', 'published', 'running', 'finished', 'cancelled']);
+export const eventStatus = pgEnum('event_status', ['draft', 'published', 'running', 'finished', 'cancelled', 'rejected']);
 export const registrationStatus = pgEnum('registration_status', ['pending_terms', 'joined', 'cancelled']);
 export const startSource = pgEnum('start_source', ['live', 'backdated']);
 export const endSource = pgEnum('end_source', ['live', 'backdated', 'auto_closed']);
@@ -36,10 +36,23 @@ export const adminAction = pgEnum('admin_action', [
   'publish_event',
   'cancel_event',
   'resolve_dispute',
+  'reject_event',
+  'remove_photo',
+  'handle_report',
+  'uphold_warning',
+  'withdraw_warning',
 ]);
+export const reportCategory = pgEnum('report_category', ['behaviour', 'safety', 'event', 'app', 'other']);
+export const reportStatus = pgEnum('report_status', ['open', 'handled']);
+export const warningStatus = pgEnum('warning_status', ['active', 'appealed', 'upheld', 'withdrawn']);
 
 const at = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 const points = (name: string) => numeric(name, { precision: 10, scale: 2, mode: 'number' });
+// node-postgres sends a Buffer as bytea (PGlite takes either); both read back a Uint8Array subclass.
+const bytea = customType<{ data: Uint8Array; driverData: Uint8Array }>({
+  dataType: () => 'bytea',
+  toDriver: (v) => Buffer.from(v.buffer, v.byteOffset, v.byteLength),
+});
 
 export const users = pgTable(
   'users',
@@ -70,15 +83,6 @@ export const branches = pgTable('branches', {
   is_agreed: boolean('is_agreed').notNull().default(false),
   is_active: boolean('is_active').notNull().default(true),
 });
-
-export const branch_pillars = pgTable(
-  'branch_pillars',
-  {
-    branch_id: text('branch_id').notNull().references(() => branches.id),
-    pillar: pillar('pillar').notNull(),
-  },
-  (t) => [primaryKey({ columns: [t.branch_id, t.pillar] })],
-);
 
 export const events = pgTable(
   'events',
@@ -115,15 +119,6 @@ export const event_organizers = pgTable(
     user_id: text('user_id').notNull().references(() => users.id),
   },
   (t) => [primaryKey({ columns: [t.event_id, t.user_id] }), index('event_organizers_user').on(t.user_id)],
-);
-
-export const event_branches = pgTable(
-  'event_branches',
-  {
-    event_id: text('event_id').notNull().references(() => events.id),
-    branch_id: text('branch_id').notNull().references(() => branches.id),
-  },
-  (t) => [primaryKey({ columns: [t.event_id, t.branch_id] })],
 );
 
 export const event_terms = pgTable(
@@ -196,7 +191,6 @@ export const points_ledger = pgTable(
     id: text('id').primaryKey(),
     user_id: text('user_id').notNull().references(() => users.id),
     event_id: text('event_id').notNull().references(() => events.id),
-    pillar: pillar('pillar').notNull(),
     points: points('points').notNull(),
     reason: text('reason').notNull(),
     created_at: at('created_at').notNull().defaultNow(),
@@ -209,6 +203,60 @@ export const levels = pgTable('levels', {
   min_points: integer('min_points').notNull(),
   can_create_events: boolean('can_create_events').notNull(),
   can_report: boolean('can_report').notNull(),
+});
+
+// A member tells the association about something (shared/types.ts Report: how
+// it differs from Data_Model.md). Only admins read reports.
+export const reports = pgTable(
+  'reports',
+  {
+    id: text('id').primaryKey(),
+    reporter_id: text('reporter_id').notNull().references(() => users.id),
+    category: reportCategory('category').notNull(),
+    event_id: text('event_id').references(() => events.id),
+    subject_id: text('subject_id').references(() => users.id),
+    note: text('note'),
+    status: reportStatus('status').notNull().default('open'),
+    created_at: at('created_at').notNull(),
+    handled_by: text('handled_by').references(() => users.id),
+    handled_at: at('handled_at'),
+    handled_note: text('handled_note'),
+  },
+  (t) => [index('reports_status').on(t.status, t.created_at), index('reports_reporter').on(t.reporter_id)],
+);
+
+// A supervisor's warning to someone at their event (shared/types.ts Warning:
+// how it differs from Data_Model.md). Seen by that member and admins only.
+export const warnings = pgTable(
+  'warnings',
+  {
+    id: text('id').primaryKey(),
+    user_id: text('user_id').notNull().references(() => users.id),
+    issued_by: text('issued_by').notNull().references(() => users.id),
+    event_id: text('event_id').notNull().references(() => events.id),
+    reason: text('reason').notNull(),
+    status: warningStatus('status').notNull().default('active'),
+    created_at: at('created_at').notNull(),
+    appealed_at: at('appealed_at'),
+    appeal_reason: text('appeal_reason'),
+    decided_by: text('decided_by').references(() => users.id),
+    decided_at: at('decided_at'),
+    decision_note: text('decision_note'),
+  },
+  (t) => [
+    index('warnings_user').on(t.user_id),
+    // One warning per supervisor, person and event (rules.assertCanWarn); a withdrawn one may be given again.
+    uniqueIndex('warnings_once').on(t.event_id, t.user_id, t.issued_by).where(sql`${t.status} <> 'withdrawn'`),
+  ],
+);
+
+// Not in Data_Model.md yet: profile photos, kept in the database so the server
+// needs no file storage. users.avatar_url points at GET /api/users/:id/photo.
+export const user_photos = pgTable('user_photos', {
+  user_id: text('user_id').primaryKey().references(() => users.id),
+  /** A small JPEG with its metadata removed (src/photo.ts). */
+  jpeg: bytea('jpeg').notNull(),
+  updated_at: at('updated_at').notNull(),
 });
 
 // One-time sign-in codes. Only a hash of the code is stored.

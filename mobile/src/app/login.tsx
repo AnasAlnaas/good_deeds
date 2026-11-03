@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { AnimatedLogo } from '@/components/brand';
 import { Button } from '@/components/Button';
+import { CityPicker } from '@/components/CityPicker';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
 import { Badge, Card, Chip, Field, Row } from '@/components/ui';
@@ -14,8 +15,10 @@ import { errorCode } from '@/data/backend';
 import type { Gender } from '@/data/types';
 import { DEMO_ACCOUNTS } from '@/demo/seed';
 import { fmt } from '@/i18n/format';
+import * as dialog from '@/lib/dialog';
 import { useApp } from '@/state/app';
 import { colors, space } from '@/theme/tokens';
+import * as rules from '../../../shared/rules';
 
 export default function Login() {
   const { s, lang, setLang, mode, setMode, apiUrl } = useApp();
@@ -92,21 +95,10 @@ function DemoAccounts() {
   );
 }
 
-// Arabic keyboards type ٠١٢…; the server expects 0–9.
-const latinDigits = (text: string) =>
-  text
-    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
-    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0));
+const { latinDigits, libyanMobile, cleanName, cleanCity } = rules;
 
-// The association is in Libya: a local number (091…) gets +218.
-function toInternational(input: string) {
-  let n = latinDigits(input).replace(/[^\d+]/g, '');
-  if (n.startsWith('00')) n = `+${n.slice(2)}`;
-  else if (n.startsWith('0')) n = `+218${n.slice(1)}`;
-  else if (n.startsWith('218')) n = `+${n}`;
-  else if (!n.startsWith('+')) n = `+218${n}`;
-  return n;
-}
+// Typed numbers only: a full local number (091 234 5678) has 10.
+const digitCount = (text: string) => latinDigits(text).replace(/\D/g, '').length;
 
 // Keeps a phone number left-to-right inside Arabic text.
 const ltr = (text: string) => `⁦${text}⁩`;
@@ -120,8 +112,12 @@ function PhoneSignIn({ baseUrl }: { baseUrl: string }) {
   const [code, setCode] = useState('');
   const [fullName, setFullName] = useState('');
   const [gender, setGender] = useState<Gender | null>(null);
-  const [city, setCity] = useState(s.login.defaultCity);
+  // Chosen from the list, never typed: empty until the person picks one.
+  const [city, setCity] = useState('');
   const [busy, setBusy] = useState(false);
+  // What was typed is marked wrong only once the person tried to go on (or typed a whole number).
+  const [phoneChecked, setPhoneChecked] = useState(false);
+  const [profileChecked, setProfileChecked] = useState(false);
 
   const attempt = async (call: () => Promise<void>) => {
     setBusy(true);
@@ -131,20 +127,24 @@ function PhoneSignIn({ baseUrl }: { baseUrl: string }) {
       const c = errorCode(e);
       // A new phone: the code was right, the server needs the profile to create the account.
       if (c === 'profile_required') setStep('profile');
-      else Alert.alert(s.errorTitle, s.errors[c]);
+      else dialog.notify(s.errorTitle, s.errors[c]);
     } finally {
       setBusy(false);
     }
   };
 
-  const getCode = () =>
-    attempt(async () => {
-      const p = toInternational(phoneInput);
+  const typedPhone = libyanMobile(phoneInput);
+  const getCode = () => {
+    setPhoneChecked(true);
+    const p = typedPhone;
+    if (!p) return;
+    return attempt(async () => {
       await requestCode(baseUrl, p);
       setPhone(p);
       setCode('');
       setStep('code');
     });
+  };
 
   const enter = (profile?: VerifyCodeBody['profile']) =>
     attempt(async () => {
@@ -154,6 +154,7 @@ function PhoneSignIn({ baseUrl }: { baseUrl: string }) {
     });
 
   if (step === 'phone') {
+    const phoneWrong = !typedPhone && (phoneChecked || digitCount(phoneInput) >= 10);
     return (
       <>
         <Txt variant="sectionTitle" style={styles.gap}>
@@ -164,14 +165,20 @@ function PhoneSignIn({ baseUrl }: { baseUrl: string }) {
           label={s.login.phone}
           ltr
           value={phoneInput}
-          onChangeText={setPhoneInput}
+          onChangeText={(t) => {
+            setPhoneInput(t);
+            setPhoneChecked(false);
+          }}
+          onBlur={() => phoneInput.trim() && setPhoneChecked(true)}
           placeholder={s.login.phonePlaceholder}
           keyboardType="phone-pad"
           autoComplete="tel"
           textContentType="telephoneNumber"
+          maxLength={20}
           onSubmitEditing={getCode}
+          error={phoneWrong ? s.login.phoneInvalid : null}
         />
-        <Button icon="chatbox-ellipses-outline" label={s.login.getCode} disabled={busy || latinDigits(phoneInput).replace(/\D/g, '').length < 9} onPress={getCode} />
+        <Button icon="chatbox-ellipses-outline" label={s.login.getCode} disabled={busy || digitCount(phoneInput) < 9} onPress={getCode} />
       </>
     );
   }
@@ -206,14 +213,28 @@ function PhoneSignIn({ baseUrl }: { baseUrl: string }) {
     );
   }
 
-  const profileReady = fullName.trim().length >= 2 && !!gender && city.trim().length > 0;
+  const name = cleanName(fullName);
+  const cleanedCity = cleanCity(city);
+  const createAccount = () => {
+    setProfileChecked(true);
+    if (name && cleanedCity && gender) enter({ full_name: name, gender, city: cleanedCity });
+  };
   return (
     <>
       <Txt variant="sectionTitle" style={styles.gap}>
         {s.login.profileTitle}
       </Txt>
       <Txt color={colors.inkMuted}>{s.login.profileBody}</Txt>
-      <Field label={s.login.fullName} value={fullName} onChangeText={setFullName} autoComplete="name" textContentType="name" />
+      <Field
+        label={s.login.fullName}
+        value={fullName}
+        onChangeText={setFullName}
+        placeholder={s.login.fullNamePlaceholder}
+        maxLength={rules.NAME_MAX}
+        autoComplete="name"
+        textContentType="name"
+        error={profileChecked && !name ? s.login.nameInvalid : null}
+      />
       <Txt variant="caption" color={colors.inkMuted}>
         {s.login.gender}
       </Txt>
@@ -221,12 +242,15 @@ function PhoneSignIn({ baseUrl }: { baseUrl: string }) {
         <Chip label={s.login.male} selected={gender === 'male'} onPress={() => setGender('male')} />
         <Chip label={s.login.female} selected={gender === 'female'} onPress={() => setGender('female')} />
       </Row>
-      <Field label={s.login.city} value={city} onChangeText={setCity} />
+      <Txt variant="caption" color={colors.inkMuted}>
+        {s.login.genderNote}
+      </Txt>
+      <CityPicker label={s.login.city} value={city} onChange={setCity} error={profileChecked && !cleanedCity ? s.login.cityInvalid : null} />
       <Button
         icon="person-add-outline"
         label={s.login.createAccount}
-        disabled={busy || !profileReady}
-        onPress={() => enter({ full_name: fullName.trim(), gender: gender!, city: city.trim() })}
+        disabled={busy || !fullName.trim() || !gender || !city}
+        onPress={createAccount}
       />
     </>
   );

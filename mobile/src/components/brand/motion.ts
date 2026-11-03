@@ -72,11 +72,13 @@ export const ease = {
 };
 
 // 0 → 1 across [from, to] ms of the clock, eased, clamped outside it.
-// (A const after `ease`: the worklet compiler captures `ease` when it is defined.)
-export const seg = (t: number, from: number, to: number, fn: (x: number) => number = ease.out) => {
+// Without `fn` it is ease.out, written out here: a release build does not carry
+// what a worklet's default parameter refers to (`ease`) to the UI thread, and
+// the app crashed on its first animation ("Property 'ease' doesn't exist").
+export const seg = (t: number, from: number, to: number, fn?: (x: number) => number) => {
   'worklet';
   const x = Math.min(1, Math.max(0, (t - from) / (to - from)));
-  return fn(x);
+  return fn ? fn(x) : 1 - Math.pow(1 - x, 3);
 };
 
 export function lerp(a: number, b: number, x: number) {

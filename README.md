@@ -44,22 +44,72 @@ server on port 3000 of the computer running `npx expo start`, so a phone on the
 same Wi-Fi finds `npm run dev` with no setup. A build without either shows only
 the demo. Android blocks plain `http://` in release builds, so a test APK needs
 the server behind HTTPS; Expo Go and development builds are fine with `http://`.
-After adding `expo-secure-store`, native builds (the test APK) must be rebuilt.
+The privacy policy's address goes in `EXPO_PUBLIC_PRIVACY_URL`; Settings links to it,
+and shows no link without it. The policy itself, the Data safety answers and the
+store listing are drafts in `docs/` (⚠️ marks what the association must fill in).
+After adding `expo-secure-store`, `expo-image-picker` and `expo-image-manipulator`,
+native builds (the test APK, a development build) must be rebuilt; Expo Go already has them.
 
 The app follows the planning notes (`DESIGN.md`, `Screens.md`, `Data_Model.md`,
 `Attendance_And_Hours.md`).
 
 - **Arabic and English**, switchable in Settings; Arabic is right-to-left.
 - **Demo accounts** on the login screen: two participants (male/female) and two supervisors.
-- Map of Tripoli events, event list, event page with the three-pillar bar and branches of faith.
+- **One main screen, the map** of Tripoli events. Everything else opens from its
+  icons as a full screen that comes back to the map: your profile (your photo,
+  top), search, the event list, My activity, and proposing an event.
+- A **filter by class of good work** on the map and in the list: بيئة، صحة،
+  تعلُّم وتعليم، مجتمع. Each event type belongs to one class (`shared/classes.ts`,
+  where a class is added in one line).
+- The map only shows where events are. **Directions** open Google Maps (Apple
+  Maps on an iPhone) from the event page or the event's card on the map.
+- Event page with its class and branches of faith.
 - Join flow with the one-item-per-screen terms carousel; capacity and men/women/mixed rules.
 - Supervisor roster: record start and finish, with backdating limited to event start → now.
-- Participant confirms or disputes recorded hours; confirming credits points per pillar.
+- Participant confirms or disputes recorded hours; confirming credits points (one total per person).
 - My activity, profile with level, account deletion.
+- **Editing the profile** (Profile → "عدّل بياناتك"): the name and the city,
+  checked as at sign-up. Gender stays as it was set at sign-up (it decides which
+  events a person may join and who sees their photo), and so does the phone
+  (sign-in is by phone); the screen says so.
+- **Profile photo**: from the phone's photos or the camera, made a small square
+  JPEG on the phone; the server removes its metadata (EXIF: place, phone). Seen
+  only by the owner, admins and people of the same gender (owner's decision);
+  everyone else sees the first letter of the name. Shown on the roster and the
+  record screen, so the supervisor can see who stands in front of them.
+- **Proposing an event** (Events tab → "اقترح فعالية"): opens at level 5, or for
+  supervisors and admins. The creator becomes its supervisor and may choose only
+  mixed or their own men/women category. It waits for an admin (at most 3 waiting
+  per person), who approves or turns it down from the admin panel; the creator is
+  notified either way. Until then only the creator sees it, under "أنظّمها",
+  and may edit it with the same form and checks ("عدّل اقتراحك") or withdraw it
+  ("اسحب اقتراحك"), which deletes it. Once it is approved or turned down, only
+  admins change it, in the panel. An admin's own event made in the app is
+  published at once.
+- **Reports (بلاغ) and warnings (إنذار)**, kept apart as the master file decides:
+  a member reports, a supervisor warns.
+  - *Report*: from the event page ("أبلغ عن مشكلة") or Profile → "بلاغاتك".
+    A category (someone's behaviour, something unsafe, an event not as described,
+    the app, something else) and an optional note (needed for "something else").
+    It may be tied to an event the member was at, and name someone who was at
+    that event. Only admins read it; the person named is never told. Who may
+    report is `levels.can_report` (supervisors and admins always may); at most 5
+    may wait at once. The reporter is told when an admin has looked at it.
+  - *Warning*: a supervisor of the event, from its roster ("سجّل إنذاراً"),
+    gives one to someone who joined it, with a reason, from the event's start
+    until 7 days after it ends. It is recorded only: it takes no points and
+    blocks nothing. The member is told (without the reason, which can show on a
+    locked screen) and sees it under Profile → "إنذاراتك"; nobody but the member
+    and the admins sees it. The member may appeal once with a reason; an admin
+    keeps it or withdraws it, and the member reads the admin's note in the app.
 
 Try the full loop: sign in as **خالد منصور** (supervisor), open **حملة نظافة السراج**
 (happening now) → roster → record start and finish for **أحمد سالم**. Then switch
-account to أحمد → My activity → confirm the hours.
+account to أحمد → My activity → confirm the hours. As خالد you can also propose
+an event (Events → اقترح فعالية); the demo has no admin, so it stays waiting.
+On the same roster, "سجّل إنذاراً" warns أحمد; as أحمد, Profile → إنذاراتك shows it
+and lets him appeal, and the event page's "أبلغ عن مشكلة" sends a report. With no
+admin in the demo, reports and appeals stay waiting.
 
 `src/demo/server.ts` stands in for the backend. It calls the same rules as the
 real server (`shared/rules.ts`), and the screens never compute hours or points.
@@ -98,12 +148,18 @@ Built on this PC, no Expo account needed (Android SDK + JDK 17+ required):
 
 ```bash
 cd mobile
-npx expo prebuild --platform android --clean
-cd android
-./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+npm run apk
 ```
 
-The APK is `mobile/android/app/build/outputs/apk/release/app-release.apk`. It is
+That builds for 64-bit phones (almost every phone in use); `npm run apk -- --all`
+also covers old 32-bit phones and takes longer. The Android emulator on a PC is
+x86_64 and cannot start the phone APK; `npm run apk -- --emulator` builds a copy
+for it. `android/` is made again only
+when `app.json`, the packages, `plugins/` or the brand pictures changed, so later
+builds reuse the last one and are much faster. The first build after a change
+like that is the slow one.
+
+The APK is copied to `mobile/builds/good-deeds-<version>-arm64.apk`. It is
 signed with the Android debug key: fine for testers, not for Google Play.
 `android/` is generated (and git-ignored); change native settings in `app.json`.
 `--clean` rebuilds it from `app.json` each time, so changes such as the package
@@ -112,9 +168,25 @@ name (`com.islahtarbawi.gooddeeds`) are always picked up.
 **Placeholders to replace** (`shared/placeholders.ts`): base points per event
 type, level thresholds and the end-time grace period — they belong to
 `Points_And_Levels.md`. Fields marked `DEMO-ONLY` in `shared/types.ts` are
-not in `Data_Model.md` yet and need a decision.
+not in `Data_Model.md` yet and need a decision. Decided by the owner
+(2026-10-22, in `shared/rules.ts`): events may be proposed from level 5 or by
+supervisors and admins ("level + direct nomination"), at most 3 may wait at
+once, and a proposal is mixed or for the proposer's own men/women category.
+Decided by the owner (2026-10-22/23, in `shared/rules.ts`): a report is about
+anything, by category, with an optional note, and may name someone at its event;
+a warning is given by a supervisor of the event, recorded only, seen by the
+member (who is notified) and admins, has no severity, and may be appealed once.
+Also decided: at most 5 reports waiting at once, warnings up to 7 days after an
+event, one warning per supervisor, person and event, a note needed for
+"something else", supervisors reporting whatever their level, and the reporter
+told when their report has been looked at.
+`reports` and `warnings` differ from `Data_Model.md` (see `shared/types.ts`):
+a report has an event and a person instead of one target, and a warning has
+no severity but records its event, the appeal and the decision.
 
 ## API
+
+Needs Node.js 24 (`.nvmrc`).
 
 ```bash
 cd server
@@ -130,14 +202,14 @@ API at the laptop's address, e.g. `http://192.168.1.20:3000`.
 | Command | What it does |
 |---|---|
 | `npm run check:api` | Sends the same cheats as `check:rules`, plus sign-in, notification and admin checks, to the API on a fresh in-memory database. Must report "All checks passed" twice. |
-| `npm run db:seed` | Empties the development database and reloads the demo data. Stop `npm run dev` first: only one process may open the PGlite folder, and a second one is refused. |
+| `npm run db:seed` | Empties the development (PGlite) database and reloads the demo data. Stop `npm run dev` first: only one process may open the PGlite folder, and a second one is refused. Refused for a `DATABASE_URL` database, whose demo data would include an admin whose phone is in the code; use `--reference` there. |
 | `npm run db:generate` | After changing `src/db/schema.ts`: writes the SQL migration into `drizzle/`. Commit it. |
 | `npm run typecheck` | Also fails if the database schema and `shared/types.ts` stop matching. |
 | `npm run make-admin -- +2189…` | Makes the person with this phone an admin (they sign up in the app first). How the first admin is made on a real server. |
 
 How it fits together:
 
-- `src/app.ts` builds the API (Hono); `src/node.ts` serves it and runs the job that
+- `src/create-app.ts` builds the API (Hono); `src/node.ts` serves it and runs the job that
   closes attendance left open when an event ends.
 - `src/routes/` holds the endpoints. Each change runs in a transaction: read and lock
   the rows, let `shared/rules.ts` decide, write the result.
@@ -152,12 +224,47 @@ How it fits together:
   in the message; a corrected title or description sends nothing). It sends
   through Expo's push service in production and prints to the server log in
   development. Times are written in `TIME_ZONE` (default Africa/Tripoli).
+  Whoever proposed an event in the app is told when it is approved or turned
+  down (with the admin's reason, if given). A member is told when a supervisor
+  gives them a warning and when an admin decides on it, and whoever reported
+  something is told when an admin has looked at it.
+- Reports and warnings: `POST /api/reports` (with `GET /api/reports/form` for
+  what the screen offers), `POST /api/events/:id/warnings/:userId` from the
+  roster, `POST /api/warnings/:id/appeal`, and the member's own lists under
+  `/api/me/reports` and `/api/me/warnings`. Nobody else's warnings reach the app.
+- Profile photos are kept in the database (`user_photos`), so the server needs no
+  file storage. `GET /api/users/:id/photo` serves one only to those allowed to
+  see it (`rules.canSeePhoto`), and answers 404 to anyone else.
+- Events proposed in the app are drafts (`events.status = 'draft'`) until an admin
+  publishes them, or `rejected` if turned down: neither is listed for anyone but
+  their creator. While it is a draft, its creator may `PUT /api/events/:id` (the
+  same body and checks as `POST /api/events`; its supervisors stay) or
+  `DELETE /api/events/:id`. A withdrawn draft is deleted rather than marked
+  `rejected`: nothing can point at a draft but its own branches, supervisors
+  and terms, and `rejected` would read as an admin's decision.
+- `PATCH /api/me` changes the name and/or the city (`rules.cleanProfileEdit`);
+  any other field, gender and phone included, is refused as `invalid_request`.
 
 Settings are environment variables; see `server/.env.example`. In production
-(`NODE_ENV=production`) `DATABASE_URL` and `JWT_SECRET` are required, and sign-in
-is refused until an SMS provider is added. On a VPS: `npm ci`, run migrations by
-starting once, `npm run db:seed -- --reference` for branches and levels, then keep
-`npm start` running under a process manager.
+(`NODE_ENV=production`) `DATABASE_URL` is required, and sign-in is refused until
+an SMS provider is added. `JWT_SECRET` (at least 32 characters) is required
+whenever `DATABASE_URL` is set, whatever `NODE_ENV` says: the server will not
+start without it. With PGlite and no `JWT_SECRET`, the server makes a random one
+and keeps it in `.data/jwt-secret`. Demo data is loaded only into an empty PGlite
+database, never into a `DATABASE_URL` one. On a VPS: set `NODE_ENV=production`,
+`DATABASE_URL` and `JWT_SECRET`, `npm ci`, run migrations by starting once,
+`npm run db:seed -- --reference` for branches and levels, then keep `npm start`
+running under a process manager. Behind a reverse proxy, also set `TRUST_PROXY=1`.
+
+**On Vercel (free Hobby plan, for testing):** the same API runs as a Vercel
+Function (`server/index.ts`, `server/vercel.json`) with the database at Neon,
+and the admin panel is a second Vercel project. Steps:
+[docs/deploy-vercel.md](docs/deploy-vercel.md).
+
+Limits: a request body may be at most about 460 KB (a profile photo with room to
+spare; `too_large` otherwise). Sign-in allows, per phone over 24 hours, 5 codes
+and 10 wrong codes, and per network address 20 codes an hour (`try_later`
+otherwise), so a code cannot be guessed and SMS cannot be sent in bulk.
 
 ## Admin panel
 
@@ -170,16 +277,27 @@ npm run dev        # http://localhost:5173 (the server must be running)
 Sign in with an admin's phone number. In development the code appears in the
 server log, and the development database has an admin: **0910000000**.
 
-- **Overview**: disputes waiting, events running and upcoming, drafts, hours
-  waiting for their owners to confirm.
+- **Overview**: disputes, proposed events, open reports and appealed warnings
+  waiting, events running and upcoming, drafts, hours waiting for their owners
+  to confirm.
 - **Events**: create (as a draft or published), edit, publish, cancel. Choose
   the type (it sets the points), branches of faith, supervisors and terms.
   What people already agreed to is protected: terms lock at the first
   acceptance, the men/women/mixed category once someone joined, the time and
-  type once attendance was recorded.
+  type once attendance was recorded. An event proposed in the app shows who
+  proposed it; approve it (publish) or turn it down with a reason, which is sent
+  to them. An admin's own draft can be discarded the same way.
 - **Disputes**: accept the recorded hours, correct them, or count none, with a
   reason. Points are credited like a confirmation and the member is notified.
-- **Members**: search, change roles (member, supervisor, admin).
+- **Reports**: what members reported, open or closed, with who sent it, the
+  event and the person named. Close one with a note saying what was done (kept
+  in the audit log); the reporter is told only that it was looked at.
+- **Warnings**: every supervisor's warning, or one member's (from the members
+  list). Keep an appealed warning or withdraw one, with a note the member reads.
+- **Members**: search, change roles (member, supervisor, admin), see how many
+  warnings stand against each one. Each member's
+  photo is shown (click to open it full size); an unsuitable one can be removed,
+  and the member is told and may add another.
 - **Hours report**: confirmed hours and points per member for a period;
   downloads as a CSV that Excel opens with Arabic intact.
 - **Audit log**: every admin decision, who made it and when.
