@@ -7,7 +7,8 @@
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const root = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
@@ -41,6 +42,20 @@ if (!existsSync(stampFile) || readFileSync(stampFile, 'utf8') !== stamp) {
   console.log('\n> android/ is up to date: reusing the last build\n');
 }
 
+// The EXPO_PUBLIC_ values (the server's address) are written into the code as it
+// is bundled, but Metro's cache does not notice when they change: a build after
+// editing .env.local would keep the old address. So the cache is cleared then.
+const envFiles = ['.env', '.env.local', '.env.production', '.env.production.local'];
+const envHash = createHash('sha256');
+for (const f of envFiles) if (existsSync(join(root, f))) envHash.update(f).update(readFileSync(join(root, f)));
+const envStamp = envHash.digest('hex');
+const envStampFile = join(root, 'android', '.env-stamp');
+if (!existsSync(envStampFile) || readFileSync(envStampFile, 'utf8') !== envStamp) {
+  console.log('\n> the .env files changed: clearing the Metro cache\n');
+  rmSync(join(tmpdir(), 'metro-cache'), { recursive: true, force: true });
+  rmSync(join(root, 'android/app/build/generated/assets'), { recursive: true, force: true });
+}
+
 const abis = emulator ? 'x86_64' : all ? 'arm64-v8a,armeabi-v7a' : 'arm64-v8a';
 // The full path: Windows may be set not to look in the current folder for programs.
 const gradlew = join(root, 'android', process.platform === 'win32' ? 'gradlew.bat' : 'gradlew');
@@ -50,4 +65,5 @@ const version = JSON.parse(readFileSync(join(root, 'app.json'), 'utf8')).expo.ve
 mkdirSync(join(root, 'builds'), { recursive: true });
 const out = join(root, 'builds', `good-deeds-${version}-${emulator ? 'x86_64' : all ? 'arm' : 'arm64'}.apk`);
 copyFileSync(join(root, 'android/app/build/outputs/apk/release/app-release.apk'), out);
+writeFileSync(envStampFile, envStamp);
 console.log(`\n> ${out}\n> took ${Math.round((Date.now() - started) / 60000)} min`);

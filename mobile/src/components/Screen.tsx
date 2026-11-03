@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { goBack } from '@/lib/goBack';
@@ -41,13 +41,17 @@ export function Screen({ title, back, scroll = true, scrollEnabled, background =
           )}
         </View>
       )}
-      <Body
-        style={styles.body}
-        {...(scroll ? { scrollEnabled } : null)}
-        contentContainerStyle={scroll ? { padding: space.md, paddingBottom: space.xl, gap: space.md } : undefined}>
-        {children}
-      </Body>
-      {footer && <View style={[styles.footer, { backgroundColor: background, paddingBottom: insets.bottom + space.md }]}>{footer}</View>}
+      {/* The app draws edge to edge, so Android no longer shrinks the window for
+          the keyboard: without this, it covers the fields and buttons below. */}
+      <KeyboardAvoidingView style={styles.body} behavior="padding">
+        <Body
+          style={styles.body}
+          {...(scroll ? { scrollEnabled, keyboardShouldPersistTaps: 'handled' as const } : null)}
+          contentContainerStyle={scroll ? { padding: space.md, paddingBottom: space.xl, gap: space.md } : undefined}>
+          {children}
+        </Body>
+        {footer && <View style={[styles.footer, { backgroundColor: background, paddingBottom: insets.bottom + space.md }]}>{footer}</View>}
+      </KeyboardAvoidingView>
     </View>
   );
 }
