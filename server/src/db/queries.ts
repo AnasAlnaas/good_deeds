@@ -17,7 +17,7 @@ import {
   type User,
   type Warning,
 } from '../../../shared/types';
-import type { PublicUser } from '../../../shared/api';
+import type { EventNoticeItem, PublicUser } from '../../../shared/api';
 import type { Database } from './client';
 import { iso } from './rows';
 import * as s from './schema';
@@ -146,15 +146,27 @@ export async function supervisorLinks(q: Database, eventId: string) {
   return q.select().from(s.event_organizers).where(eq(s.event_organizers.event_id, eventId));
 }
 
-/** An event's notices, newest first, each with its author (null = a deleted account). */
-export async function noticesOf(q: Database, eventId: string) {
+/**
+ * An event's notices (or just one of them), newest first, as `viewer` sees them:
+ * the author (null = a deleted account), the reactions counted, the viewer's own.
+ */
+export async function noticeItems(q: Database, viewer: Pick<User, 'id' | 'gender' | 'role'>, eventId: string, noticeId?: string): Promise<EventNoticeItem[]> {
   const rows = await q
     .select({ notice: s.event_notices, author: publicUser, deleted_at: s.users.deleted_at })
     .from(s.event_notices)
     .innerJoin(s.users, eq(s.users.id, s.event_notices.author_id))
-    .where(eq(s.event_notices.event_id, eventId))
+    .where(and(eq(s.event_notices.event_id, eventId), noticeId ? eq(s.event_notices.id, noticeId) : undefined))
     .orderBy(desc(s.event_notices.created_at));
-  return rows.map((r) => ({ notice: iso(r.notice), author: r.deleted_at ? null : r.author }));
+  const ids = rows.map((r) => r.notice.id);
+  const reactions = ids.length ? await q.select().from(s.notice_reactions).where(inArray(s.notice_reactions.notice_id, ids)) : [];
+  return rows.map(({ notice, author, deleted_at }) => ({
+    id: notice.id,
+    body: notice.body,
+    created_at: notice.created_at.toISOString(),
+    author: deleted_at ? null : shownTo(viewer, author),
+    can_delete: notice.author_id === viewer.id || viewer.role === 'admin',
+    ...rules.reactionSummary(reactions.filter((r) => r.notice_id === notice.id), viewer.id),
+  }));
 }
 
 /** People with a `joined` registration, deleted accounts left out. */

@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/components/Avatar';
 import { Button } from '@/components/Button';
+import { NoticeReactions } from '@/components/NoticeReactions';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
 import { Badge, Card, InfoRow, QueryState, Row, SectionTitle } from '@/components/ui';
@@ -177,6 +178,7 @@ export default function EventDetail() {
               <Txt variant="caption" color={colors.inkMuted}>
                 {fmt(s.event.noticeBy, { name: n.author?.full_name ?? s.event.deletedAuthor, time: `${day(n.created_at, s, now)} ${time(n.created_at, s)}` })}
               </Txt>
+              <NoticeReactions notice={n} disabled={busy} onReact={(reaction) => run((b) => b.reactToNotice(event.id, n.id, reaction))} />
               {n.can_delete && <Button variant="quiet" icon="trash-outline" label={s.event.deleteNotice} disabled={busy} onPress={() => deleteNotice(n.id)} />}
             </Card>
           ))}
@@ -193,7 +195,7 @@ export default function EventDetail() {
             {event.supervisors.map((u) => (
               <View key={u.id} style={styles.person}>
                 <Avatar user={u} size={32} />
-                <Txt variant="caption">{u.full_name}</Txt>
+                <Txt variant="caption" label>{u.full_name}</Txt>
               </View>
             ))}
           </View>
@@ -211,7 +213,7 @@ export default function EventDetail() {
           {participants.map((u) => (
             <View key={u.id} style={styles.person}>
               <Avatar user={u} size={32} />
-              <Txt variant="caption">{u.full_name}</Txt>
+              <Txt variant="caption" label>{u.full_name}</Txt>
             </View>
           ))}
         </View>

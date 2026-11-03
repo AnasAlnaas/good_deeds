@@ -48,6 +48,7 @@ function noticeItem(db: Db, me: User, n: EventNotice): EventNoticeItem {
     created_at: n.created_at,
     author: author && !author.deleted_at ? publicUser(me, author) : null,
     can_delete: n.author_id === me.id || me.role === 'admin',
+    ...rules.reactionSummary(db.notice_reactions.filter((r) => r.notice_id === n.id), me.id),
   };
 }
 
@@ -312,6 +313,12 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
     deleteNotice: (eventId, noticeId) =>
       async(() => {
         change((d) => server.deleteNotice(d, meId, eventId, noticeId));
+      }),
+
+    reactToNotice: (eventId, noticeId, reaction) =>
+      async(() => {
+        const { db, me } = change((d, t) => server.reactToNotice(d, meId, eventId, noticeId, reaction, t));
+        return { notice: noticeItem(db, me, db.event_notices.find((n) => n.id === noticeId)!) };
       }),
 
     reportForm: () =>

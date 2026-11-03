@@ -13,7 +13,8 @@ import { pointsForAttendance } from './rules';
 // 3: the pillars were removed (one points total per person).
 // 4: events no longer have branches of faith (they move to the course before joining).
 // 5: events have notices, and supervisors added in the app.
-export const SEED_VERSION = 5;
+// 6: notices have reactions.
+export const SEED_VERSION = 6;
 
 export const DEMO_ACCOUNTS = {
   participant: 'u_ahmad',
@@ -220,6 +221,7 @@ export function buildSeed(nowMs: number): Db {
     events: [],
     event_organizers: [],
     event_notices: [],
+    notice_reactions: [],
     event_terms: [],
     registrations: [],
     term_acceptances: [],
@@ -278,6 +280,9 @@ export function buildSeed(nowMs: number): Db {
     body: 'نلتقي عند مدخل مسجد السراج. أحضروا معكم قبعة وماءً، والقفازات والأكياس متوفرة عندنا.',
     created_at: iso(minutes(-180)),
   });
+  for (const [user_id, reaction] of [['u_mariam', 'noted'], ['u_f1', 'like'], ['u_f2', 'noted']] as const) {
+    db.notice_reactions.push({ notice_id: 'n_e01_1', user_id, reaction, created_at: iso(minutes(-170)) });
+  }
 
   const att = (
     eventId: string, userId: string, start: Date, end: Date | null,

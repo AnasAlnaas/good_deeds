@@ -28,7 +28,7 @@ import { classOf, eventSubtypes } from '../../../shared/classes';
 import { ApiError } from '../../../shared/errors';
 import { BASE_POINTS_BY_SUBTYPE } from '../../../shared/placeholders';
 import * as rules from '../../../shared/rules';
-import { type AppEvent, type Registration, type User } from '../../../shared/types';
+import { type AppEvent, type NoticeReactionKind, type Registration, type User } from '../../../shared/types';
 import { requireUser } from '../auth';
 import type { Database } from '../db/client';
 import {
@@ -41,7 +41,7 @@ import {
   joinedUsers,
   levelOf,
   newId,
-  noticesOf,
+  noticeItems,
   registrationOf,
   shownTo,
   supervisorLinks,
@@ -59,6 +59,20 @@ import { proposalInput, writeLinks, writeTerms } from './event-input';
 const recordTimeBody = z.object({ at: z.iso.datetime({ offset: true }).optional() });
 // An empty reason is the rule's to refuse (reason_required), as in the offline demo.
 const warnBody = z.object({ reason: z.string().max(rules.REASON_MAX) });
+const reactBody = z.object({ reaction: z.string() });
+
+/** The notice is this event's, and this person may read it (rules.assertCanReact). */
+async function assertMayReact(db: Database, me: User, eventId: string, noticeId: string, reaction: string) {
+  await findEvent(db, eventId);
+  const [notice] = await db
+    .select({ id: s.event_notices.id })
+    .from(s.event_notices)
+    .where(and(eq(s.event_notices.id, noticeId), eq(s.event_notices.event_id, eventId)));
+  const canRead = rules.canReadNotices(me, await registrationOf(db, eventId, me.id), await isOrganizer(db, eventId, me.id));
+  rules.assertCanReact({ canRead, notice, reaction });
+  return reaction as NoticeReactionKind;
+}
+
 // An empty message is the rule's to refuse (message_required).
 const noticeBody = z.object({ body: z.string().max(rules.NOTICE_MAX) });
 
@@ -241,15 +255,7 @@ export const eventRoutes = new Hono<AppEnv>()
     const [summary] = await summarize(db, me, [event], now());
     const registration = await registrationOf(db, id, me.id);
     const organizer = await isOrganizer(db, id, me.id);
-    const notices = rules.canReadNotices(me, registration, organizer)
-      ? (await noticesOf(db, id)).map(({ notice, author }) => ({
-          id: notice.id,
-          body: notice.body,
-          created_at: notice.created_at,
-          author: author && shownTo(me, author),
-          can_delete: notice.author_id === me.id || me.role === 'admin',
-        }))
-      : null;
+    const notices = rules.canReadNotices(me, registration, organizer) ? await noticeItems(db, me, id) : null;
     return c.json<EventDetail>({
       ...summary,
       description: event.description,
@@ -338,10 +344,8 @@ export const eventRoutes = new Hono<AppEnv>()
       return iso(row);
     });
     notifyEventNotice(c.var.deps, notice.id);
-    return c.json<NoticeResponse>(
-      { notice: { id: notice.id, body: notice.body, created_at: notice.created_at, author: { id: me.id, full_name: me.full_name, avatar_url: me.avatar_url, gender: me.gender }, can_delete: true } },
-      201,
-    );
+    const [item] = await noticeItems(db, me, id, notice.id);
+    return c.json<NoticeResponse>({ notice: item }, 201);
   })
 
   // Its author, or an admin, takes a notice down. Whoever was notified already keeps the notification.
@@ -355,8 +359,36 @@ export const eventRoutes = new Hono<AppEnv>()
       .from(s.event_notices)
       .where(and(eq(s.event_notices.id, noticeId), eq(s.event_notices.event_id, id)));
     rules.assertCanDeleteNotice(notice, me);
-    await db.delete(s.event_notices).where(eq(s.event_notices.id, noticeId));
+    await db.transaction(async (tx) => {
+      await tx.delete(s.notice_reactions).where(eq(s.notice_reactions.notice_id, noticeId));
+      await tx.delete(s.event_notices).where(eq(s.event_notices.id, noticeId));
+    });
     return c.body(null, 204);
+  })
+
+  // Whoever may read a notice reacts to it: a new reaction replaces their earlier one.
+  .put('/:id/notices/:noticeId/reaction', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const { id, noticeId } = c.req.param();
+    const reaction = await assertMayReact(db, me, id, noticeId, (await readBody(c, reactBody)).reaction);
+    await db
+      .insert(s.notice_reactions)
+      .values({ notice_id: noticeId, user_id: me.id, reaction, created_at: new Date(now()) })
+      .onConflictDoUpdate({ target: [s.notice_reactions.notice_id, s.notice_reactions.user_id], set: { reaction, created_at: new Date(now()) } });
+    const [item] = await noticeItems(db, me, id, noticeId);
+    return c.json<NoticeResponse>({ notice: item });
+  })
+
+  .delete('/:id/notices/:noticeId/reaction', async (c) => {
+    const { db } = c.var.deps;
+    const me = c.var.user;
+    const { id, noticeId } = c.req.param();
+    // Taking a reaction back needs no reaction named; 'like' only passes the check.
+    await assertMayReact(db, me, id, noticeId, 'like');
+    await db.delete(s.notice_reactions).where(and(eq(s.notice_reactions.notice_id, noticeId), eq(s.notice_reactions.user_id, me.id)));
+    const [item] = await noticeItems(db, me, id, noticeId);
+    return c.json<NoticeResponse>({ notice: item });
   })
 
   // ---------- joining ----------

@@ -14,6 +14,7 @@ import type {
   Gender,
   GenderCategory,
   Level,
+  NoticeReactionKind,
   Registration,
   RegistrationStatus,
   Report,
@@ -154,6 +155,14 @@ export interface EventNoticeItem {
   author: PublicUser | null;
   /** Its author, or an admin (rules.assertCanDeleteNotice). */
   can_delete: boolean;
+  /** How many chose each reaction, in NOTICE_REACTIONS order (those with none included). */
+  reactions: { reaction: NoticeReactionKind; count: number }[];
+  my_reaction: NoticeReactionKind | null;
+}
+
+/** PUT /api/events/:id/notices/:noticeId/reaction (DELETE takes it back): the notice after the change. */
+export interface ReactBody {
+  reaction: NoticeReactionKind;
 }
 
 /** POST /api/events/:id/supervisors/:userId and DELETE: the event's supervisors after the change. */

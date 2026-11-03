@@ -4,7 +4,7 @@
 // The screens never compute hours or points themselves.
 
 import type { EventProposal, ProfileEdit, ReportBody } from '@/data/api';
-import type { AppEvent, Attendance, Db, EventNotice, EventStatus, EventTerm, Registration, Report, User, Warning } from '@/data/types';
+import type { AppEvent, Attendance, Db, EventNotice, EventStatus, EventTerm, NoticeReactionKind, Registration, Report, User, Warning } from '@/data/types';
 import { BASE_POINTS_BY_SUBTYPE } from './placeholders';
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
@@ -561,6 +561,22 @@ export function deleteNotice(db: Db, actorId: string, eventId: string, noticeId:
   rules.assertCanDeleteNotice(db.event_notices.find((n) => n.id === noticeId && n.event_id === eventId), getUser(db, actorId)!);
   const next = clone(db);
   next.event_notices = next.event_notices.filter((n) => n.id !== noticeId);
+  next.notice_reactions = next.notice_reactions.filter((r) => r.notice_id !== noticeId);
+  return next;
+}
+
+/** A reaction replaces the person's earlier one; null takes it back (rules.assertCanReact). */
+export function reactToNotice(db: Db, userId: string, eventId: string, noticeId: string, reaction: NoticeReactionKind | null, now: number): Db {
+  getEvent(db, eventId);
+  const user = getUser(db, userId)!;
+  rules.assertCanReact({
+    canRead: rules.canReadNotices(user, registrationOf(db, eventId, userId), isOrganizer(db, eventId, userId)),
+    notice: db.event_notices.find((n) => n.id === noticeId && n.event_id === eventId),
+    reaction: reaction ?? 'like',
+  });
+  const next = clone(db);
+  next.notice_reactions = next.notice_reactions.filter((r) => !(r.notice_id === noticeId && r.user_id === userId));
+  if (reaction) next.notice_reactions.push({ notice_id: noticeId, user_id: userId, reaction, created_at: new Date(now).toISOString() });
   return next;
 }
 

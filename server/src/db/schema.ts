@@ -136,6 +136,20 @@ export const event_notices = pgTable(
   (t) => [index('event_notices_event').on(t.event_id, t.created_at)],
 );
 
+// One reaction per person per notice (shared/types.ts NoticeReaction).
+export const noticeReaction = pgEnum('notice_reaction', ['like', 'noted', 'love', 'ameen']);
+
+export const notice_reactions = pgTable(
+  'notice_reactions',
+  {
+    notice_id: text('notice_id').notNull().references(() => event_notices.id),
+    user_id: text('user_id').notNull().references(() => users.id),
+    reaction: noticeReaction('reaction').notNull(),
+    created_at: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.notice_id, t.user_id] })],
+);
+
 export const event_terms = pgTable(
   'event_terms',
   {

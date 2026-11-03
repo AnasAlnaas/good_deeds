@@ -87,6 +87,21 @@ export interface EventNotice {
   created_at: string;
 }
 
+/**
+ * Owner's decision (2026-11-03): the people of an event react to a notice, so
+ * its supervisors see it was read. One of a few fixed reactions, one per person
+ * per notice; nobody is notified of a reaction.
+ */
+export type NoticeReactionKind = 'like' | 'noted' | 'love' | 'ameen';
+export const NOTICE_REACTIONS: NoticeReactionKind[] = ['like', 'noted', 'love', 'ameen'];
+
+export interface NoticeReaction {
+  notice_id: string;
+  user_id: string;
+  reaction: NoticeReactionKind;
+  created_at: string;
+}
+
 export interface EventTerm {
   id: string;
   event_id: string;
@@ -210,6 +225,7 @@ export interface Db {
   events: AppEvent[];
   event_organizers: EventOrganizer[];
   event_notices: EventNotice[];
+  notice_reactions: NoticeReaction[];
   event_terms: EventTerm[];
   registrations: Registration[];
   term_acceptances: TermAcceptance[];

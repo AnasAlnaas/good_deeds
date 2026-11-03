@@ -79,6 +79,10 @@ export function createApiBackend(opts: { baseUrl: string; token: string; onUnaut
     removeSupervisor: (eventId, userId) => send('DELETE', `/events/${enc(eventId)}/supervisors/${enc(userId)}`),
     postNotice: (eventId, body) => send('POST', `/events/${enc(eventId)}/notices`, { body }),
     deleteNotice: (eventId, noticeId) => send('DELETE', `/events/${enc(eventId)}/notices/${enc(noticeId)}`),
+    reactToNotice: (eventId, noticeId, reaction) =>
+      reaction
+        ? send('PUT', `/events/${enc(eventId)}/notices/${enc(noticeId)}/reaction`, { reaction })
+        : send('DELETE', `/events/${enc(eventId)}/notices/${enc(noticeId)}/reaction`),
     reportForm: () => get('/reports/form'),
     report: (body) => send('POST', '/reports', body),
     myReports: () => get('/me/reports'),

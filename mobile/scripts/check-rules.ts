@@ -321,5 +321,19 @@ console.log('\n— supervisors added in the app');
   expectError('none once the event is long over', 'event_closed', () => server.postNotice(db, 'u_khaled', 'e01', 'شكراً لكم.', NOW + 9 * 24 * 3_600_000));
 }
 
+console.log('\n— reactions to a notice');
+{
+  const notice = db.event_notices[0];
+  const counts = (d: Db, viewer: string) => rules.reactionSummary(d.notice_reactions.filter((r) => r.notice_id === notice.id), viewer);
+  expectEqual('the seed has some', counts(db, 'u_ahmad'), { reactions: [{ reaction: 'like', count: 1 }, { reaction: 'noted', count: 2 }, { reaction: 'love', count: 0 }, { reaction: 'ameen', count: 0 }], my_reaction: null });
+  expectError('someone who did not join reacts', 'not_found', () => server.reactToNotice(db, 'u_fatima', 'e01', notice.id, 'like', NOW));
+  const loved = server.reactToNotice(db, 'u_ahmad', 'e01', notice.id, 'love', NOW);
+  expectEqual('Ahmad, who joined, reacts', counts(loved, 'u_ahmad').my_reaction, 'love');
+  const switched = server.reactToNotice(loved, 'u_ahmad', 'e01', notice.id, 'ameen', NOW);
+  expectEqual('a new reaction replaces his first', counts(switched, 'u_ahmad').reactions.map((r) => r.count), [1, 2, 0, 1]);
+  expectEqual('and he can take it back', counts(server.reactToNotice(switched, 'u_ahmad', 'e01', notice.id, null, NOW), 'u_ahmad').my_reaction, null);
+  expectEqual('a deleted notice takes its reactions with it', server.deleteNotice(switched, 'u_khaled', 'e01', notice.id).notice_reactions.length, 0);
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');
 process.exit(failed ? 1 : 0);

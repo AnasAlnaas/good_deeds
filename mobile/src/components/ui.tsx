@@ -45,7 +45,7 @@ export function Chip({
       disabled={!onPress}
       style={[styles.chip, floating && styles.chipFloating, selected && styles.chipSelected]}>
       {icon && <Ionicons name={icon} size={16} color={fg} />}
-      <Txt variant="caption" color={fg} style={styles.chipText}>
+      <Txt variant="caption" color={fg} style={styles.chipText} label>
         {label}
       </Txt>
     </Pressable>
@@ -124,7 +124,7 @@ export function Badge({ label, color = colors.primary, icon }: { label: string; 
   return (
     <View style={[styles.badge, { borderColor: color }]}>
       {icon && <Ionicons name={icon} size={14} color={color} />}
-      <Txt variant="caption" color={color}>
+      <Txt variant="caption" color={color} label>
         {label}
       </Txt>
     </View>

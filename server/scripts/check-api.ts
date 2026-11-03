@@ -11,6 +11,7 @@ import type { AdminEventDetail } from '../../shared/admin-api';
 import type {
   EventDetail,
   EventFormMeta,
+  EventNoticeItem,
   EventProposal,
   EventSummary,
   MeResponse,
@@ -518,7 +519,25 @@ console.log('\n— supervisors added in the app');
   h.setClock(h.clock() + 60_000);
   await post(admin, 'تذكير: أحضروا الماء.');
   expectEqual('newest first', ((await call('GET', `/events/${team}`, f1)).body as EventDetail).notices?.map((n) => n.body), ['تذكير: أحضروا الماء.', posted.body]);
+  console.log('\n— reactions to a notice');
+  const react = (token: string, reaction: string) => call('PUT', `/events/${team}/notices/${posted.id}/reaction`, token, { reaction });
+  const counts = (n: EventNoticeItem) => n.reactions.map((r) => r.count);
+  await expectError('someone who did not join reacts', 'not_found', react(fatima, 'like'));
+  await expectError('a reaction not in the list', 'not_found', react(f1, 'angry'));
+  const pushesBefore = pushes.length;
+  const liked: EventNoticeItem = (await expectOk('a member reacts', react(f1, 'like'))).notice;
+  expectEqual('counted, and shown as his', [counts(liked), liked.my_reaction], [[1, 0, 0, 0], 'like']);
+  await expectOk('another member reacts', react(ahmad, 'like'));
+  const switched: EventNoticeItem = (await expectOk('the first changes his mind', react(f1, 'noted'))).notice;
+  expectEqual('one reaction per person', [counts(switched), switched.my_reaction], [[1, 1, 0, 0], 'noted']);
+  const byAuthor = ((await call('GET', `/events/${team}`, mariam)).body as EventDetail).notices?.find((n) => n.id === posted.id);
+  expectEqual('its author sees the counts, with no reaction of her own', [byAuthor && counts(byAuthor), byAuthor?.my_reaction], [[1, 1, 0, 0], null]);
+  await settle();
+  expectEqual('nobody is notified of a reaction', pushes.length, pushesBefore);
+  const back: EventNoticeItem = (await expectOk('he takes his back', call('DELETE', `/events/${team}/notices/${posted.id}/reaction`, f1))).notice;
+  expectEqual('it no longer counts', [counts(back), back.my_reaction], [[1, 0, 0, 0], null]);
   await expectOk('its author takes hers down', call('DELETE', `/events/${team}/notices/${posted.id}`, mariam));
+  await expectError('a notice taken down takes no reactions', 'not_found', react(f1, 'like'));
   expectEqual('gone from the page', ((await call('GET', `/events/${team}`, f1)).body as EventDetail).notices?.length, 1);
 }
 

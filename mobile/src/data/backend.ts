@@ -29,6 +29,7 @@ import type {
   SupervisorsResponse,
   WarningResponse,
 } from './api';
+import type { NoticeReactionKind } from './types';
 
 export type Mode = 'demo' | 'api';
 
@@ -75,6 +76,8 @@ export interface Backend {
   /** A notice to the event's people; they are notified. */
   postNotice(eventId: string, body: string): Promise<NoticeResponse>;
   deleteNotice(eventId: string, noticeId: string): Promise<void>;
+  /** One reaction per person per notice: a new one replaces it, null takes it back. */
+  reactToNotice(eventId: string, noticeId: string, reaction: NoticeReactionKind | null): Promise<NoticeResponse>;
   /** What the report screen offers; refused for someone whose level does not allow reporting. */
   reportForm(): Promise<ReportFormMeta>;
   report(body: ReportBody): Promise<MyReport>;

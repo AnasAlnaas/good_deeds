@@ -208,6 +208,8 @@ const ar = {
     deleteNoticeBody: 'يُحذف من صفحة الفعالية. من وصله إشعار به يبقى عنده.',
   },
 
+  reactions: { like: 'أعجبني', noted: 'اطّلعت', love: 'أحببته', ameen: 'آمين' },
+
   notice: {
     title: 'إعلان للمشاركين',
     intro: 'يصل إشعار بهذا الإعلان إلى كل من انضم إلى الفعالية وإلى مشرفيها، ويبقى في صفحتها.',
@@ -723,6 +725,8 @@ const en: Strings = {
     deleteNoticeTitle: 'Delete the notice?',
     deleteNoticeBody: "It's removed from the event's page. Anyone who got a notification for it keeps it.",
   },
+
+  reactions: { like: 'Like', noted: 'Noted', love: 'Love', ameen: 'Ameen' },
 
   notice: {
     title: 'A notice to the participants',
