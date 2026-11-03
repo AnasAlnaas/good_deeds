@@ -8,6 +8,7 @@
 // gets when several rules fail at once; mobile/scripts/check-rules.ts and
 // server/scripts/check-api.ts rely on it.
 
+import { cityOf } from './cities';
 import { ApiError } from './errors';
 import { END_GRACE_MINUTES } from './placeholders';
 import type {
@@ -151,8 +152,8 @@ export function libyanMobile(input: string): string | null {
 const tidy = (text: string) => text.replace(/\u0640/g, '').replace(/\s+/g, ' ').trim();
 
 /**
- * A full name: letters only (Arabic or Latin, with their marks), at least two
- * words (a first and a family name), each of at least two letters; a hyphen or
+ * A name and family name (الاسم واللقب): letters only (Arabic or Latin, with
+ * their marks), at least two words, each of at least two letters; a hyphen or
  * apostrophe may join parts. null = not a name.
  */
 export function cleanName(input: string): string | null {
@@ -164,12 +165,9 @@ export function cleanName(input: string): string | null {
   return words.every((w) => word.test(w) && w.replace(/\P{L}/gu, '').length >= 2) ? name : null;
 }
 
-/** A city: letters, spaces and hyphens, at least two letters. null = not a city name. */
+/** A city from the list (shared/cities.ts), as stored: its Arabic name. null = not in the list. */
 export function cleanCity(input: string): string | null {
-  const city = tidy(input);
-  if (city.length > CITY_MAX) return null;
-  if (!/^[\p{L}\p{M}]+(?:[ '’-][\p{L}\p{M}]+)*$/u.test(city)) return null;
-  return city.replace(/\P{L}/gu, '').length >= 2 ? city : null;
+  return cityOf(tidy(input));
 }
 
 /**

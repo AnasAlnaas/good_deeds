@@ -14,12 +14,13 @@ import { type PhotoSource, pickPhoto } from '@/lib/photo';
 import { useApp } from '@/state/app';
 import { useAction } from '@/state/useAction';
 import { colors, radius, space } from '@/theme/tokens';
+import { cityName } from '../../../shared/cities';
 
 // Keeps a phone number left-to-right inside Arabic text (DESIGN.md: isolate Latin and digits).
 const ltr = (text: string) => `⁦${text}⁩`;
 
 export default function ProfileScreen() {
-  const { s } = useApp();
+  const { s, lang } = useApp();
   const summary = useMeSummary();
   const { run, busy } = useAction();
 
@@ -120,7 +121,7 @@ export default function ProfileScreen() {
 
       <Card>
         <InfoRow icon="call-outline" label={s.profile.phone} value={ltr(me.phone)} />
-        <InfoRow icon="business-outline" label={s.profile.city} value={me.city} />
+        <InfoRow icon="business-outline" label={s.profile.city} value={cityName(me.city, lang)} />
       </Card>
       <Button variant="secondary" icon="create-outline" label={s.profile.edit} onPress={() => router.push('/edit-profile')} />
 

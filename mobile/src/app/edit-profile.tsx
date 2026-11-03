@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { Button } from '@/components/Button';
+import { CityPicker } from '@/components/CityPicker';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
 import { Card, Field, InfoRow } from '@/components/ui';
@@ -45,13 +46,7 @@ export default function EditProfileScreen() {
         onChangeText={setFullName}
         error={nameWrong ? s.login.nameInvalid : null}
       />
-      <Field
-        label={s.editProfile.city}
-        value={city}
-        maxLength={rules.CITY_MAX}
-        onChangeText={setCity}
-        error={cityWrong ? s.login.cityInvalid : null}
-      />
+      <CityPicker label={s.editProfile.city} value={city} onChange={setCity} error={cityWrong ? s.login.cityInvalid : null} />
 
       <Card>
         <InfoRow icon="person-outline" label={s.editProfile.gender} value={me.gender === 'male' ? s.login.male : s.login.female} />

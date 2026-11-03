@@ -82,6 +82,7 @@ for (const [why, profile] of [
   ['a name of one word', { full_name: 'سالم', gender: 'male', city: 'طرابلس' }],
   ['a name with digits', { full_name: 'سالم 007', gender: 'male', city: 'طرابلس' }],
   ['a city with digits', { full_name: 'سالم التجريبي', gender: 'male', city: '123' }],
+  ['a city not in the list', { full_name: 'سالم التجريبي', gender: 'male', city: 'القاهرة' }],
   ['no gender', { full_name: 'سالم التجريبي', city: 'طرابلس' }],
 ] as const) {
   await expectError(`sign-up refused: ${why}`, 'invalid_request', call('POST', '/auth/verify-code', undefined, { phone: phoneB, code: sentCodes.get(phoneB), profile }));

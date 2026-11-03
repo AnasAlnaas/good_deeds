@@ -5,6 +5,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { AnimatedLogo } from '@/components/brand';
 import { Button } from '@/components/Button';
+import { CityPicker } from '@/components/CityPicker';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
 import { Badge, Card, Chip, Field, Row } from '@/components/ui';
@@ -111,7 +112,8 @@ function PhoneSignIn({ baseUrl }: { baseUrl: string }) {
   const [code, setCode] = useState('');
   const [fullName, setFullName] = useState('');
   const [gender, setGender] = useState<Gender | null>(null);
-  const [city, setCity] = useState(s.login.defaultCity);
+  // Chosen from the list, never typed: empty until the person picks one.
+  const [city, setCity] = useState('');
   const [busy, setBusy] = useState(false);
   // What was typed is marked wrong only once the person tried to go on (or typed a whole number).
   const [phoneChecked, setPhoneChecked] = useState(false);
@@ -243,17 +245,11 @@ function PhoneSignIn({ baseUrl }: { baseUrl: string }) {
       <Txt variant="caption" color={colors.inkMuted}>
         {s.login.genderNote}
       </Txt>
-      <Field
-        label={s.login.city}
-        value={city}
-        onChangeText={setCity}
-        maxLength={rules.CITY_MAX}
-        error={profileChecked && !cleanedCity ? s.login.cityInvalid : null}
-      />
+      <CityPicker label={s.login.city} value={city} onChange={setCity} error={profileChecked && !cleanedCity ? s.login.cityInvalid : null} />
       <Button
         icon="person-add-outline"
         label={s.login.createAccount}
-        disabled={busy || !fullName.trim() || !gender || !city.trim()}
+        disabled={busy || !fullName.trim() || !gender || !city}
         onPress={createAccount}
       />
     </>

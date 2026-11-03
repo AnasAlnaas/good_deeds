@@ -9,6 +9,7 @@ import type { EventProposal, ProfileEdit, ReportBody } from '../src/data/api';
 import type { Db } from '../src/data/types';
 import { buildSeed } from '../src/demo/seed';
 import * as server from '../src/demo/server';
+import { cityName, LIBYAN_CITIES } from '../../shared/cities';
 import * as rules from '../../shared/rules';
 
 const NOW = new Date('2026-10-21T12:00:00').getTime();
@@ -217,8 +218,13 @@ for (const [why, typed] of [
 ] as const) {
   expectEqual(`not a name: ${why}`, rules.cleanName(typed), null);
 }
-expectEqual('cities', ['طرابلس', ' بني  وليد ', 'Zawiya', 'Al-Bayda'].map((c) => rules.cleanCity(c)), ['طرابلس', 'بني وليد', 'Zawiya', 'Al-Bayda']);
-expectEqual('not cities', ['', 'ط', '123', 'طرابلس!', 'x'.repeat(61)].map((c) => rules.cleanCity(c)), [null, null, null, null, null]);
+expectEqual('cities from the list, kept by their Arabic name', ['طرابلس', ' بني  وليد ', 'Zawiya', 'misrata'].map((c) => rules.cleanCity(c)), ['طرابلس', 'بني وليد', 'الزاوية', 'مصراتة']);
+expectEqual('anything else is refused', ['', 'ط', '123', 'طرابلس!', 'القاهرة', 'Tripolis'].map((c) => rules.cleanCity(c)), [null, null, null, null, null, null]);
+expectEqual('every city in the list has two names, and none twice', [
+  LIBYAN_CITIES.every((c) => c.ar && c.en && rules.cleanCity(c.ar) === c.ar && rules.cleanCity(c.en) === c.ar),
+  new Set(LIBYAN_CITIES.map((c) => c.ar)).size === LIBYAN_CITIES.length,
+], [true, true]);
+expectEqual('a city is shown in the app language', [cityName('مصراتة', 'en'), cityName('مصراتة', 'ar'), cityName('مدينة قديمة', 'en')], ['Misrata', 'مصراتة', 'مدينة قديمة']);
 
 console.log('\n— editing the profile');
 expectEqual('a name of one letter is refused', rules.cleanProfileEdit({ full_name: ' أ ' }), null);

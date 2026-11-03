@@ -13,6 +13,7 @@ import { useApp } from '@/state/app';
 import { useNotificationTaps } from '@/state/useNotificationTaps';
 import type { EventClassId } from '@/theme/classes';
 import { colors, radius, shadow, space } from '@/theme/tokens';
+import { cityName } from '../../../shared/cities';
 
 const TRIPOLI = { lat: 32.868, lng: 13.18, zoom: 12 };
 // The floating bar at the bottom: its height and its gap to the screen edge.
@@ -21,7 +22,7 @@ const NAV = 64;
 // The app's one main screen. Everything else opens from the icons on it, as a
 // full screen that comes back here.
 export default function MapScreen() {
-  const { s, me } = useApp();
+  const { s, me, lang } = useApp();
   useNotificationTaps();
   const insets = useSafeAreaInsets();
   const query = useEvents();
@@ -69,7 +70,7 @@ export default function MapScreen() {
               {s.map.title}
             </Txt>
             <Txt variant="caption" color={colors.inkMuted} align="center" numberOfLines={1}>
-              {me.city}
+              {cityName(me.city, lang)}
             </Txt>
           </View>
           <IconButton icon="search" label={s.map.search} look="dark" onPress={() => router.push({ pathname: '/events', params: { search: '1' } })} />
