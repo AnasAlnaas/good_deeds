@@ -6,20 +6,7 @@ import { useAuth } from '../auth';
 import { fill, ltr } from '../format';
 import { t, type ErrorCode } from '../strings';
 import { Button, ErrorNote, Field, Notice } from '../ui';
-
-// Arabic keyboards type ٠١٢…; the server expects 0–9.
-const latinDigits = (text: string) =>
-  text.replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660)).replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0));
-
-// The association is in Libya: a local number (091…) gets +218.
-function toInternational(input: string) {
-  let n = latinDigits(input).replace(/[^\d+]/g, '');
-  if (n.startsWith('00')) n = `+${n.slice(2)}`;
-  else if (n.startsWith('0')) n = `+218${n.slice(1)}`;
-  else if (n.startsWith('218')) n = `+${n}`;
-  else if (!n.startsWith('+')) n = `+218${n}`;
-  return n;
-}
+import { latinDigits, libyanMobile } from '../../../shared/rules';
 
 export function Login() {
   const { session, signIn } = useAuth();
@@ -51,14 +38,20 @@ export function Login() {
     }
   };
 
-  const getCode = () =>
-    attempt(async () => {
-      const p = toInternational(phoneInput);
+  const getCode = () => {
+    const p = libyanMobile(phoneInput);
+    if (!p) {
+      setError(null);
+      setRefusal(t.login.phoneInvalid);
+      return;
+    }
+    return attempt(async () => {
       await api.requestCode(p);
       setPhone(p);
       setCode('');
       setStep('code');
     });
+  };
 
   const enter = () =>
     attempt(async () => {
@@ -95,6 +88,7 @@ export function Login() {
                 autoComplete="tel"
                 placeholder="091 234 5678"
                 value={phoneInput}
+                maxLength={20}
                 onChange={(e) => setPhoneInput(e.target.value)}
                 autoFocus
               />

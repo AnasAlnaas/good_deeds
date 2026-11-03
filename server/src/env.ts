@@ -5,6 +5,8 @@ import { randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
+import { libyanMobile } from '../../shared/rules';
+
 try {
   process.loadEnvFile('.env');
 } catch {
@@ -82,11 +84,11 @@ export const env = {
    */
   corsOrigins: (process.env.CORS_ORIGINS ?? '').split(',').map((o) => o.trim()).filter(Boolean),
   /**
-   * Phone numbers (comma-separated, e.g. +218912345678) given the admin role when
+   * Phone numbers (comma-separated, e.g. 0912345678) given the admin role when
    * they sign in. For the first admin on a hosted server; remove a number once it
    * is admin, or demoting that person in the panel is undone at their next sign-in.
    */
-  adminPhones: (process.env.ADMIN_PHONES ?? '').split(',').map((p) => p.trim()).filter(Boolean),
+  adminPhones: (process.env.ADMIN_PHONES ?? '').split(',').flatMap((p) => libyanMobile(p) ?? []),
   /**
    * `1` = the server sits behind a reverse proxy (nginx, Caddy) that sets X-Forwarded-For,
    * so the caller's address for the sign-in limits is read from it. Otherwise the

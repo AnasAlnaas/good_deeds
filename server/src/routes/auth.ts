@@ -34,16 +34,20 @@ const MAX_FAILED_PER_DAY = 10;
 const HOUR_MS = 3_600_000;
 const MAX_CODES_PER_ADDRESS = 20;
 
-const phone = z.string().regex(/^\+[1-9]\d{7,14}$/, 'international format, e.g. +218912345678');
+// Libyan mobile numbers only (091–095), in the form the app sends: +218912345678.
+const phone = z.string().regex(rules.LIBYAN_MOBILE);
+// The same checks as the app's sign-up form, which sends what they give back.
+const checked = (clean: (v: string) => string | null) =>
+  z.string().transform((v, ctx) => clean(v) ?? (ctx.addIssue({ code: 'custom', message: 'invalid' }), z.NEVER));
 const requestCodeBody = z.object({ phone });
 const verifyCodeBody = z.object({
   phone,
   code: z.string().regex(/^\d{6}$/),
   profile: z
     .object({
-      full_name: z.string().trim().min(rules.NAME_MIN).max(rules.NAME_MAX),
+      full_name: checked(rules.cleanName),
       gender: z.enum(['male', 'female']),
-      city: z.string().trim().min(1).max(rules.CITY_MAX),
+      city: checked(rules.cleanCity),
     })
     .optional(),
 });

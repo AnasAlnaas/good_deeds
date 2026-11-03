@@ -186,6 +186,40 @@ expectEqual('he withdraws it: gone, with its terms and supervisors', [
 ], [false, false, false, 2]);
 expectError('withdrawn twice', 'not_found', () => server.withdrawProposal(withdrawn, 'u_khaled', draft.id));
 
+console.log('\n— phone numbers, names and cities');
+for (const typed of ['0912345678', '091 234 5678', '091-234-5678', '912345678', '+218912345678', '+218 91 234 5678', '00218912345678', '218912345678', '٠٩١٢٣٤٥٦٧٨', '⁦+218912345678⁩']) {
+  expectEqual(`"${typed}" is a Libyan mobile number`, rules.libyanMobile(typed), '+218912345678');
+}
+expectEqual('each of 091–095', ['0912345678', '0922345678', '0932345678', '0942345678', '0952345678'].map((p) => !!rules.libyanMobile(p)), [true, true, true, true, true]);
+for (const [why, typed] of [
+  ['096 is not a mobile prefix', '0962345678'],
+  ['090 neither', '0902345678'],
+  ['a landline (021, Tripoli)', '0213334444'],
+  ['a digit short', '091234567'],
+  ['a digit too many', '09123456789'],
+  ['another country', '+201012345678'],
+  ['a missing 9 after +218', '+21812345678'],
+  ['letters in it', '091234567a'],
+  ['two plus signs', '++218912345678'],
+  ['nothing', ''],
+] as const) {
+  expectEqual(`refused: ${why}`, rules.libyanMobile(typed), null);
+}
+expectEqual('a first and family name, spaces tidied', rules.cleanName('  أحمد   محمد ـسالم '), 'أحمد محمد سالم');
+expectEqual('names with marks, hyphens and Latin letters', ['عبدُ الله', 'Ahmed Al-Mansouri', "Sara O'Neil"].map((n) => rules.cleanName(n)), ['عبدُ الله', 'Ahmed Al-Mansouri', "Sara O'Neil"]);
+for (const [why, typed] of [
+  ['one word only', 'أحمد'],
+  ['a one-letter part', 'أحمد م'],
+  ['digits', 'أحمد 123'],
+  ['symbols', 'أحمد @سالم'],
+  ['an emoji', 'أحمد سالم 😀'],
+  ['too long', `أحمد ${'س'.repeat(100)}`],
+] as const) {
+  expectEqual(`not a name: ${why}`, rules.cleanName(typed), null);
+}
+expectEqual('cities', ['طرابلس', ' بني  وليد ', 'Zawiya', 'Al-Bayda'].map((c) => rules.cleanCity(c)), ['طرابلس', 'بني وليد', 'Zawiya', 'Al-Bayda']);
+expectEqual('not cities', ['', 'ط', '123', 'طرابلس!', 'x'.repeat(61)].map((c) => rules.cleanCity(c)), [null, null, null, null, null]);
+
 console.log('\n— editing the profile');
 expectEqual('a name of one letter is refused', rules.cleanProfileEdit({ full_name: ' أ ' }), null);
 expectEqual('so is an empty city', rules.cleanProfileEdit({ city: '   ' }), null);

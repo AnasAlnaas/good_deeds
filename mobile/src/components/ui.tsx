@@ -181,7 +181,8 @@ export function QueryState({ query }: { query: UseQueryResult<unknown> }) {
 }
 
 /** A labelled text input. `ltr` keeps numbers (phone, code) left-to-right inside Arabic. */
-export function Field({ label, ltr, ...input }: { label: string; ltr?: boolean } & TextInputProps) {
+/** `error`: what is wrong with what was typed, shown under the field (null = nothing). */
+export function Field({ label, ltr, error, ...input }: { label: string; ltr?: boolean; error?: string | null } & TextInputProps) {
   const { isRTL } = useApp();
   return (
     <View style={styles.field}>
@@ -190,13 +191,20 @@ export function Field({ label, ltr, ...input }: { label: string; ltr?: boolean }
       </Txt>
       <TextInput
         placeholderTextColor={colors.inkMuted}
+        aria-invalid={!!error}
         {...input}
         style={[
           styles.input,
           input.multiline && styles.multiline,
+          !!error && styles.inputError,
           { textAlign: ltr ? 'left' : isRTL ? 'right' : 'left', writingDirection: ltr ? 'ltr' : undefined },
         ]}
       />
+      {!!error && (
+        <Txt variant="caption" color={colors.danger} accessibilityLiveRegion="polite">
+          {error}
+        </Txt>
+      )}
     </View>
   );
 }
@@ -246,6 +254,7 @@ export const styles = StyleSheet.create({
   empty: { alignItems: 'center', gap: space.md, paddingVertical: space.xxl, paddingHorizontal: space.lg },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' },
   field: { gap: space.xs },
+  inputError: { borderColor: colors.danger },
   input: {
     minHeight: touch,
     borderRadius: radius.input,

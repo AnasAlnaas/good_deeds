@@ -23,33 +23,35 @@ export default function EditProfileScreen() {
   const { run, busy } = useAction();
   const [fullName, setFullName] = useState(me.full_name);
   const [city, setCity] = useState(me.city);
-  const [invalid, setInvalid] = useState(false);
+  const [checked, setChecked] = useState(false);
+  const nameWrong = checked && !rules.cleanName(fullName);
+  const cityWrong = checked && !rules.cleanCity(city);
 
   const save = async () => {
     const edit = rules.cleanProfileEdit({ full_name: fullName, city });
-    if (!edit) {
-      setInvalid(true);
-      return;
-    }
-    setInvalid(false);
+    setChecked(true);
+    if (!edit) return;
     if (await run((b) => b.updateProfile(edit))) goBack('/profile');
   };
 
-  const footer = (
-    <>
-      {invalid && (
-        <Txt variant="caption" color={colors.danger}>
-          {s.editProfile.invalid}
-        </Txt>
-      )}
-      <Button icon="checkmark" label={s.editProfile.save} disabled={busy} onPress={save} />
-    </>
-  );
+  const footer = <Button icon="checkmark" label={s.editProfile.save} disabled={busy} onPress={save} />;
 
   return (
     <Screen back title={s.editProfile.title} footer={footer}>
-      <Field label={s.editProfile.fullName} value={fullName} maxLength={rules.NAME_MAX} onChangeText={setFullName} />
-      <Field label={s.editProfile.city} value={city} maxLength={rules.CITY_MAX} onChangeText={setCity} />
+      <Field
+        label={s.editProfile.fullName}
+        value={fullName}
+        maxLength={rules.NAME_MAX}
+        onChangeText={setFullName}
+        error={nameWrong ? s.login.nameInvalid : null}
+      />
+      <Field
+        label={s.editProfile.city}
+        value={city}
+        maxLength={rules.CITY_MAX}
+        onChangeText={setCity}
+        error={cityWrong ? s.login.cityInvalid : null}
+      />
 
       <Card>
         <InfoRow icon="person-outline" label={s.editProfile.gender} value={me.gender === 'male' ? s.login.male : s.login.female} />

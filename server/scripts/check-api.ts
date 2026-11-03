@@ -57,6 +57,14 @@ console.log('\n— signing in');
 await expectError('no token', 'unauthorized', call('GET', '/events'));
 await expectError('forged token', 'unauthorized', call('GET', '/events', 'not-a-real-token'));
 await expectError('phone not in international format', 'invalid_request', call('POST', '/auth/request-code', undefined, { phone: '0912345678' }));
+for (const [why, phone] of [
+  ['096 is not a Libyan mobile prefix', '+218962345678'],
+  ['a Libyan landline', '+218213334444'],
+  ['another country', '+201012345678'],
+  ['a digit short', '+21891234567'],
+] as const) {
+  await expectError(`refused: ${why}`, 'invalid_request', call('POST', '/auth/request-code', undefined, { phone }));
+}
 
 const phoneA = '+218919990001';
 await expectOk('request a code', call('POST', '/auth/request-code', undefined, { phone: phoneA }));
@@ -70,15 +78,24 @@ await expectError('right code after 5 wrong tries', 'too_many_attempts', call('P
 const phoneB = '+218919990002';
 await call('POST', '/auth/request-code', undefined, { phone: phoneB });
 await expectError('new phone without a profile', 'profile_required', call('POST', '/auth/verify-code', undefined, { phone: phoneB, code: sentCodes.get(phoneB) }));
+for (const [why, profile] of [
+  ['a name of one word', { full_name: 'سالم', gender: 'male', city: 'طرابلس' }],
+  ['a name with digits', { full_name: 'سالم 007', gender: 'male', city: 'طرابلس' }],
+  ['a city with digits', { full_name: 'سالم التجريبي', gender: 'male', city: '123' }],
+  ['no gender', { full_name: 'سالم التجريبي', city: 'طرابلس' }],
+] as const) {
+  await expectError(`sign-up refused: ${why}`, 'invalid_request', call('POST', '/auth/verify-code', undefined, { phone: phoneB, code: sentCodes.get(phoneB), profile }));
+}
 const signup = await expectOk(
   'new phone with a profile signs up',
   call('POST', '/auth/verify-code', undefined, {
     phone: phoneB,
     code: sentCodes.get(phoneB),
-    profile: { full_name: 'سالم التجريبي', gender: 'male', city: 'طرابلس' },
+    profile: { full_name: '  سالم   التجريبي ', gender: 'male', city: ' طرابلس' },
   }),
 );
 expectEqual('new account is a member', signup.user.role, 'member');
+expectEqual('the name and city are kept tidied', [signup.user.full_name, signup.user.city], ['سالم التجريبي', 'طرابلس']);
 await expectError('the code works only once', 'code_expired', call('POST', '/auth/verify-code', undefined, { phone: phoneB, code: sentCodes.get(phoneB) }));
 
 const phoneAdmin = '+218919990009';

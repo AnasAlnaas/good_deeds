@@ -119,6 +119,59 @@ export const NAME_MIN = 2;
 export const NAME_MAX = 100;
 export const CITY_MAX = 60;
 
+/** Arabic keyboards type ٠١٢… (and Persian ones ۰۱۲…); numbers are kept in 0–9. */
+export function latinDigits(text: string): string {
+  return text.replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660)).replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0));
+}
+
+/**
+ * Sign-in is for Libyan mobile numbers only: 09X then 7 digits, where 09X is
+ * one of the mobile prefixes 091–095. Stored and sent as +2189X…….
+ */
+export const LIBYAN_MOBILE = /^\+2189[1-5]\d{7}$/;
+
+/**
+ * A phone number as people type it (091 234 5678, 0912345678, 912345678,
+ * +218 91 234 5678, 00218…, Arabic digits, spaces, dashes) in the form above.
+ * null = not a Libyan mobile number.
+ */
+export function libyanMobile(input: string): string | null {
+  // Copied numbers can carry direction marks (U+200E, U+200F, U+2066–U+2069).
+  let digits = latinDigits(input).replace(/[\s\-().\u200e\u200f\u2066-\u2069]/g, '');
+  if (!/^\+?\d+$/.test(digits)) return null;
+  digits = digits.replace(/^\+/, '');
+  if (digits.startsWith('00218')) digits = digits.slice(5);
+  else if (digits.startsWith('218')) digits = digits.slice(3);
+  else if (digits.startsWith('0')) digits = digits.slice(1);
+  const phone = `+218${digits}`;
+  return LIBYAN_MOBILE.test(phone) ? phone : null;
+}
+
+/** Repeated spaces or tabs become one space; the Arabic stretching mark (ـ) is dropped. */
+const tidy = (text: string) => text.replace(/\u0640/g, '').replace(/\s+/g, ' ').trim();
+
+/**
+ * A full name: letters only (Arabic or Latin, with their marks), at least two
+ * words (a first and a family name), each of at least two letters; a hyphen or
+ * apostrophe may join parts. null = not a name.
+ */
+export function cleanName(input: string): string | null {
+  const name = tidy(input);
+  if (name.length < NAME_MIN || name.length > NAME_MAX) return null;
+  const words = name.split(' ');
+  if (words.length < 2) return null;
+  const word = /^[\p{L}\p{M}]+(?:['’-][\p{L}\p{M}]+)*$/u;
+  return words.every((w) => word.test(w) && w.replace(/\P{L}/gu, '').length >= 2) ? name : null;
+}
+
+/** A city: letters, spaces and hyphens, at least two letters. null = not a city name. */
+export function cleanCity(input: string): string | null {
+  const city = tidy(input);
+  if (city.length > CITY_MAX) return null;
+  if (!/^[\p{L}\p{M}]+(?:[ '’-][\p{L}\p{M}]+)*$/u.test(city)) return null;
+  return city.replace(/\P{L}/gu, '').length >= 2 ? city : null;
+}
+
 /**
  * A profile edit, trimmed, keeping only what may change: the name and the city.
  * Gender never changes (it decides which events a person may join and who sees
@@ -128,13 +181,13 @@ export const CITY_MAX = 60;
 export function cleanProfileEdit(edit: { full_name?: string; city?: string }): { full_name?: string; city?: string } | null {
   const out: { full_name?: string; city?: string } = {};
   if (edit.full_name !== undefined) {
-    const name = edit.full_name.trim();
-    if (name.length < NAME_MIN || name.length > NAME_MAX) return null;
+    const name = cleanName(edit.full_name);
+    if (!name) return null;
     out.full_name = name;
   }
   if (edit.city !== undefined) {
-    const city = edit.city.trim();
-    if (city.length < 1 || city.length > CITY_MAX) return null;
+    const city = cleanCity(edit.city);
+    if (!city) return null;
     out.city = city;
   }
   return Object.keys(out).length ? out : null;
