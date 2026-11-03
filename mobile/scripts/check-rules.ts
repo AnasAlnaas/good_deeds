@@ -291,5 +291,35 @@ const appealed = server.appealWarning(given.db, 'u_ahmad', w.id, 'أبلغت ا�
 expectEqual('it waits for an admin', appealed.warnings.find((x) => x.id === w.id)?.status, 'appealed');
 expectError('appeal twice', 'already_appealed', () => server.appealWarning(appealed, 'u_ahmad', w.id, 'مرة أخرى.', NOW));
 
+console.log('\n— supervisors added in the app');
+{
+  // e01 is happening now: Khaled supervises it; Ahmad, Mariam and f1–f4 joined.
+  const add = (d: Db, actor: string, user: string) => server.addSupervisor(d, actor, 'e01', user, NOW);
+  expectError('a member makes himself a supervisor', 'not_organizer', () => add(db, 'u_ahmad', 'u_ahmad'));
+  expectError('someone who has not joined', 'not_joined', () => add(db, 'u_khaled', 'u_fatima'));
+  const one = add(db, 'u_khaled', 'u_ahmad');
+  expectEqual('Ahmad is a supervisor, added in the app by Khaled', server.supervisorsOf(one, 'e01').map((u) => [u.id, u.added_by]), [['u_khaled', null], ['u_ahmad', 'u_khaled']]);
+  expectEqual('he may record attendance now', server.isOrganizer(one, 'e01', 'u_ahmad'), true);
+  expectError('added twice', 'already_supervisor', () => add(one, 'u_khaled', 'u_ahmad'));
+  const two = add(one, 'u_ahmad', 'u_mariam');
+  expectError('a fourth supervisor', 'too_many_supervisors', () => add(two, 'u_khaled', 'u_f1'));
+  expectError('the one it was made with is not taken off in the app', 'cannot_remove_supervisor', () => server.removeSupervisor(two, 'u_ahmad', 'e01', 'u_khaled', NOW));
+  const stepped = server.removeSupervisor(two, 'u_mariam', 'e01', 'u_mariam', NOW);
+  expectEqual('Mariam steps down', server.isOrganizer(stepped, 'e01', 'u_mariam'), false);
+  expectError('nobody is added once the event is over', 'event_closed', () => server.addSupervisor(db, 'u_khaled', 'e01', 'u_f1', NOW + 48 * 3_600_000));
+  expectEqual('an admin may run any event', rules.canManageEvent({ role: 'admin' }, false), true);
+
+  console.log('\n— notices to an event');
+  expectError('a member posts one', 'not_organizer', () => server.postNotice(db, 'u_f1', 'e01', 'غيّرنا الموعد.', NOW));
+  expectError('an empty one', 'message_required', () => server.postNotice(db, 'u_khaled', 'e01', '   ', NOW));
+  const posted = server.postNotice(one, 'u_ahmad', 'e01', '  أحضروا الماء.  ', NOW + 60_000);
+  expectEqual('a supervisor added in the app posts one, trimmed, newest first', server.noticesOf(posted.db, 'e01').map((n) => n.body), ['أحضروا الماء.', db.event_notices[0].body]);
+  expectEqual('those who joined read them', rules.canReadNotices({ role: 'member' }, { status: 'joined' }, false), true);
+  expectEqual('others do not', rules.canReadNotices({ role: 'member' }, undefined, false), false);
+  expectError('a member deletes it', 'not_your_notice', () => server.deleteNotice(posted.db, 'u_f1', 'e01', posted.notice.id));
+  expectEqual('its author does', server.noticesOf(server.deleteNotice(posted.db, 'u_ahmad', 'e01', posted.notice.id), 'e01').length, 1);
+  expectError('none once the event is long over', 'event_closed', () => server.postNotice(db, 'u_khaled', 'e01', 'شكراً لكم.', NOW + 9 * 24 * 3_600_000));
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');
 process.exit(failed ? 1 : 0);

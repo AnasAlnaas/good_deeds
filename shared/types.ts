@@ -65,6 +65,26 @@ export interface AppEvent {
 export interface EventOrganizer {
   event_id: string;
   user_id: string;
+  /**
+   * The supervisor or admin who made this person a supervisor in the app, from
+   * among the people who joined. null = named when the event was made (by its
+   * proposer, or by an admin in the panel). Only those added in the app can be
+   * taken off again in the app.
+   */
+  added_by: string | null;
+}
+
+/**
+ * Owner's decision (2026-11-03): a supervisor of the event (or an admin) posts a
+ * notice to its people: a change, a reminder, a detail that came up. Everyone
+ * who joined is notified and sees it on the event's page.
+ */
+export interface EventNotice {
+  id: string;
+  event_id: string;
+  author_id: string;
+  body: string;
+  created_at: string;
 }
 
 export interface EventTerm {
@@ -189,6 +209,7 @@ export interface Db {
   branches: Branch[];
   events: AppEvent[];
   event_organizers: EventOrganizer[];
+  event_notices: EventNotice[];
   event_terms: EventTerm[];
   registrations: Registration[];
   term_acceptances: TermAcceptance[];

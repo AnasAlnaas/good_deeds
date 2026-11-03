@@ -117,8 +117,23 @@ export const event_organizers = pgTable(
   {
     event_id: text('event_id').notNull().references(() => events.id),
     user_id: text('user_id').notNull().references(() => users.id),
+    /** Who made them a supervisor in the app; null = named when the event was made (shared/types.ts EventOrganizer). */
+    added_by: text('added_by').references(() => users.id),
   },
   (t) => [primaryKey({ columns: [t.event_id, t.user_id] }), index('event_organizers_user').on(t.user_id)],
+);
+
+// A supervisor's notice to the people of an event (shared/types.ts EventNotice).
+export const event_notices = pgTable(
+  'event_notices',
+  {
+    id: text('id').primaryKey(),
+    event_id: text('event_id').notNull().references(() => events.id),
+    author_id: text('author_id').notNull().references(() => users.id),
+    body: text('body').notNull(),
+    created_at: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('event_notices_event').on(t.event_id, t.created_at)],
 );
 
 export const event_terms = pgTable(

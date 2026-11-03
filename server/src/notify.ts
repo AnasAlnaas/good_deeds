@@ -7,7 +7,9 @@
 // - "your event was approved" / "was not approved", to whoever proposed it in the app;
 // - "your photo was removed", when an admin removes an unsuitable profile photo;
 // - "a supervisor gave you a warning", and "your appeal was decided" / "the warning was withdrawn";
-// - "your report was reviewed", to whoever reported, when an admin handles it.
+// - "your report was reviewed", to whoever reported, when an admin handles it;
+// - a supervisor's notice to an event, to the members who joined it and its other supervisors;
+// - "you are now a supervisor of this event", to whoever was made one in the app.
 
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 
@@ -195,6 +197,60 @@ export function notifyEventChanged(deps: AppDeps, eventId: string, actorId: stri
       }),
       data: { type: 'event_changed', event_id: eventId },
     }));
+  });
+}
+
+// ---------- a notice to an event's people ----------
+
+const NOTICE = {
+  ar: { title: 'إعلان من مشرفي «{event}»' },
+  en: { title: 'A notice about "{event}"' },
+};
+/** A notification shows a few lines; the event's page has the whole notice. */
+const NOTICE_PREVIEW = 180;
+
+export function notifyEventNotice(deps: AppDeps, noticeId: string) {
+  send(deps, async () => {
+    const [row] = await deps.db
+      .select({ notice: s.event_notices, title: s.events.title })
+      .from(s.event_notices)
+      .innerJoin(s.events, eq(s.events.id, s.event_notices.event_id))
+      .where(eq(s.event_notices.id, noticeId));
+    if (!row) return [];
+    const { notice } = row;
+    const body = notice.body.length > NOTICE_PREVIEW ? `${notice.body.slice(0, NOTICE_PREVIEW - 1)}…` : notice.body;
+    return (await peopleOfEvent(deps, notice.event_id, notice.author_id)).map((userId) => ({
+      userId,
+      text: (lang) => ({ title: NOTICE[lang].title.replace('{event}', row.title), body }),
+      data: { type: 'event_notice', event_id: notice.event_id },
+    }));
+  });
+}
+
+// ---------- made a supervisor of an event ----------
+
+const SUPERVISOR_ADDED = {
+  ar: {
+    title: 'أصبحت مشرفاً',
+    body: 'أصبحت من مشرفي «{event}». تستطيع الآن تسجيل حضور المشاركين ونشر الإعلانات لهم.',
+  },
+  en: {
+    title: 'You are now a supervisor',
+    body: 'You are now a supervisor of "{event}". You can record attendance and post notices to its participants.',
+  },
+};
+
+export function notifySupervisorAdded(deps: AppDeps, eventId: string, userId: string) {
+  send(deps, async () => {
+    const [event] = await deps.db.select({ title: s.events.title }).from(s.events).where(eq(s.events.id, eventId));
+    if (!event) return [];
+    return [
+      {
+        userId,
+        text: (lang: Lang) => ({ title: SUPERVISOR_ADDED[lang].title, body: SUPERVISOR_ADDED[lang].body.replace('{event}', event.title) }),
+        data: { type: 'supervisor_added', event_id: eventId },
+      },
+    ];
   });
 }
 

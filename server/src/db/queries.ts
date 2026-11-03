@@ -4,7 +4,7 @@
 
 import { randomUUID } from 'node:crypto';
 
-import { and, asc, count, eq, inArray, isNull, lte, ne } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, lte, ne } from 'drizzle-orm';
 
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
@@ -129,6 +129,32 @@ export async function warnedBy(q: Database, eventId: string, issuerId: string): 
     .from(s.warnings)
     .where(and(eq(s.warnings.event_id, eventId), eq(s.warnings.issued_by, issuerId), ne(s.warnings.status, 'withdrawn')));
   return new Set(rows.map((r) => r.user_id));
+}
+
+/** An event's supervisors, deleted accounts left out: those it was made with first, then in the order they were added. */
+export async function supervisorsOf(q: Database, eventId: string): Promise<(PublicUser & { added_by: string | null })[]> {
+  const rows = await q
+    .select({ ...publicUser, added_by: s.event_organizers.added_by })
+    .from(s.event_organizers)
+    .innerJoin(s.users, eq(s.users.id, s.event_organizers.user_id))
+    .where(and(eq(s.event_organizers.event_id, eventId), isNull(s.users.deleted_at)));
+  return rows.sort((a, b) => Number(a.added_by !== null) - Number(b.added_by !== null));
+}
+
+/** The supervisor rows of an event, deleted accounts included (they still count until an admin changes them). */
+export async function supervisorLinks(q: Database, eventId: string) {
+  return q.select().from(s.event_organizers).where(eq(s.event_organizers.event_id, eventId));
+}
+
+/** An event's notices, newest first, each with its author (null = a deleted account). */
+export async function noticesOf(q: Database, eventId: string) {
+  const rows = await q
+    .select({ notice: s.event_notices, author: publicUser, deleted_at: s.users.deleted_at })
+    .from(s.event_notices)
+    .innerJoin(s.users, eq(s.users.id, s.event_notices.author_id))
+    .where(eq(s.event_notices.event_id, eventId))
+    .orderBy(desc(s.event_notices.created_at));
+  return rows.map((r) => ({ notice: iso(r.notice), author: r.deleted_at ? null : r.author }));
 }
 
 /** People with a `joined` registration, deleted accounts left out. */

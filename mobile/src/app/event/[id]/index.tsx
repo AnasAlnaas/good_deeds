@@ -7,7 +7,7 @@ import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
 import { Badge, Card, InfoRow, QueryState, Row, SectionTitle } from '@/components/ui';
 import { useEvent, useMeSummary } from '@/data/queries';
-import { dayTimeRange, fmt } from '@/i18n/format';
+import { day, dayTimeRange, fmt, time } from '@/i18n/format';
 import * as dialog from '@/lib/dialog';
 import { openDirections } from '@/lib/directions';
 import { goBack } from '@/lib/goBack';
@@ -15,6 +15,7 @@ import { useApp } from '@/state/app';
 import { useAction } from '@/state/useAction';
 import { classIcon, className } from '@/theme/classes';
 import { colors, space } from '@/theme/tokens';
+import { NOTICE_DAYS_AFTER_EVENT } from '../../../../../shared/rules';
 
 export default function EventDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -56,6 +57,20 @@ export default function EventDetail() {
       onConfirm: () => run((b) => b.cancelJoin(event.id)),
     });
   // The proposer's own event, while it waits for an admin: deleted, so there is nothing left to show.
+  const deleteNotice = (noticeId: string) =>
+    dialog.confirm({
+      title: s.event.deleteNoticeTitle,
+      message: s.event.deleteNoticeBody,
+      cancel: s.cancel,
+      action: s.event.deleteNotice,
+      destructive: true,
+      onConfirm: () => run((b) => b.deleteNotice(event.id, noticeId)),
+    });
+  // The same window as rules.assertCanPostNotice; the server decides.
+  const canPost =
+    event.can_manage &&
+    (open || status === 'finished') &&
+    now <= new Date(event.ends_at).getTime() + NOTICE_DAYS_AFTER_EVENT * 24 * 3_600_000;
   const withdraw = () =>
     dialog.confirm({
       title: s.event.withdrawTitle,
@@ -152,6 +167,42 @@ export default function EventDetail() {
         <Button variant="accent" icon="navigate" label={s.event.directions} onPress={() => openDirections(event)} />
       </Card>
 
+      {event.notices && (
+        <>
+          <SectionTitle>{s.event.notices}</SectionTitle>
+          {event.notices.length === 0 && <Txt color={colors.inkMuted}>{event.can_manage ? s.event.noNoticesYet : s.event.noNotices}</Txt>}
+          {event.notices.map((n) => (
+            <Card key={n.id} style={styles.notice}>
+              <Txt>{n.body}</Txt>
+              <Txt variant="caption" color={colors.inkMuted}>
+                {fmt(s.event.noticeBy, { name: n.author?.full_name ?? s.event.deletedAuthor, time: `${day(n.created_at, s, now)} ${time(n.created_at, s)}` })}
+              </Txt>
+              {n.can_delete && <Button variant="quiet" icon="trash-outline" label={s.event.deleteNotice} disabled={busy} onPress={() => deleteNotice(n.id)} />}
+            </Card>
+          ))}
+          {canPost && (
+            <Button variant="secondary" icon="megaphone-outline" label={s.event.postNotice} onPress={() => router.push(`/event/${event.id}/notice`)} />
+          )}
+        </>
+      )}
+
+      {event.supervisors.length > 0 && (
+        <>
+          <SectionTitle>{s.event.supervisors}</SectionTitle>
+          <View style={styles.people}>
+            {event.supervisors.map((u) => (
+              <View key={u.id} style={styles.person}>
+                <Avatar user={u} size={32} />
+                <Txt variant="caption">{u.full_name}</Txt>
+              </View>
+            ))}
+          </View>
+        </>
+      )}
+      {event.can_manage && open && (
+        <Button variant="secondary" icon="people-outline" label={s.event.manageSupervisors} onPress={() => router.push(`/event/${event.id}/team`)} />
+      )}
+
       <SectionTitle>{s.event.participants}</SectionTitle>
       {participants.length === 0 ? (
         <Txt color={colors.inkMuted}>{s.event.noParticipants}</Txt>
@@ -181,4 +232,5 @@ export default function EventDetail() {
 const styles = StyleSheet.create({
   people: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   person: { flexDirection: 'row', alignItems: 'center', gap: space.xs, paddingEnd: space.sm },
+  notice: { borderStartWidth: 4, borderStartColor: colors.accent },
 });

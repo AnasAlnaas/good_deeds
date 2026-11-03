@@ -2,14 +2,25 @@
 // (src/demo/server.ts → shared/rules.ts) on the data kept on the phone, and
 // builds the same responses the server builds (server/src/routes/).
 
-import type { AppEvent, Attendance, Db, Report, User, Warning } from '@/data/types';
+import type { AppEvent, Attendance, Db, EventNotice, Report, User, Warning } from '@/data/types';
 import { REPORT_CATEGORIES } from '@/data/types';
 import { BASE_POINTS_BY_SUBTYPE } from '@/demo/placeholders';
 import * as server from '@/demo/server';
 import { classOf, eventSubtypes } from '../../../shared/classes';
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
-import type { AttendanceItem, EventDetail, EventProposal, EventSummary, MyReport, MyWarning, PublicUser, ReportFormMeta } from './api';
+import type {
+  AttendanceItem,
+  EventDetail,
+  EventNoticeItem,
+  EventProposal,
+  EventSummary,
+  EventSupervisor,
+  MyReport,
+  MyWarning,
+  PublicUser,
+  ReportFormMeta,
+} from './api';
 import { type Backend, BackendError } from './backend';
 
 export interface DemoStore {
@@ -24,6 +35,21 @@ const publicUser = (viewer: User, u: User): PublicUser => ({
   avatar_url: rules.canSeePhoto(viewer, u) ? u.avatar_url : null,
   gender: u.gender,
 });
+
+function supervisorsFor(db: Db, me: User, eventId: string): EventSupervisor[] {
+  return server.supervisorsOf(db, eventId).map((u) => ({ ...publicUser(me, u), added_in_app: u.added_by !== null }));
+}
+
+function noticeItem(db: Db, me: User, n: EventNotice): EventNoticeItem {
+  const author = server.getUser(db, n.author_id);
+  return {
+    id: n.id,
+    body: n.body,
+    created_at: n.created_at,
+    author: author && !author.deleted_at ? publicUser(me, author) : null,
+    can_delete: n.author_id === me.id || me.role === 'admin',
+  };
+}
 
 function summary(db: Db, me: User, e: AppEvent, now: number): EventSummary {
   const { description, status, terms_locked_at, created_by, created_at, ...shown } = e;
@@ -148,6 +174,11 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
           my_registration: reg ?? null,
           my_accepted_term_ids: reg ? server.acceptedTermIds(db, reg.id) : [],
           my_attendance: server.attendanceOf(db, id, me.id) ?? null,
+          supervisors: supervisorsFor(db, me, id),
+          notices: rules.canReadNotices(me, reg, server.isOrganizer(db, id, me.id))
+            ? server.noticesOf(db, id).map((n) => noticeItem(db, me, n))
+            : null,
+          can_manage: rules.canManageEvent(me, server.isOrganizer(db, id, me.id)),
         };
       }),
 
@@ -251,6 +282,36 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
           return result.db;
         });
         return { warning: warning! };
+      }),
+
+    addSupervisor: (eventId, userId) =>
+      async(() => {
+        const { db, me } = change((d, t) => server.addSupervisor(d, meId, eventId, userId, t));
+        return { supervisors: supervisorsFor(db, me, eventId) };
+      }),
+
+    removeSupervisor: (eventId, userId) =>
+      async(() => {
+        const { db, me } = change((d, t) => server.removeSupervisor(d, meId, eventId, userId, t));
+        return { supervisors: supervisorsFor(db, me, eventId) };
+      }),
+
+    postNotice: (eventId, body) =>
+      async(() => {
+        // The server's request check (server/src/routes/events.ts), briefly.
+        if (body.length > rules.NOTICE_MAX) throw new BackendError('invalid_request');
+        let notice: EventNotice | undefined;
+        const { db, me } = change((d, t) => {
+          const result = server.postNotice(d, meId, eventId, body, t);
+          notice = result.notice;
+          return result.db;
+        });
+        return { notice: noticeItem(db, me, notice!) };
+      }),
+
+    deleteNotice: (eventId, noticeId) =>
+      async(() => {
+        change((d) => server.deleteNotice(d, meId, eventId, noticeId));
       }),
 
     reportForm: () =>

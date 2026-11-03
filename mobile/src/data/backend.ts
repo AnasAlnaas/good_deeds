@@ -16,6 +16,7 @@ import type {
   MeResponse,
   MyReport,
   MyWarning,
+  NoticeResponse,
   PhotoResponse,
   ProfileEdit,
   ProfileResponse,
@@ -25,6 +26,7 @@ import type {
   ReportFormMeta,
   RosterResponse,
   ServerErrorCode,
+  SupervisorsResponse,
   WarningResponse,
 } from './api';
 
@@ -66,6 +68,13 @@ export interface Backend {
   recordEnd(eventId: string, userId: string, at?: number): Promise<AttendanceResponse>;
   /** A supervisor of the event warns someone who joined it. */
   warn(eventId: string, userId: string, reason: string): Promise<WarningResponse>;
+  /** A supervisor of the event, or an admin, makes someone who joined it a supervisor too. */
+  addSupervisor(eventId: string, userId: string): Promise<SupervisorsResponse>;
+  /** Takes off a supervisor added in the app (or the supervisor steps down). */
+  removeSupervisor(eventId: string, userId: string): Promise<SupervisorsResponse>;
+  /** A notice to the event's people; they are notified. */
+  postNotice(eventId: string, body: string): Promise<NoticeResponse>;
+  deleteNotice(eventId: string, noticeId: string): Promise<void>;
   /** What the report screen offers; refused for someone whose level does not allow reporting. */
   reportForm(): Promise<ReportFormMeta>;
   report(body: ReportBody): Promise<MyReport>;

@@ -489,6 +489,96 @@ export function assertCanAppeal(w: Warning | undefined, userId: string, reason: 
   if (!reason) throw new ApiError('reason_required');
 }
 
+// ---------- an event's supervisors ----------
+// Owner's decision (2026-11-03): a supervisor is not alone at an event. A
+// supervisor of it, or an admin, may make one or two of the people who joined it
+// supervisors too; they then do all a supervisor does there (record attendance,
+// give warnings, post notices, add or take off a supervisor).
+
+/** The supervisors one event may have: the one it was made with and up to two more. */
+export const MAX_EVENT_SUPERVISORS = 3;
+
+/** Who may run an event in the app: its supervisors, and admins. */
+export function canManageEvent(user: Pick<User, 'role'>, isOrganizer: boolean) {
+  return isOrganizer || user.role === 'admin';
+}
+
+/** An event still being prepared or held: one that is cancelled, a draft or over is past changing. */
+function assertEventOpen(event: EventTimes, now: number) {
+  if (event.status === 'cancelled' || isHidden(event) || now >= toMs(event.ends_at)) throw new ApiError('event_closed');
+}
+
+export function assertCanAddSupervisor(args: {
+  actorCanManage: boolean;
+  event: EventTimes;
+  /** The registration of the person to add. */
+  registration: Pick<Registration, 'status'> | undefined;
+  alreadySupervisor: boolean;
+  supervisorCount: number;
+  now: number;
+}) {
+  if (!args.actorCanManage) throw new ApiError('not_organizer');
+  assertEventOpen(args.event, args.now);
+  if (args.alreadySupervisor) throw new ApiError('already_supervisor');
+  // Only someone who joined: they accepted its terms and fit its category.
+  if (args.registration?.status !== 'joined') throw new ApiError('not_joined');
+  if (args.supervisorCount >= MAX_EVENT_SUPERVISORS) throw new ApiError('too_many_supervisors');
+}
+
+/**
+ * Taking a supervisor off an event in the app: only one added in the app (the
+ * ones it was made with are the admins' to change, in the panel), and never the
+ * last. A supervisor may also step down this way.
+ */
+export function assertCanRemoveSupervisor(args: {
+  actorCanManage: boolean;
+  event: EventTimes;
+  link: { added_by: string | null } | undefined;
+  supervisorCount: number;
+  now: number;
+}) {
+  if (!args.actorCanManage) throw new ApiError('not_organizer');
+  assertEventOpen(args.event, args.now);
+  if (!args.link) throw new ApiError('not_supervisor');
+  if (args.link.added_by === null || args.supervisorCount <= 1) throw new ApiError('cannot_remove_supervisor');
+}
+
+// ---------- an event's notices ----------
+
+export const NOTICE_MAX = 1000;
+/** A notice can be posted until this many days after the event ends (a thank-you, a follow-up). */
+export const NOTICE_DAYS_AFTER_EVENT = 7;
+/** Enough for any real event; it stops a flood of notifications. */
+export const MAX_NOTICES_PER_EVENT = 50;
+
+/** Who reads an event's notices: the people who joined it, its supervisors, and admins. */
+export function canReadNotices(user: Pick<User, 'role'>, registration: Pick<Registration, 'status'> | undefined, isOrganizer: boolean) {
+  return canManageEvent(user, isOrganizer) || registration?.status === 'joined';
+}
+
+export function assertCanPostNotice(args: {
+  actorCanManage: boolean;
+  event: EventTimes;
+  /** Already cleaned (cleanText). */
+  body: string | null;
+  noticeCount: number;
+  now: number;
+}) {
+  const { event, now } = args;
+  if (!args.actorCanManage) throw new ApiError('not_organizer');
+  if (event.status === 'cancelled' || isHidden(event) || now > toMs(event.ends_at) + NOTICE_DAYS_AFTER_EVENT * 24 * MS_HOUR) {
+    throw new ApiError('event_closed');
+  }
+  if (!args.body) throw new ApiError('message_required');
+  if (args.noticeCount >= MAX_NOTICES_PER_EVENT) throw new ApiError('too_many_notices');
+}
+
+/** A notice is taken down by whoever posted it, or by an admin. */
+export function assertCanDeleteNotice(notice: { author_id: string } | undefined, user: Pick<User, 'id' | 'role'>) {
+  if (!notice) throw new ApiError('not_found');
+  if (notice.author_id !== user.id && user.role !== 'admin') throw new ApiError('not_your_notice');
+}
+
 // ---------- deleting an account ----------
 
 /** The name a deleted account shows wherever its records remain (reports, warnings, the admin log). */

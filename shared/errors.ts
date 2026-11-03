@@ -39,7 +39,14 @@ export type ApiErrorCode =
   | 'reason_required'
   | 'not_your_warning'
   | 'already_appealed'
-  | 'warning_withdrawn';
+  | 'warning_withdrawn'
+  | 'already_supervisor'
+  | 'too_many_supervisors'
+  | 'not_supervisor'
+  | 'cannot_remove_supervisor'
+  | 'message_required'
+  | 'too_many_notices'
+  | 'not_your_notice';
 
 export class ApiError extends Error {
   readonly code: ApiErrorCode;

@@ -134,6 +134,40 @@ export interface EventDetail extends EventSummary {
   my_registration: Registration | null;
   my_accepted_term_ids: string[];
   my_attendance: Attendance | null;
+  supervisors: EventSupervisor[];
+  /** Newest first. null = this person may not read them (rules.canReadNotices). */
+  notices: EventNoticeItem[] | null;
+  /** A supervisor of this event, or an admin: may post notices and add supervisors (rules.canManageEvent). */
+  can_manage: boolean;
+}
+
+export interface EventSupervisor extends PublicUser {
+  /** Made a supervisor in the app, from among the people who joined: may be taken off again there. */
+  added_in_app: boolean;
+}
+
+export interface EventNoticeItem {
+  id: string;
+  body: string;
+  created_at: string;
+  /** null = a deleted account. */
+  author: PublicUser | null;
+  /** Its author, or an admin (rules.assertCanDeleteNotice). */
+  can_delete: boolean;
+}
+
+/** POST /api/events/:id/supervisors/:userId and DELETE: the event's supervisors after the change. */
+export interface SupervisorsResponse {
+  supervisors: EventSupervisor[];
+}
+
+/** POST /api/events/:id/notices */
+export interface PostNoticeBody {
+  body: string;
+}
+
+export interface NoticeResponse {
+  notice: EventNoticeItem;
 }
 
 /** POST /api/events/:id/join, /join/complete, DELETE /join */

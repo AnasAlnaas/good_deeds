@@ -11,7 +11,7 @@ import * as s from './schema';
 
 const ALL_TABLES = [
   'reports', 'warnings', 'admin_actions', 'user_photos', 'push_tokens', 'login_codes', 'points_ledger', 'attendance', 'term_acceptances', 'registrations', 'event_terms',
-  'event_organizers', 'events', 'levels', 'branches', 'users',
+  'event_notices', 'event_organizers', 'events', 'levels', 'branches', 'users',
 ];
 
 /** Deletes every row. Development and tests only. */
@@ -50,6 +50,7 @@ export async function seedDemo(db: Database, nowMs: number) {
     await tx.insert(s.levels).values(d.levels);
     await tx.insert(s.events).values(d.events.map(dated));
     await tx.insert(s.event_organizers).values(d.event_organizers);
+    if (d.event_notices.length) await tx.insert(s.event_notices).values(d.event_notices.map(dated));
     await tx.insert(s.event_terms).values(d.event_terms.map(dated));
     await tx.insert(s.registrations).values(d.registrations.map(dated));
     await tx.insert(s.term_acceptances).values(d.term_acceptances.map(dated));

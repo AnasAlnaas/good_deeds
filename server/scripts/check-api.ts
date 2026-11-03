@@ -20,7 +20,7 @@ import type {
   ReportFormMeta,
   RosterResponse,
 } from '../../shared/api';
-import { DELETED_NAME, PHOTO_MAX_BYTES } from '../../shared/rules';
+import { DELETED_NAME, NOTICE_MAX, PHOTO_MAX_BYTES } from '../../shared/rules';
 import * as s from '../src/db/schema';
 import { startHarness } from './harness';
 
@@ -459,6 +459,68 @@ await expectError('an appeal without a reason', 'reason_required', call('POST', 
 const appealed: MyWarning = await expectOk('she appeals', call('POST', `/warnings/${given.id}/appeal`, mariam, { reason: 'استأذنتهم قبل التصوير.' }));
 expectEqual('it waits for an admin', [appealed.warning.status, appealed.warning.appeal_reason], ['appealed', 'استأذنتهم قبل التصوير.']);
 await expectError('appeal twice', 'already_appealed', call('POST', `/warnings/${given.id}/appeal`, mariam, { reason: 'مرة أخرى.' }));
+
+// ---------------------------------------------------------------------------
+console.log('\n— supervisors added in the app');
+{
+  const TOKEN_MARIAM_TEAM = 'ExponentPushToken[mariam-team-phone]';
+  const TOKEN_F1_TEAM = 'ExponentPushToken[f1-team-phone]';
+  await call('PUT', '/me/push-token', mariam, { token: TOKEN_MARIAM_TEAM, lang: 'ar' });
+  await call('PUT', '/me/push-token', f1, { token: TOKEN_F1_TEAM, lang: 'en' });
+  const team = (await expectOk('an admin makes an event in the app, and supervises it', call('POST', '/events', admin, proposal({ title: 'فريق الحي' })))).id;
+  for (const token of [ahmad, mariam, f1]) await joinFully(token, team);
+  const addAs = (token: string, userId: string) => call('POST', `/events/${team}/supervisors/${userId}`, token);
+  const supervisorsOf = async () => ((await call('GET', `/events/${team}`, admin)).body as EventDetail).supervisors.map((u) => [u.id, u.added_in_app]);
+
+  await expectError('a member makes himself a supervisor', 'not_organizer', addAs(ahmad, 'u_ahmad'));
+  await expectError('someone who has not joined', 'not_joined', addAs(admin, 'u_fatima'));
+  await expectOk('its supervisor adds Mariam, who joined', addAs(admin, 'u_mariam'));
+  expectEqual('she is one of its supervisors, added in the app', await supervisorsOf(), [['u_admin', false], ['u_mariam', true]]);
+  await settle();
+  expectEqual('and is told', pushesTo(TOKEN_MARIAM_TEAM).map((p) => [p.data.type, p.data.event_id]), [['supervisor_added', team]]);
+  await expectError('added twice', 'already_supervisor', addAs(admin, 'u_mariam'));
+  const asMariam: EventDetail = (await call('GET', `/events/${team}`, mariam)).body;
+  expectEqual('she runs it now', [asMariam.i_organize, asMariam.can_manage], [true, true]);
+  await expectOk('she opens its roster', call('GET', `/events/${team}/roster`, mariam));
+  await expectOk('and adds a third supervisor herself', addAs(mariam, 'u_ahmad'));
+  await expectError('a fourth is one too many', 'too_many_supervisors', addAs(mariam, 'u_f1'));
+  await expectError('the supervisor it was made with is not taken off in the app', 'cannot_remove_supervisor', call('DELETE', `/events/${team}/supervisors/u_admin`, mariam));
+  await expectError('nor someone who is not one', 'not_supervisor', call('DELETE', `/events/${team}/supervisors/u_f1`, mariam));
+  await expectOk('Ahmad steps down', call('DELETE', `/events/${team}/supervisors/u_ahmad`, ahmad));
+  await expectError('the roster is closed to him again', 'not_organizer', call('GET', `/events/${team}/roster`, ahmad));
+
+  // An admin's edit in the panel keeps who was added in the app.
+  const d = (await call('GET', `/admin/events/${team}`, admin)).body;
+  await expectOk('an admin corrects the title in the panel', call('PUT', `/admin/events/${team}`, admin, {
+    title: 'فريق الحي الشمالي', description: d.event.description, subtype: d.event.subtype, address_text: d.event.address_text,
+    lat: d.event.lat, lng: d.event.lng, starts_at: d.event.starts_at, ends_at: d.event.ends_at, capacity: d.event.capacity,
+    gender_category: d.event.gender_category, organizer_ids: d.organizers.map((o: { id: string }) => o.id), terms: d.terms.map((t: { text: string }) => t.text),
+  }));
+  expectEqual('Mariam is still a supervisor added in the app', await supervisorsOf(), [['u_admin', false], ['u_mariam', true]]);
+
+  console.log('\n— notices to an event');
+  const post = (token: string, body: string) => call('POST', `/events/${team}/notices`, token, { body });
+  await expectError('a member posts one', 'not_organizer', post(f1, 'غيّرنا الموعد.'));
+  await expectError('an empty one', 'message_required', post(mariam, '   '));
+  await expectError('one too long', 'invalid_request', post(mariam, 'أ'.repeat(NOTICE_MAX + 1)));
+  const before = pushes.length;
+  const posted = (await expectOk('a supervisor added in the app posts one', post(mariam, '  نلتقي عند البوابة الشمالية بدل الجنوبية.  '))).notice;
+  expectEqual('trimmed, and hers to take down', [posted.body, posted.author.id, posted.can_delete], ['نلتقي عند البوابة الشمالية بدل الجنوبية.', 'u_mariam', true]);
+  await settle();
+  const told = pushes.slice(before);
+  expectEqual('those who joined are told, not its author', [told.some((p) => p.to === TOKEN_F1_TEAM), told.some((p) => p.to === TOKEN_MARIAM_TEAM)], [true, false]);
+  expectEqual('with the event in the title', told.find((p) => p.to === TOKEN_F1_TEAM)?.title, 'A notice about "فريق الحي الشمالي"');
+  expectEqual('which opens the event', told.find((p) => p.to === TOKEN_F1_TEAM)?.data, { type: 'event_notice', event_id: team });
+  const asF1: EventDetail = (await call('GET', `/events/${team}`, f1)).body;
+  expectEqual('a member who joined reads it on the page, not his to take down', asF1.notices?.map((n) => [n.body, n.can_delete]), [[posted.body, false]]);
+  expectEqual('someone who did not join does not', ((await call('GET', `/events/${team}`, fatima)).body as EventDetail).notices, null);
+  await expectError('a member takes it down', 'not_your_notice', call('DELETE', `/events/${team}/notices/${posted.id}`, f1));
+  h.setClock(h.clock() + 60_000);
+  await post(admin, 'تذكير: أحضروا الماء.');
+  expectEqual('newest first', ((await call('GET', `/events/${team}`, f1)).body as EventDetail).notices?.map((n) => n.body), ['تذكير: أحضروا الماء.', posted.body]);
+  await expectOk('its author takes hers down', call('DELETE', `/events/${team}/notices/${posted.id}`, mariam));
+  expectEqual('gone from the page', ((await call('GET', `/events/${team}`, f1)).body as EventDetail).notices?.length, 1);
+}
 
 // ---------------------------------------------------------------------------
 console.log('\n— deleting an account');

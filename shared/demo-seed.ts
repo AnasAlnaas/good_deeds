@@ -12,7 +12,8 @@ import { pointsForAttendance } from './rules';
 // 2: reports and warnings were added; phones holding version 1 start again from this seed.
 // 3: the pillars were removed (one points total per person).
 // 4: events no longer have branches of faith (they move to the course before joining).
-export const SEED_VERSION = 4;
+// 5: events have notices, and supervisors added in the app.
+export const SEED_VERSION = 5;
 
 export const DEMO_ACCOUNTS = {
   participant: 'u_ahmad',
@@ -218,6 +219,7 @@ export function buildSeed(nowMs: number): Db {
     branches: [],
     events: [],
     event_organizers: [],
+    event_notices: [],
     event_terms: [],
     registrations: [],
     term_acceptances: [],
@@ -249,7 +251,7 @@ export function buildSeed(nowMs: number): Db {
       created_at: created,
     };
     db.events.push(e);
-    s.organizers.forEach((u) => db.event_organizers.push({ event_id: s.id, user_id: u }));
+    s.organizers.forEach((u) => db.event_organizers.push({ event_id: s.id, user_id: u, added_by: null }));
     const texts = [ARRIVE, ...(TERMS[s.subtype] ?? []), LEAVE];
     texts.forEach((text, i) =>
       db.event_terms.push({
@@ -267,6 +269,15 @@ export function buildSeed(nowMs: number): Db {
       );
     }
   }
+
+  // A notice from the supervisor of the event happening now, so its page shows one.
+  db.event_notices.push({
+    id: 'n_e01_1',
+    event_id: 'e01',
+    author_id: 'u_khaled',
+    body: 'نلتقي عند مدخل مسجد السراج. أحضروا معكم قبعة وماءً، والقفازات والأكياس متوفرة عندنا.',
+    created_at: iso(minutes(-180)),
+  });
 
   const att = (
     eventId: string, userId: string, start: Date, end: Date | null,

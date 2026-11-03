@@ -1,6 +1,8 @@
 // Events, proposing one in the app (and the proposer editing or withdrawing it
 // while it waits for an admin), joining (with the terms one by one) and
-// the supervisor's roster, where they record attendance and give warnings.
+// the supervisor's roster, where they record attendance and give warnings;
+// the event's supervisors (one of them, or an admin, adds people who joined)
+// and its notices to the people who joined.
 // Every change runs in a transaction: the rows are read (and locked), the
 // shared rule decides, and the result is written, or nothing is.
 
@@ -14,9 +16,12 @@ import type {
   EventDetail,
   EventFormMeta,
   EventSummary,
+  EventSupervisor,
+  NoticeResponse,
   ProposeEventResponse,
   RegistrationResponse,
   RosterResponse,
+  SupervisorsResponse,
   WarningResponse,
 } from '../../../shared/api';
 import { classOf, eventSubtypes } from '../../../shared/classes';
@@ -36,8 +41,11 @@ import {
   joinedUsers,
   levelOf,
   newId,
+  noticesOf,
   registrationOf,
   shownTo,
+  supervisorLinks,
+  supervisorsOf,
   termsOf,
   waitingProposals,
   warnedBy,
@@ -45,12 +53,18 @@ import {
 import { iso } from '../db/rows';
 import * as s from '../db/schema';
 import { type AppEnv, readBody } from '../http';
-import { notifyHoursToConfirm, notifyWarningGiven } from '../notify';
+import { notifyEventNotice, notifyHoursToConfirm, notifySupervisorAdded, notifyWarningGiven } from '../notify';
 import { proposalInput, writeLinks, writeTerms } from './event-input';
 
 const recordTimeBody = z.object({ at: z.iso.datetime({ offset: true }).optional() });
 // An empty reason is the rule's to refuse (reason_required), as in the offline demo.
 const warnBody = z.object({ reason: z.string().max(rules.REASON_MAX) });
+// An empty message is the rule's to refuse (message_required).
+const noticeBody = z.object({ body: z.string().max(rules.NOTICE_MAX) });
+
+async function supervisorsFor(db: Database, me: User, eventId: string): Promise<EventSupervisor[]> {
+  return (await supervisorsOf(db, eventId)).map(({ added_by, ...u }) => ({ ...shownTo(me, u), added_in_app: added_by !== null }));
+}
 
 async function summarize(db: Database, me: User, events: AppEvent[], now: number): Promise<EventSummary[]> {
   const ids = events.map((e) => e.id);
@@ -226,6 +240,16 @@ export const eventRoutes = new Hono<AppEnv>()
     const event = await findEventFor(db, id, me);
     const [summary] = await summarize(db, me, [event], now());
     const registration = await registrationOf(db, id, me.id);
+    const organizer = await isOrganizer(db, id, me.id);
+    const notices = rules.canReadNotices(me, registration, organizer)
+      ? (await noticesOf(db, id)).map(({ notice, author }) => ({
+          id: notice.id,
+          body: notice.body,
+          created_at: notice.created_at,
+          author: author && shownTo(me, author),
+          can_delete: notice.author_id === me.id || me.role === 'admin',
+        }))
+      : null;
     return c.json<EventDetail>({
       ...summary,
       description: event.description,
@@ -235,7 +259,104 @@ export const eventRoutes = new Hono<AppEnv>()
       my_registration: registration ?? null,
       my_accepted_term_ids: await acceptedTermIds(db, registration?.id),
       my_attendance: (await attendanceOf(db, id, me.id)) ?? null,
+      supervisors: await supervisorsFor(db, me, id),
+      notices,
+      can_manage: rules.canManageEvent(me, organizer),
     });
+  })
+
+  // ---------- the event's supervisors ----------
+
+  // A supervisor of the event, or an admin, makes someone who joined it a supervisor too.
+  .post('/:id/supervisors/:userId', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const { id, userId } = c.req.param();
+    const t = now();
+    await db.transaction(async (tx) => {
+      // Locking the event makes two additions at once count each other against the limit.
+      const event = await findEvent(tx, id, { lock: true });
+      const links = await supervisorLinks(tx, id);
+      rules.assertCanAddSupervisor({
+        actorCanManage: rules.canManageEvent(me, links.some((l) => l.user_id === me.id)),
+        event,
+        registration: await registrationOf(tx, id, userId),
+        alreadySupervisor: links.some((l) => l.user_id === userId),
+        supervisorCount: links.length,
+        now: t,
+      });
+      await tx.insert(s.event_organizers).values({ event_id: id, user_id: userId, added_by: me.id });
+    });
+    notifySupervisorAdded(c.var.deps, id, userId);
+    return c.json<SupervisorsResponse>({ supervisors: await supervisorsFor(db, me, id) });
+  })
+
+  // Takes off a supervisor added in the app (or the supervisor steps down). Never the last one.
+  .delete('/:id/supervisors/:userId', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const { id, userId } = c.req.param();
+    const t = now();
+    await db.transaction(async (tx) => {
+      const event = await findEvent(tx, id, { lock: true });
+      const links = await supervisorLinks(tx, id);
+      rules.assertCanRemoveSupervisor({
+        actorCanManage: rules.canManageEvent(me, links.some((l) => l.user_id === me.id)),
+        event,
+        link: links.find((l) => l.user_id === userId),
+        supervisorCount: links.length,
+        now: t,
+      });
+      await tx.delete(s.event_organizers).where(and(eq(s.event_organizers.event_id, id), eq(s.event_organizers.user_id, userId)));
+    });
+    return c.json<SupervisorsResponse>({ supervisors: await supervisorsFor(db, me, id) });
+  })
+
+  // ---------- the event's notices ----------
+
+  .post('/:id/notices', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    const body = rules.cleanText((await readBody(c, noticeBody)).body);
+    const t = now();
+    const notice = await db.transaction(async (tx) => {
+      // Locking the event makes notices sent at once count each other against the limit.
+      const event = await findEvent(tx, id, { lock: true });
+      const existing = await tx.select({ id: s.event_notices.id }).from(s.event_notices).where(eq(s.event_notices.event_id, id));
+      rules.assertCanPostNotice({
+        actorCanManage: rules.canManageEvent(me, await isOrganizer(tx, id, me.id)),
+        event,
+        body,
+        noticeCount: existing.length,
+        now: t,
+      });
+      const [row] = await tx
+        .insert(s.event_notices)
+        .values({ id: newId(), event_id: id, author_id: me.id, body: body!, created_at: new Date(t) })
+        .returning();
+      return iso(row);
+    });
+    notifyEventNotice(c.var.deps, notice.id);
+    return c.json<NoticeResponse>(
+      { notice: { id: notice.id, body: notice.body, created_at: notice.created_at, author: { id: me.id, full_name: me.full_name, avatar_url: me.avatar_url, gender: me.gender }, can_delete: true } },
+      201,
+    );
+  })
+
+  // Its author, or an admin, takes a notice down. Whoever was notified already keeps the notification.
+  .delete('/:id/notices/:noticeId', async (c) => {
+    const { db } = c.var.deps;
+    const me = c.var.user;
+    const { id, noticeId } = c.req.param();
+    await findEvent(db, id);
+    const [notice] = await db
+      .select()
+      .from(s.event_notices)
+      .where(and(eq(s.event_notices.id, noticeId), eq(s.event_notices.event_id, id)));
+    rules.assertCanDeleteNotice(notice, me);
+    await db.delete(s.event_notices).where(eq(s.event_notices.id, noticeId));
+    return c.body(null, 204);
   })
 
   // ---------- joining ----------

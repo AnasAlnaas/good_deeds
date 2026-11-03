@@ -26,6 +26,9 @@ export function Txt({ variant = 'body', color = colors.ink, align = 'start', tab
     align === 'center' ? 'center' : onRight !== (MIRRORED && isRTL) ? 'right' : 'left';
   return (
     <Text
+      // Android's default "highQuality" line breaking can measure Arabic a little
+      // narrower than it draws it, so a button's last word wrapped out of sight.
+      textBreakStrategy="simple"
       {...rest}
       style={[
         typeTokens[variant],
