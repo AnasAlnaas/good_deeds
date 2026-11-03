@@ -1,8 +1,10 @@
-CREATE TYPE "public"."notice_reaction" AS ENUM('like', 'noted', 'love', 'ameen');--> statement-breakpoint
+CREATE TYPE "public"."notice_kind" AS ENUM('announcement', 'question');--> statement-breakpoint
+CREATE TYPE "public"."notice_reaction" AS ENUM('noted', 'agree', 'disagree', 'undecided', 'sad');--> statement-breakpoint
 CREATE TABLE "event_notices" (
 	"id" text PRIMARY KEY NOT NULL,
 	"event_id" text NOT NULL,
 	"author_id" text NOT NULL,
+	"kind" "notice_kind" DEFAULT 'announcement' NOT NULL,
 	"body" text NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );

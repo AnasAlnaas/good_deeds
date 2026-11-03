@@ -203,8 +203,8 @@ export function notifyEventChanged(deps: AppDeps, eventId: string, actorId: stri
 // ---------- a notice to an event's people ----------
 
 const NOTICE = {
-  ar: { title: 'إعلان من مشرفي «{event}»' },
-  en: { title: 'A notice about "{event}"' },
+  ar: { announcement: 'إعلان من مشرفي «{event}»', question: 'سؤال من مشرفي «{event}»' },
+  en: { announcement: 'A notice about "{event}"', question: 'A question about "{event}"' },
 };
 /** A notification shows a few lines; the event's page has the whole notice. */
 const NOTICE_PREVIEW = 180;
@@ -221,7 +221,7 @@ export function notifyEventNotice(deps: AppDeps, noticeId: string) {
     const body = notice.body.length > NOTICE_PREVIEW ? `${notice.body.slice(0, NOTICE_PREVIEW - 1)}…` : notice.body;
     return (await peopleOfEvent(deps, notice.event_id, notice.author_id)).map((userId) => ({
       userId,
-      text: (lang) => ({ title: NOTICE[lang].title.replace('{event}', row.title), body }),
+      text: (lang) => ({ title: NOTICE[lang][notice.kind].replace('{event}', row.title), body }),
       data: { type: 'event_notice', event_id: notice.event_id },
     }));
   });

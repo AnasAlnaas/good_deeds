@@ -161,11 +161,12 @@ export async function noticeItems(q: Database, viewer: Pick<User, 'id' | 'gender
   const reactions = ids.length ? await q.select().from(s.notice_reactions).where(inArray(s.notice_reactions.notice_id, ids)) : [];
   return rows.map(({ notice, author, deleted_at }) => ({
     id: notice.id,
+    kind: notice.kind,
     body: notice.body,
     created_at: notice.created_at.toISOString(),
     author: deleted_at ? null : shownTo(viewer, author),
     can_delete: notice.author_id === viewer.id || viewer.role === 'admin',
-    ...rules.reactionSummary(reactions.filter((r) => r.notice_id === notice.id), viewer.id),
+    ...rules.reactionSummary(notice.kind, reactions.filter((r) => r.notice_id === notice.id), viewer.id),
   }));
 }
 

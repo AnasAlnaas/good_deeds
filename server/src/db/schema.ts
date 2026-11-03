@@ -123,13 +123,16 @@ export const event_organizers = pgTable(
   (t) => [primaryKey({ columns: [t.event_id, t.user_id] }), index('event_organizers_user').on(t.user_id)],
 );
 
-// A supervisor's notice to the people of an event (shared/types.ts EventNotice).
+// A supervisor's notice to the people of an event (shared/types.ts EventNotice): an announcement or a question.
+export const noticeKind = pgEnum('notice_kind', ['announcement', 'question']);
+
 export const event_notices = pgTable(
   'event_notices',
   {
     id: text('id').primaryKey(),
     event_id: text('event_id').notNull().references(() => events.id),
     author_id: text('author_id').notNull().references(() => users.id),
+    kind: noticeKind('kind').notNull().default('announcement'),
     body: text('body').notNull(),
     created_at: at('created_at').notNull().defaultNow(),
   },
@@ -137,7 +140,7 @@ export const event_notices = pgTable(
 );
 
 // One reaction per person per notice (shared/types.ts NoticeReaction).
-export const noticeReaction = pgEnum('notice_reaction', ['like', 'noted', 'love', 'ameen']);
+export const noticeReaction = pgEnum('notice_reaction', ['noted', 'agree', 'disagree', 'undecided', 'sad']);
 
 export const notice_reactions = pgTable(
   'notice_reactions',

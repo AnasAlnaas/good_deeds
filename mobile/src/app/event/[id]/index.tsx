@@ -173,7 +173,8 @@ export default function EventDetail() {
           <SectionTitle>{s.event.notices}</SectionTitle>
           {event.notices.length === 0 && <Txt color={colors.inkMuted}>{event.can_manage ? s.event.noNoticesYet : s.event.noNotices}</Txt>}
           {event.notices.map((n) => (
-            <Card key={n.id} style={styles.notice}>
+            <Card key={n.id} style={[styles.notice, n.kind === 'question' && styles.question]}>
+              {n.kind === 'question' && <Badge label={s.event.questionBadge} color={colors.primary} icon="help-circle-outline" />}
               <Txt>{n.body}</Txt>
               <Txt variant="caption" color={colors.inkMuted}>
                 {fmt(s.event.noticeBy, { name: n.author?.full_name ?? s.event.deletedAuthor, time: `${day(n.created_at, s, now)} ${time(n.created_at, s)}` })}
@@ -235,4 +236,5 @@ const styles = StyleSheet.create({
   people: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   person: { flexDirection: 'row', alignItems: 'center', gap: space.xs, paddingEnd: space.sm },
   notice: { borderStartWidth: 4, borderStartColor: colors.accent },
+  question: { borderStartColor: colors.primary },
 });

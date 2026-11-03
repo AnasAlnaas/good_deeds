@@ -77,7 +77,7 @@ export function createApiBackend(opts: { baseUrl: string; token: string; onUnaut
     warn: (eventId, userId, reason) => send('POST', `/events/${enc(eventId)}/warnings/${enc(userId)}`, { reason }),
     addSupervisor: (eventId, userId) => send('POST', `/events/${enc(eventId)}/supervisors/${enc(userId)}`),
     removeSupervisor: (eventId, userId) => send('DELETE', `/events/${enc(eventId)}/supervisors/${enc(userId)}`),
-    postNotice: (eventId, body) => send('POST', `/events/${enc(eventId)}/notices`, { body }),
+    postNotice: (eventId, body, kind) => send('POST', `/events/${enc(eventId)}/notices`, { body, kind }),
     deleteNotice: (eventId, noticeId) => send('DELETE', `/events/${enc(eventId)}/notices/${enc(noticeId)}`),
     reactToNotice: (eventId, noticeId, reaction) =>
       reaction

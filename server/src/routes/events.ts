@@ -28,7 +28,7 @@ import { classOf, eventSubtypes } from '../../../shared/classes';
 import { ApiError } from '../../../shared/errors';
 import { BASE_POINTS_BY_SUBTYPE } from '../../../shared/placeholders';
 import * as rules from '../../../shared/rules';
-import { type AppEvent, type NoticeReactionKind, type Registration, type User } from '../../../shared/types';
+import { type AppEvent, NOTICE_REACTIONS, type NoticeKind, type NoticeReactionKind, type Registration, type User } from '../../../shared/types';
 import { requireUser } from '../auth';
 import type { Database } from '../db/client';
 import {
@@ -62,19 +62,20 @@ const warnBody = z.object({ reason: z.string().max(rules.REASON_MAX) });
 const reactBody = z.object({ reaction: z.string() });
 
 /** The notice is this event's, and this person may read it (rules.assertCanReact). */
-async function assertMayReact(db: Database, me: User, eventId: string, noticeId: string, reaction: string) {
+async function assertMayReact(db: Database, me: User, eventId: string, noticeId: string, reaction: string | null) {
   await findEvent(db, eventId);
   const [notice] = await db
-    .select({ id: s.event_notices.id })
+    .select({ kind: s.event_notices.kind })
     .from(s.event_notices)
     .where(and(eq(s.event_notices.id, noticeId), eq(s.event_notices.event_id, eventId)));
   const canRead = rules.canReadNotices(me, await registrationOf(db, eventId, me.id), await isOrganizer(db, eventId, me.id));
-  rules.assertCanReact({ canRead, notice, reaction });
+  rules.assertCanReact({ canRead, notice, reaction: reaction ?? (notice ? NOTICE_REACTIONS[notice.kind][0] : '') });
   return reaction as NoticeReactionKind;
 }
 
 // An empty message is the rule's to refuse (message_required).
-const noticeBody = z.object({ body: z.string().max(rules.NOTICE_MAX) });
+// The kind is the rule's to check, like the message (an unknown kind is refused).
+const noticeBody = z.object({ body: z.string().max(rules.NOTICE_MAX), kind: z.string().default('announcement') });
 
 async function supervisorsFor(db: Database, me: User, eventId: string): Promise<EventSupervisor[]> {
   return (await supervisorsOf(db, eventId)).map(({ added_by, ...u }) => ({ ...shownTo(me, u), added_in_app: added_by !== null }));
@@ -324,7 +325,8 @@ export const eventRoutes = new Hono<AppEnv>()
     const { db, now } = c.var.deps;
     const me = c.var.user;
     const id = c.req.param('id');
-    const body = rules.cleanText((await readBody(c, noticeBody)).body);
+    const input = await readBody(c, noticeBody);
+    const body = rules.cleanText(input.body);
     const t = now();
     const notice = await db.transaction(async (tx) => {
       // Locking the event makes notices sent at once count each other against the limit.
@@ -334,12 +336,13 @@ export const eventRoutes = new Hono<AppEnv>()
         actorCanManage: rules.canManageEvent(me, await isOrganizer(tx, id, me.id)),
         event,
         body,
+        kind: input.kind,
         noticeCount: existing.length,
         now: t,
       });
       const [row] = await tx
         .insert(s.event_notices)
-        .values({ id: newId(), event_id: id, author_id: me.id, body: body!, created_at: new Date(t) })
+        .values({ id: newId(), event_id: id, author_id: me.id, kind: input.kind as NoticeKind, body: body!, created_at: new Date(t) })
         .returning();
       return iso(row);
     });
@@ -384,8 +387,8 @@ export const eventRoutes = new Hono<AppEnv>()
     const { db } = c.var.deps;
     const me = c.var.user;
     const { id, noticeId } = c.req.param();
-    // Taking a reaction back needs no reaction named; 'like' only passes the check.
-    await assertMayReact(db, me, id, noticeId, 'like');
+    // Taking a reaction back needs no reaction named: any the notice offers passes the check.
+    await assertMayReact(db, me, id, noticeId, null);
     await db.delete(s.notice_reactions).where(and(eq(s.notice_reactions.notice_id, noticeId), eq(s.notice_reactions.user_id, me.id)));
     const [item] = await noticeItems(db, me, id, noticeId);
     return c.json<NoticeResponse>({ notice: item });

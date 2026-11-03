@@ -44,11 +44,12 @@ function noticeItem(db: Db, me: User, n: EventNotice): EventNoticeItem {
   const author = server.getUser(db, n.author_id);
   return {
     id: n.id,
+    kind: n.kind,
     body: n.body,
     created_at: n.created_at,
     author: author && !author.deleted_at ? publicUser(me, author) : null,
     can_delete: n.author_id === me.id || me.role === 'admin',
-    ...rules.reactionSummary(db.notice_reactions.filter((r) => r.notice_id === n.id), me.id),
+    ...rules.reactionSummary(n.kind, db.notice_reactions.filter((r) => r.notice_id === n.id), me.id),
   };
 }
 
@@ -297,13 +298,13 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
         return { supervisors: supervisorsFor(db, me, eventId) };
       }),
 
-    postNotice: (eventId, body) =>
+    postNotice: (eventId, body, kind) =>
       async(() => {
         // The server's request check (server/src/routes/events.ts), briefly.
         if (body.length > rules.NOTICE_MAX) throw new BackendError('invalid_request');
         let notice: EventNotice | undefined;
         const { db, me } = change((d, t) => {
-          const result = server.postNotice(d, meId, eventId, body, t);
+          const result = server.postNotice(d, meId, eventId, body, kind, t);
           notice = result.notice;
           return result.db;
         });

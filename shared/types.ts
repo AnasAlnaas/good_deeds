@@ -83,17 +83,30 @@ export interface EventNotice {
   id: string;
   event_id: string;
   author_id: string;
+  kind: NoticeKind;
   body: string;
   created_at: string;
 }
+
+/**
+ * Owner's decision (2026-11-03): a notice is an announcement (إعلان) or a
+ * question (سؤال), e.g. "shall we meet at the north gate instead?". Each kind
+ * has its own reactions; a question's are its answers.
+ */
+export type NoticeKind = 'announcement' | 'question';
+export const NOTICE_KINDS: NoticeKind[] = ['announcement', 'question'];
 
 /**
  * Owner's decision (2026-11-03): the people of an event react to a notice, so
  * its supervisors see it was read. One of a few fixed reactions, one per person
  * per notice; nobody is notified of a reaction.
  */
-export type NoticeReactionKind = 'like' | 'noted' | 'love' | 'ameen';
-export const NOTICE_REACTIONS: NoticeReactionKind[] = ['like', 'noted', 'love', 'ameen'];
+export type NoticeReactionKind = 'noted' | 'agree' | 'disagree' | 'undecided' | 'sad';
+/** The reactions each kind of notice offers, in the order they are shown (owner's choice, 2026-11-03). */
+export const NOTICE_REACTIONS: Record<NoticeKind, NoticeReactionKind[]> = {
+  announcement: ['noted', 'disagree', 'sad'],
+  question: ['agree', 'disagree', 'undecided'],
+};
 
 export interface NoticeReaction {
   notice_id: string;

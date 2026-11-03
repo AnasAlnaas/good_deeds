@@ -14,7 +14,8 @@ import { pointsForAttendance } from './rules';
 // 4: events no longer have branches of faith (they move to the course before joining).
 // 5: events have notices, and supervisors added in the app.
 // 6: notices have reactions.
-export const SEED_VERSION = 6;
+// 7: a notice is an announcement or a question, each with its own reactions.
+export const SEED_VERSION = 7;
 
 export const DEMO_ACCOUNTS = {
   participant: 'u_ahmad',
@@ -272,16 +273,28 @@ export function buildSeed(nowMs: number): Db {
     }
   }
 
-  // A notice from the supervisor of the event happening now, so its page shows one.
+  // An announcement and a question from the supervisor of the event happening now, so its page shows both kinds.
   db.event_notices.push({
     id: 'n_e01_1',
     event_id: 'e01',
     author_id: 'u_khaled',
+    kind: 'announcement',
     body: 'نلتقي عند مدخل مسجد السراج. أحضروا معكم قبعة وماءً، والقفازات والأكياس متوفرة عندنا.',
     created_at: iso(minutes(-180)),
   });
-  for (const [user_id, reaction] of [['u_mariam', 'noted'], ['u_f1', 'like'], ['u_f2', 'noted']] as const) {
-    db.notice_reactions.push({ notice_id: 'n_e01_1', user_id, reaction, created_at: iso(minutes(-170)) });
+  db.event_notices.push({
+    id: 'n_e01_2',
+    event_id: 'e01',
+    author_id: 'u_khaled',
+    kind: 'question',
+    body: 'المدخل الرئيسي مزدحم. هل ننقل نقطة التجمع إلى البوابة الشمالية للمسجد؟',
+    created_at: iso(minutes(-120)),
+  });
+  for (const [notice_id, user_id, reaction] of [
+    ['n_e01_1', 'u_mariam', 'noted'], ['n_e01_1', 'u_f1', 'noted'], ['n_e01_1', 'u_f2', 'sad'],
+    ['n_e01_2', 'u_mariam', 'agree'], ['n_e01_2', 'u_f1', 'agree'], ['n_e01_2', 'u_f2', 'undecided'], ['n_e01_2', 'u_f3', 'disagree'],
+  ] as const) {
+    db.notice_reactions.push({ notice_id, user_id, reaction, created_at: iso(minutes(-110)) });
   }
 
   const att = (

@@ -29,7 +29,7 @@ import type {
   SupervisorsResponse,
   WarningResponse,
 } from './api';
-import type { NoticeReactionKind } from './types';
+import type { NoticeKind, NoticeReactionKind } from './types';
 
 export type Mode = 'demo' | 'api';
 
@@ -74,7 +74,8 @@ export interface Backend {
   /** Takes off a supervisor added in the app (or the supervisor steps down). */
   removeSupervisor(eventId: string, userId: string): Promise<SupervisorsResponse>;
   /** A notice to the event's people; they are notified. */
-  postNotice(eventId: string, body: string): Promise<NoticeResponse>;
+  /** An announcement, or a question whose reactions are its answers. */
+  postNotice(eventId: string, body: string, kind: NoticeKind): Promise<NoticeResponse>;
   deleteNotice(eventId: string, noticeId: string): Promise<void>;
   /** One reaction per person per notice: a new one replaces it, null takes it back. */
   reactToNotice(eventId: string, noticeId: string, reaction: NoticeReactionKind | null): Promise<NoticeResponse>;

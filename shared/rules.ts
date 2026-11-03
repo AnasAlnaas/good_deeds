@@ -11,13 +11,15 @@
 import { cityOf } from './cities';
 import { ApiError } from './errors';
 import { END_GRACE_MINUTES } from './placeholders';
-import { NOTICE_REACTIONS } from './types';
+import { NOTICE_KINDS, NOTICE_REACTIONS } from './types';
 import type {
   AppEvent,
   Attendance,
   EventStatus,
   EventTerm,
+  EventNotice,
   Level,
+  NoticeKind,
   NoticeReaction,
   PointsLedgerEntry,
   Registration,
@@ -563,6 +565,7 @@ export function assertCanPostNotice(args: {
   event: EventTimes;
   /** Already cleaned (cleanText). */
   body: string | null;
+  kind: string;
   noticeCount: number;
   now: number;
 }) {
@@ -572,6 +575,7 @@ export function assertCanPostNotice(args: {
     throw new ApiError('event_closed');
   }
   if (!args.body) throw new ApiError('message_required');
+  if (!(NOTICE_KINDS as string[]).includes(args.kind)) throw new ApiError('not_found');
   if (args.noticeCount >= MAX_NOTICES_PER_EVENT) throw new ApiError('too_many_notices');
 }
 
@@ -579,15 +583,16 @@ export function assertCanPostNotice(args: {
  * Reacting to a notice: whoever may read it, with one of the fixed reactions.
  * A new reaction replaces the person's earlier one; taking it back is always allowed.
  */
-export function assertCanReact(args: { canRead: boolean; notice: unknown; reaction: string }) {
+export function assertCanReact(args: { canRead: boolean; notice: Pick<EventNotice, 'kind'> | undefined; reaction: string }) {
   if (!args.notice || !args.canRead) throw new ApiError('not_found');
-  if (!(NOTICE_REACTIONS as string[]).includes(args.reaction)) throw new ApiError('not_found');
+  // Only the reactions of this kind of notice: a question is not "noted", an announcement not voted on.
+  if (!(NOTICE_REACTIONS[args.notice.kind] as string[]).includes(args.reaction)) throw new ApiError('not_found');
 }
 
-/** Counts per reaction, in NOTICE_REACTIONS order, and the viewer's own. */
-export function reactionSummary(rows: Pick<NoticeReaction, 'user_id' | 'reaction'>[], viewerId: string) {
+/** Counts per reaction of the notice's kind, in the order shown, and the viewer's own. */
+export function reactionSummary(kind: NoticeKind, rows: Pick<NoticeReaction, 'user_id' | 'reaction'>[], viewerId: string) {
   return {
-    reactions: NOTICE_REACTIONS.map((reaction) => ({ reaction, count: rows.filter((r) => r.reaction === reaction).length })),
+    reactions: NOTICE_REACTIONS[kind].map((reaction) => ({ reaction, count: rows.filter((r) => r.reaction === reaction).length })),
     my_reaction: rows.find((r) => r.user_id === viewerId)?.reaction ?? null,
   };
 }

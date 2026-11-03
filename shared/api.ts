@@ -14,6 +14,7 @@ import type {
   Gender,
   GenderCategory,
   Level,
+  NoticeKind,
   NoticeReactionKind,
   Registration,
   RegistrationStatus,
@@ -149,13 +150,14 @@ export interface EventSupervisor extends PublicUser {
 
 export interface EventNoticeItem {
   id: string;
+  kind: NoticeKind;
   body: string;
   created_at: string;
   /** null = a deleted account. */
   author: PublicUser | null;
   /** Its author, or an admin (rules.assertCanDeleteNotice). */
   can_delete: boolean;
-  /** How many chose each reaction, in NOTICE_REACTIONS order (those with none included). */
+  /** How many chose each reaction of its kind, in NOTICE_REACTIONS order (those with none included). */
   reactions: { reaction: NoticeReactionKind; count: number }[];
   my_reaction: NoticeReactionKind | null;
 }
@@ -173,6 +175,7 @@ export interface SupervisorsResponse {
 /** POST /api/events/:id/notices */
 export interface PostNoticeBody {
   body: string;
+  kind: NoticeKind;
 }
 
 export interface NoticeResponse {

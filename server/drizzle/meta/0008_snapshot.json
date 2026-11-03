@@ -1,5 +1,5 @@
 {
-  "id": "fbba73e4-a1f3-444a-8ce1-178c9819538c",
+  "id": "1998cef4-cc62-44ab-addc-b52afb74a30b",
   "prevId": "8c0b3a13-5ebd-4d37-928d-7b409bb63923",
   "version": "7",
   "dialect": "postgresql",
@@ -343,6 +343,14 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "notice_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'announcement'"
         },
         "body": {
           "name": "body",
@@ -1882,14 +1890,23 @@
         "en"
       ]
     },
+    "public.notice_kind": {
+      "name": "notice_kind",
+      "schema": "public",
+      "values": [
+        "announcement",
+        "question"
+      ]
+    },
     "public.notice_reaction": {
       "name": "notice_reaction",
       "schema": "public",
       "values": [
-        "like",
         "noted",
-        "love",
-        "ameen"
+        "agree",
+        "disagree",
+        "undecided",
+        "sad"
       ]
     },
     "public.participant_status": {

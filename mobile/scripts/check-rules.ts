@@ -310,29 +310,35 @@ console.log('\n— supervisors added in the app');
   expectEqual('an admin may run any event', rules.canManageEvent({ role: 'admin' }, false), true);
 
   console.log('\n— notices to an event');
-  expectError('a member posts one', 'not_organizer', () => server.postNotice(db, 'u_f1', 'e01', 'غيّرنا الموعد.', NOW));
-  expectError('an empty one', 'message_required', () => server.postNotice(db, 'u_khaled', 'e01', '   ', NOW));
-  const posted = server.postNotice(one, 'u_ahmad', 'e01', '  أحضروا الماء.  ', NOW + 60_000);
-  expectEqual('a supervisor added in the app posts one, trimmed, newest first', server.noticesOf(posted.db, 'e01').map((n) => n.body), ['أحضروا الماء.', db.event_notices[0].body]);
+  expectError('a member posts one', 'not_organizer', () => server.postNotice(db, 'u_f1', 'e01', 'غيّرنا الموعد.', 'announcement', NOW));
+  expectError('an empty one', 'message_required', () => server.postNotice(db, 'u_khaled', 'e01', '   ', 'announcement', NOW));
+  const posted = server.postNotice(one, 'u_ahmad', 'e01', '  أحضروا الماء.  ', 'announcement', NOW + 60_000);
+  expectEqual('a supervisor added in the app posts one, trimmed, newest first', server.noticesOf(posted.db, 'e01').map((n) => n.body), ['أحضروا الماء.', db.event_notices[1].body, db.event_notices[0].body]);
   expectEqual('those who joined read them', rules.canReadNotices({ role: 'member' }, { status: 'joined' }, false), true);
   expectEqual('others do not', rules.canReadNotices({ role: 'member' }, undefined, false), false);
   expectError('a member deletes it', 'not_your_notice', () => server.deleteNotice(posted.db, 'u_f1', 'e01', posted.notice.id));
-  expectEqual('its author does', server.noticesOf(server.deleteNotice(posted.db, 'u_ahmad', 'e01', posted.notice.id), 'e01').length, 1);
-  expectError('none once the event is long over', 'event_closed', () => server.postNotice(db, 'u_khaled', 'e01', 'شكراً لكم.', NOW + 9 * 24 * 3_600_000));
+  expectEqual('its author does', server.noticesOf(server.deleteNotice(posted.db, 'u_ahmad', 'e01', posted.notice.id), 'e01').length, 2);
+  expectError('none once the event is long over', 'event_closed', () => server.postNotice(db, 'u_khaled', 'e01', 'شكراً لكم.', 'announcement', NOW + 9 * 24 * 3_600_000));
 }
 
 console.log('\n— reactions to a notice');
 {
-  const notice = db.event_notices[0];
-  const counts = (d: Db, viewer: string) => rules.reactionSummary(d.notice_reactions.filter((r) => r.notice_id === notice.id), viewer);
-  expectEqual('the seed has some', counts(db, 'u_ahmad'), { reactions: [{ reaction: 'like', count: 1 }, { reaction: 'noted', count: 2 }, { reaction: 'love', count: 0 }, { reaction: 'ameen', count: 0 }], my_reaction: null });
-  expectError('someone who did not join reacts', 'not_found', () => server.reactToNotice(db, 'u_fatima', 'e01', notice.id, 'like', NOW));
-  const loved = server.reactToNotice(db, 'u_ahmad', 'e01', notice.id, 'love', NOW);
-  expectEqual('Ahmad, who joined, reacts', counts(loved, 'u_ahmad').my_reaction, 'love');
-  const switched = server.reactToNotice(loved, 'u_ahmad', 'e01', notice.id, 'ameen', NOW);
-  expectEqual('a new reaction replaces his first', counts(switched, 'u_ahmad').reactions.map((r) => r.count), [1, 2, 0, 1]);
-  expectEqual('and he can take it back', counts(server.reactToNotice(switched, 'u_ahmad', 'e01', notice.id, null, NOW), 'u_ahmad').my_reaction, null);
-  expectEqual('a deleted notice takes its reactions with it', server.deleteNotice(switched, 'u_khaled', 'e01', notice.id).notice_reactions.length, 0);
+  const [notice, question] = db.event_notices;
+  const counts = (d: Db, viewer: string, n = notice) =>
+    rules.reactionSummary(n.kind, d.notice_reactions.filter((r) => r.notice_id === n.id), viewer);
+  expectEqual('the seed has an announcement and a question', [notice.kind, question.kind], ['announcement', 'question']);
+  expectEqual('an announcement: noted, disagree, sad', counts(db, 'u_ahmad'), { reactions: [{ reaction: 'noted', count: 2 }, { reaction: 'disagree', count: 0 }, { reaction: 'sad', count: 1 }], my_reaction: null });
+  expectEqual('a question: agree, disagree, not sure yet', counts(db, 'u_ahmad', question).reactions.map((r) => [r.reaction, r.count]), [['agree', 2], ['disagree', 1], ['undecided', 1]]);
+  expectError('someone who did not join reacts', 'not_found', () => server.reactToNotice(db, 'u_fatima', 'e01', notice.id, 'noted', NOW));
+  expectError("a question's answer on an announcement", 'not_found', () => server.reactToNotice(db, 'u_ahmad', 'e01', notice.id, 'agree', NOW));
+  expectError('"noted" is no answer to a question', 'not_found', () => server.reactToNotice(db, 'u_ahmad', 'e01', question.id, 'noted', NOW));
+  const agreed = server.reactToNotice(db, 'u_ahmad', 'e01', question.id, 'agree', NOW);
+  expectEqual('Ahmad, who joined, answers', counts(agreed, 'u_ahmad', question).my_reaction, 'agree');
+  const switched = server.reactToNotice(agreed, 'u_ahmad', 'e01', question.id, 'disagree', NOW);
+  expectEqual('a new answer replaces his first', counts(switched, 'u_ahmad', question).reactions.map((r) => r.count), [2, 2, 1]);
+  expectEqual('and he can take it back', counts(server.reactToNotice(switched, 'u_ahmad', 'e01', question.id, null, NOW), 'u_ahmad', question).my_reaction, null);
+  expectEqual('a deleted notice takes its reactions with it', server.deleteNotice(switched, 'u_khaled', 'e01', question.id).notice_reactions.some((r) => r.notice_id === question.id), false);
+  expectError('a kind of notice that does not exist', 'not_found', () => server.postNotice(db, 'u_khaled', 'e01', 'نعم أم لا؟', 'poll' as never, NOW));
 }
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');

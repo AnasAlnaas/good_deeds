@@ -7,11 +7,12 @@ import { useApp } from '@/state/app';
 import { colors, radius, space } from '@/theme/tokens';
 import { Txt } from './Txt';
 
-const EMOJI: Record<NoticeReactionKind, string> = { like: '👍', noted: '✅', love: '❤️', ameen: '🤲' };
+const EMOJI: Record<NoticeReactionKind, string> = { noted: '✅', agree: '👍', disagree: '👎', undecided: '🤔', sad: '😢' };
 
 /**
- * The reactions under a notice: each with how many chose it. Tapping one is
- * the person's reaction (replacing an earlier one); tapping it again takes it back.
+ * The reactions under a notice (an announcement's, or a question's answers),
+ * each with its word and how many chose it. Tapping one is the person's
+ * reaction (replacing an earlier one); tapping it again takes it back.
  */
 export function NoticeReactions({ notice, disabled, onReact }: { notice: EventNoticeItem; disabled?: boolean; onReact: (reaction: NoticeReactionKind | null) => void }) {
   const { s } = useApp();
@@ -29,6 +30,9 @@ export function NoticeReactions({ notice, disabled, onReact }: { notice: EventNo
             onPress={() => onReact(mine ? null : reaction)}
             style={({ pressed }) => [styles.pill, mine && styles.mine, pressed && styles.pressed]}>
             <Txt>{EMOJI[reaction]}</Txt>
+            <Txt variant="caption" color={mine ? colors.accentInk : colors.ink} label>
+              {s.reactions[reaction]}
+            </Txt>
             {count > 0 && (
               <Txt variant="caption" color={mine ? colors.accentInk : colors.inkMuted} tabular>
                 {num(count)}
