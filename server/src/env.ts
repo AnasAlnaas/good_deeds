@@ -82,6 +82,12 @@ export const env = {
    */
   corsOrigins: (process.env.CORS_ORIGINS ?? '').split(',').map((o) => o.trim()).filter(Boolean),
   /**
+   * Phone numbers (comma-separated, e.g. +218912345678) given the admin role when
+   * they sign in. For the first admin on a hosted server; remove a number once it
+   * is admin, or demoting that person in the panel is undone at their next sign-in.
+   */
+  adminPhones: (process.env.ADMIN_PHONES ?? '').split(',').map((p) => p.trim()).filter(Boolean),
+  /**
    * `1` = the server sits behind a reverse proxy (nginx, Caddy) that sets X-Forwarded-For,
    * so the caller's address for the sign-in limits is read from it. Otherwise the
    * connection's own address is used (a client could forge the header).

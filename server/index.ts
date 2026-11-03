@@ -31,6 +31,7 @@ const deps: AppDeps = {
   runLater: (task) => waitUntil(task().catch((err) => console.error('background task failed', err))),
   cronSecret: env.cronSecret,
   corsOrigins: env.corsOrigins,
+  adminPhones: env.adminPhones,
   // Vercel sets X-Forwarded-For itself (a client cannot forge it), so TRUST_PROXY=1 there.
   clientIp: (c) => (env.trustProxy ? c.req.header('X-Forwarded-For')?.split(',')[0]?.trim() : undefined),
 };

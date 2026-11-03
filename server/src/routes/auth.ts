@@ -117,7 +117,7 @@ export const authRoutes = new Hono<AppEnv>()
   })
 
   .post('/verify-code', async (c) => {
-    const { db, now, jwtSecret } = c.var.deps;
+    const { db, now, jwtSecret, adminPhones } = c.var.deps;
     const body = await readBody(c, verifyCodeBody);
     const t = now();
     const result = await db.transaction(async (tx) => {
@@ -148,6 +148,17 @@ export const authRoutes = new Hono<AppEnv>()
           .insert(s.users)
           .values({ id: newId(), phone: body.phone, ...body.profile, created_at: new Date(t) })
           .returning();
+      }
+      if (adminPhones?.includes(body.phone) && user.role !== 'admin') {
+        await tx.insert(s.admin_actions).values({
+          id: newId(),
+          actor_id: null,
+          action: 'change_role',
+          target_id: user.id,
+          details: { name: user.full_name, from: user.role, to: 'admin', via: 'ADMIN_PHONES' },
+          created_at: new Date(t),
+        });
+        [user] = await tx.update(s.users).set({ role: 'admin' }).where(eq(s.users.id, user.id)).returning();
       }
       await tx.update(s.login_codes).set({ consumed_at: new Date(t) }).where(eq(s.login_codes.id, code.id));
       return { user: iso(user) };

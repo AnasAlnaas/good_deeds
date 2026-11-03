@@ -81,6 +81,19 @@ const signup = await expectOk(
 expectEqual('new account is a member', signup.user.role, 'member');
 await expectError('the code works only once', 'code_expired', call('POST', '/auth/verify-code', undefined, { phone: phoneB, code: sentCodes.get(phoneB) }));
 
+const phoneAdmin = '+218919990009';
+await call('POST', '/auth/request-code', undefined, { phone: phoneAdmin });
+const firstAdmin = await expectOk(
+  'a phone in ADMIN_PHONES signs up',
+  call('POST', '/auth/verify-code', undefined, {
+    phone: phoneAdmin,
+    code: sentCodes.get(phoneAdmin),
+    profile: { full_name: 'المشرف الأول', gender: 'male', city: 'طرابلس' },
+  }),
+);
+expectEqual('a phone in ADMIN_PHONES is made admin', firstAdmin.user.role, 'admin');
+expectEqual('the admin panel lets them in', (await call('GET', '/admin/overview', firstAdmin.token)).status, 200);
+
 console.log('\n— sign-in limits');
 {
   const signIn = (phone: string, code: string) => call('POST', '/auth/verify-code', undefined, { phone, code });

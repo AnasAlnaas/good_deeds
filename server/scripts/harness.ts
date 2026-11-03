@@ -36,6 +36,7 @@ export async function startHarness(start: number) {
     timeZone: 'Africa/Tripoli',
     runLater: (task) => void background.push(task()),
     corsOrigins: [],
+    adminPhones: ['+218919990009'],
     // A request says where it comes from with this header; without it, the limits per address are off.
     clientIp: (c) => c.req.header('X-Check-Address'),
   });

@@ -28,6 +28,8 @@ export interface AppDeps {
   cronSecret?: string;
   /** Empty = any origin. */
   corsOrigins: string[];
+  /** Phones made admin when they sign in: how the first admin is made without database access. */
+  adminPhones?: string[];
   /** The caller's network address, for the sign-in limits per address. Absent = those limits are off (tests). */
   clientIp?: (c: Context) => string | undefined;
 }

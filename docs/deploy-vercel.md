@@ -33,6 +33,7 @@ need your account and a browser.
    | `TRUST_PROXY` | `1` (Vercel sets the caller's address itself) |
    | `LOGIN_CODE_DELIVERY` | `console` (testing only, see step 4) |
    | `CORS_ORIGINS` | the admin panel's address, after step 5, e.g. `https://good-deeds-admin.vercel.app` |
+   | `ADMIN_PHONES` | the first admin's phone, e.g. `+218912345678` (see step 5) |
    | `VERCEL_EXPERIMENTAL_BACKENDS` | `1`: Vercel's Hono build mode that bundles the server (its imports have no `.js` endings, which the default mode needs) |
 
    Also **Settings → Deployment Protection → Vercel Authentication**: set it to
@@ -79,15 +80,16 @@ an SMS provider.
 
 ## 5. The first admin
 
-1. Sign up in the app (step 6) with the admin's phone number.
-2. From this PC, with `DATABASE_URL` still in `server/.env`:
+1. Put the admin's phone number in `ADMIN_PHONES` (step 4; several are
+   separated by commas) and redeploy.
+2. Sign up in the app (step 6) with that number. The account is made admin as
+   it signs in, and can sign in to the admin panel.
+3. Then remove the number from `ADMIN_PHONES`: while it is there, demoting that
+   person in the panel is undone at their next sign-in. After that, admins
+   change roles in the panel.
 
-   ```bash
-   npm run make-admin -- +218912345678
-   ```
-
-That person can sign in to the admin panel; after that, admins change roles in
-the panel.
+With the database address in `server/.env`, `npm run make-admin -- +218912345678`
+does the same for someone who has already signed up.
 
 ## 6. The test APK
 
