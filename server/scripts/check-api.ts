@@ -148,6 +148,73 @@ console.log('\n— sign-in limits');
   h.setClock(NOW);
 }
 
+console.log('\n— phone and password (no SMS)');
+{
+  const HOURS = 3_600_000;
+  const PW = 'نخلة-طرابلس-2026';
+  const profile = { full_name: 'سالمة الورفلي', gender: 'female', city: 'طرابلس' };
+  const phoneP = '+218919990011';
+  const from = (address?: string): Record<string, string> => (address ? { 'X-Check-Address': address } : {});
+  const signUp = (body: object, address?: string) => call('POST', '/auth/sign-up', undefined, body, from(address));
+  const signIn = (phone: string, password: string) => call('POST', '/auth/sign-in', undefined, { phone, password });
+  const reset = (body: object) => call('POST', '/auth/reset-password', undefined, body);
+
+  const weak: [string, string, string][] = [
+    ['7 characters', 'abc1234', 'password_too_short'],
+    ['one character over and over', 'aaaaaaaa', 'password_too_simple'],
+    ['a run of digits', '12345678', 'password_too_simple'],
+    ['with the phone number in it', 'x919990011y', 'password_too_simple'],
+  ];
+  for (const [why, password, code] of weak) await expectError(`sign-up password refused: ${why}`, code, signUp({ phone: phoneP, password, profile }));
+  await expectError('sign-up without a profile', 'invalid_request', signUp({ phone: phoneP, password: PW }));
+  const made = await expectOk('sign up with a phone and a password', signUp({ phone: phoneP, password: PW, profile }));
+  expectEqual('the new account is a member', made.user.role, 'member');
+  expectEqual('nothing about the password comes back', /hash|password/.test(JSON.stringify(made)), false);
+  await expectError('the same number again', 'phone_taken', signUp({ phone: phoneP, password: PW, profile }));
+
+  await expectOk('sign in with it', signIn(phoneP, PW));
+  await expectOk('the same password typed with Arabic digits', signIn(phoneP, PW.replace('2026', '٢٠٢٦')));
+  await expectError('a wrong password', 'wrong_password', signIn(phoneP, `${PW}x`));
+  await expectError('a number with no account', 'wrong_password', signIn('+218919990012', PW));
+  for (let i = 0; i < 9; i++) await signIn(phoneP, `wrong-${i}`);
+  await expectError('the right password after ten wrong ones that day', 'try_later', signIn(phoneP, PW));
+  h.setClock(NOW + 24 * HOURS + 1000);
+  await expectOk('a day later it works again', signIn(phoneP, PW));
+  h.setClock(NOW);
+
+  const panel = await login('u_admin');
+  const target = made.user.id;
+  await expectError('a member cannot make reset codes', 'forbidden', call('POST', `/admin/users/${target}/reset-code`, made.token));
+  const issued = await expectOk('an admin makes a reset code for them', call('POST', `/admin/users/${target}/reset-code`, panel));
+  const otherCode = issued.code === '000000' ? '111111' : '000000';
+  const NEW = 'زيتونة-مصراتة-7';
+  await expectError('a wrong reset code', 'code_invalid', reset({ phone: phoneP, code: otherCode, password: NEW }));
+  await expectError('a weak new password', 'password_too_short', reset({ phone: phoneP, code: issued.code, password: 'short' }));
+  const afterReset = await expectOk('the code sets a new password and signs in', reset({ phone: phoneP, code: issued.code, password: NEW }));
+  expectEqual('as the same person', afterReset.user.id, target);
+  await expectError('the old password no longer works', 'wrong_password', signIn(phoneP, PW));
+  await expectOk('the new one does', signIn(phoneP, NEW));
+  await expectError('a reset code works once', 'code_expired', reset({ phone: phoneP, code: issued.code, password: PW }));
+  const second = (await call('POST', `/admin/users/${target}/reset-code`, panel)).body;
+  const third = (await call('POST', `/admin/users/${target}/reset-code`, panel)).body;
+  if (second.code !== third.code) {
+    await expectError('a newer code replaces the older one', 'code_invalid', reset({ phone: phoneP, code: second.code, password: PW }));
+  }
+  h.setClock(NOW + 25 * HOURS);
+  await expectError('a reset code after a day', 'code_expired', reset({ phone: phoneP, code: third.code, password: PW }));
+  h.setClock(NOW);
+  const log = (await call('GET', '/admin/audit', panel)).body as { action: string; target_id: string }[];
+  expectEqual('reset codes are in the admin log', log.filter((a) => a.action === 'issue_reset_code' && a.target_id === target).length, 3);
+
+  await expectError('an account from before passwords', 'password_not_set', signIn(phoneB, PW));
+  await expectError('ADMIN_PHONES: a weak first password', 'password_too_short', signIn(phoneAdmin, 'short'));
+  await expectOk('ADMIN_PHONES: an account from before passwords sets its first one by signing in', signIn(phoneAdmin, PW));
+  await expectError('ADMIN_PHONES: after that, the password is checked', 'wrong_password', signIn(phoneAdmin, `${PW}x`));
+
+  for (let i = 0; i < 10; i++) await signUp({ phone: `+21894${String(1000000 + i)}`, password: PW, profile }, '203.0.113.9');
+  await expectError('an 11th account from one address in an hour', 'try_later', signUp({ phone: '+218941999999', password: PW, profile }, '203.0.113.9'));
+}
+
 console.log('\n— request size');
 const huge = JSON.stringify({ phone: '+218919990005', padding: 'x'.repeat(2_000_000) });
 await expectError('a 2 MB body, even before sign-in', 'too_large', call('POST', '/auth/request-code', undefined, huge));
@@ -222,6 +289,22 @@ expectEqual('recorded_by kept', ended.recorded_by, 'u_khaled');
 const roster = (await call('GET', '/events/e01/roster', khaled)).body;
 expectEqual('roster shows the hours', roster.participants.find((p: { user: { id: string } }) => p.user.id === 'u_ahmad').attendance.hours, 0.5);
 
+console.log('\n— attendance recorded with no connection, sent later');
+{
+  const MIN = 60_000;
+  const rec = (userId: string, kind: 'start' | 'end', body: object) => call('POST', `/events/e01/attendance/${userId}/${kind}`, khaled, body);
+  // Tapped 20 minutes ago with no signal, sent now: the time is the tap's, and it is not "backdated".
+  const queued = await expectOk('a start tapped 20 minutes ago arrives', rec('u_f3', 'start', { recorded_at: iso(NOW - 20 * MIN) }));
+  expectEqual('it started when it was tapped', queued.attendance.started_at, iso(NOW - 20 * MIN));
+  expectEqual('a live record, not a backdated one', queued.attendance.start_source, 'live');
+  expectEqual('recorded at the tap', queued.attendance.recorded_at, iso(NOW - 20 * MIN));
+  const queuedEnd = await expectOk('then its finish, tapped 5 minutes ago', rec('u_f3', 'end', { recorded_at: iso(NOW - 5 * MIN) }));
+  expectEqual('the hours between the two taps', queuedEnd.attendance.hours, 0.25);
+  await expectError('a tap time in the future (beyond a phone clock a little fast)', 'time_in_future', rec('u_f4', 'start', { recorded_at: iso(NOW + 10 * MIN) }));
+  await expectError('a chosen time after the tap', 'time_in_future', rec('u_f4', 'start', { recorded_at: iso(NOW - 20 * MIN), at: iso(NOW - 10 * MIN) }));
+
+}
+
 // ---------------------------------------------------------------------------
 console.log('\n— confirming hours and points');
 await expectError("confirm someone else's hours", 'not_your_attendance', call('POST', `/attendance/${ended.id}/confirm`, mariam));
@@ -247,6 +330,25 @@ await settle();
 expectEqual('auto-close → participant asked to confirm, once', pushesTo(TOKEN_F1).map((p) => p.data.attendance_id), [closed.id]);
 expectEqual('English phone, English text', pushesTo(TOKEN_F1)[0]?.body.startsWith('Your activity at'), true);
 await expectError('scheduler endpoint off without a secret', 'not_found', call('POST', '/internal/tick'));
+
+// A start and a finish tapped during the event with no signal, sent after it
+// (and after the auto-close above).
+{
+  const MIN = 60_000;
+  const ends = new Date(running.ends_at).getTime();
+  const rec = (userId: string, kind: 'start' | 'end', body: object) => call('POST', `/events/e01/attendance/${userId}/${kind}`, khaled, body);
+  // The supervisor's phone stayed offline until three hours after the event.
+  h.setClock(ends + 3 * 60 * MIN);
+  await expectError('a start sent now, after the event, without a tap time', 'event_closed', rec('u_f4', 'start', {}));
+  await expectOk('a start tapped during the event, sent after it', rec('u_f4', 'start', { recorded_at: iso(ends - 120 * MIN) }));
+  // Anyone opening the app closes attendance left open at the event's end.
+  await call('GET', '/events/e01/roster', khaled);
+  const late = await expectOk('its finish, tapped during the event', rec('u_f4', 'end', { recorded_at: iso(ends - 60 * MIN) }));
+  expectEqual("the supervisor's time replaces the automatic close", [late.attendance.hours, late.attendance.end_source], [1, 'live']);
+  await expectError('a finish sent now, without a tap time, once it has ended', 'already_ended', rec('u_f4', 'end', {}));
+  await expectError('a tap time more than two days old', 'sent_too_late', rec('u_mariam', 'start', { recorded_at: iso(ends + 3 * 60 * MIN - 49 * 60 * MIN) }));
+  h.setClock(ends + 1000);
+}
 
 // ---------------------------------------------------------------------------
 console.log('\n— proposing an event in the app');

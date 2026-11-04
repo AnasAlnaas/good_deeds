@@ -5,7 +5,8 @@
 // Every cheat must be refused.
 // Run: npm run check:rules
 
-import type { EventProposal, ProfileEdit, ReportBody } from '../src/data/api';
+import type { EventProposal, ProfileEdit, ReportBody, RosterResponse } from '../src/data/api';
+import { rosterWithQueued } from '../src/data/queuedRoster';
 import type { Db } from '../src/data/types';
 import { buildSeed } from '../src/demo/seed';
 import * as server from '../src/demo/server';
@@ -339,6 +340,48 @@ console.log('\n— reactions to a notice');
   expectEqual('and he can take it back', counts(server.reactToNotice(switched, 'u_ahmad', 'e01', question.id, null, NOW), 'u_ahmad', question).my_reaction, null);
   expectEqual('a deleted notice takes its reactions with it', server.deleteNotice(switched, 'u_khaled', 'e01', question.id).notice_reactions.some((r) => r.notice_id === question.id), false);
   expectError('a kind of notice that does not exist', 'not_found', () => server.postNotice(db, 'u_khaled', 'e01', 'نعم أم لا؟', 'poll' as never, NOW));
+}
+
+console.log('\n— attendance kept on the phone with no connection');
+{
+  const MIN = 60_000;
+  const db = buildSeed(NOW);
+  const e01 = db.events.find((e) => e.id === 'e01')!;
+  const ends = new Date(e01.ends_at).getTime();
+  const base = { actorId: 'u_khaled', participantId: 'u_f3', actorIsOrganizer: true, event: e01, attendance: undefined };
+  const reg = db.registrations.find((r) => r.event_id === 'e01' && r.user_id === 'u_f3');
+  const late = ends + 3 * 60 * MIN;
+  const start = rules.decideRecordStart({ ...base, registration: reg, recordedAt: ends - 60 * MIN, now: late });
+  expectEqual('a start tapped during the event, sent after it', [start.started_at, start.start_source], [new Date(ends - 60 * MIN).toISOString(), 'live']);
+  expectError('the same, sent without its tap time', 'event_closed', () => rules.decideRecordStart({ ...base, registration: reg, now: late }));
+  expectError('a tap time two days and more ago', 'sent_too_late', () =>
+    rules.decideRecordStart({ ...base, registration: reg, recordedAt: late - 49 * 60 * MIN, now: late }),
+  );
+  expectError('a tap time ahead of the server by more than a phone clock may be', 'time_in_future', () =>
+    rules.decideRecordStart({ ...base, registration: reg, recordedAt: NOW + 10 * MIN, now: NOW }),
+  );
+
+  // As the server sends it: who joined, and what it has recorded for each.
+  const roster = {
+    event: { id: 'e01' } as RosterResponse['event'],
+    participants: server.joinedUsers(db, 'e01').map((u) => ({
+      user: { id: u.id, full_name: u.full_name, avatar_url: null, gender: u.gender },
+      attendance: server.attendanceOf(db, 'e01', u.id) ?? null,
+      i_warned: false,
+    })),
+  };
+  const queued = [
+    { id: 'q1', kind: 'start' as const, eventId: 'e01', userId: 'u_f3', name: 'f3', recordedAt: NOW - 30 * MIN },
+    { id: 'q2', kind: 'end' as const, eventId: 'e01', userId: 'u_f3', name: 'f3', recordedAt: NOW - 6 * MIN },
+    { id: 'q3', kind: 'end' as const, eventId: 'e01', userId: 'u_f1', name: 'f1', at: NOW - 10 * MIN, recordedAt: NOW - 5 * MIN },
+    { id: 'q4', kind: 'start' as const, eventId: 'e02', userId: 'u_f4', name: 'f4', recordedAt: NOW },
+  ];
+  const shown = rosterWithQueued(roster, queued);
+  const of = (id: string) => shown.find((p) => p.user.id === id)!;
+  expectEqual('a start and finish kept on the phone show on the roster', [of('u_f3').attendance?.hours, of('u_f3').queued], [0.4, true]);
+  expectEqual('a finish for someone the server has working', [of('u_f1').attendance?.ended_at, of('u_f1').queued], [new Date(NOW - 10 * MIN).toISOString(), true]);
+  expectEqual("another event's records stay out", of('u_f4').queued, false);
+  expectEqual('people with nothing kept on the phone are as the server says', of('u_mariam'), { ...roster.participants.find((p) => p.user.id === 'u_mariam'), queued: false });
 }
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');

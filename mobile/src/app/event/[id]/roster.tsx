@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
@@ -6,20 +7,27 @@ import { Button } from '@/components/Button';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
 import { Badge, Card, EmptyState, QueryState } from '@/components/ui';
+import { useOnline } from '@/data/network';
+import { dismissRefused, rosterWithQueued, useOutbox } from '@/data/outbox';
 import { useRoster } from '@/data/queries';
 import { END_GRACE_MINUTES } from '@/demo/placeholders';
 import { count, fmt, time } from '@/i18n/format';
 import { useApp, useMe } from '@/state/app';
 import { colors, space } from '@/theme/tokens';
-import { WARN_DAYS_AFTER_EVENT } from '../../../../../shared/rules';
+import { effectiveStatus, WARN_DAYS_AFTER_EVENT } from '../../../../../shared/rules';
 
 // Screen 14: the supervisor's list of joined participants and each one's state.
 // From here the supervisor also records a warning for someone, once the event has started.
+// It works with no connection too: the list is the one last fetched, and what
+// is recorded meanwhile is kept on the phone and shown here until it is sent
+// (data/outbox.ts).
 export default function RosterScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { s, now } = useApp();
   const me = useMe();
   const query = useRoster(id);
+  const outbox = useOutbox();
+  const online = useOnline();
   if (!query.data) {
     return (
       <Screen back title={s.roster.title}>
@@ -27,8 +35,12 @@ export default function RosterScreen() {
       </Screen>
     );
   }
-  const { event, participants } = query.data;
-  const status = event.status;
+  const { event } = query.data;
+  const participants = rosterWithQueued(query.data, outbox.queued);
+  const waiting = outbox.queued.filter((q) => q.eventId === event.id).length;
+  const refused = outbox.refused.filter((r) => r.eventId === event.id);
+  // From the event's times, not the status fetched then: the list may be from before the event began.
+  const status = effectiveStatus(event, now);
   const canStart = status === 'running';
   const canEnd = now >= new Date(event.starts_at).getTime() && now <= new Date(event.ends_at).getTime() + END_GRACE_MINUTES * 60_000;
   // The same window as rules.assertCanWarn; the server decides.
@@ -49,8 +61,28 @@ export default function RosterScreen() {
           <Txt color={colors.inkMuted}>{s.roster.notRunning}</Txt>
         </Card>
       )}
+      {waiting > 0 && (
+        <Card style={styles.notice}>
+          <View style={styles.head}>
+            <Ionicons name={online ? 'cloud-upload-outline' : 'cloud-offline-outline'} size={22} color={colors.primary} />
+            <Txt style={styles.flex}>{online ? s.roster.sending : fmt(s.roster.queuedNote, { n: waiting })}</Txt>
+          </View>
+        </Card>
+      )}
+      {refused.map((r) => (
+        <Card key={r.id} style={styles.refused}>
+          <Txt color={colors.danger}>
+            {fmt(s.roster.refused, {
+              kind: r.kind === 'start' ? s.roster.refusedStart : s.roster.refusedEnd,
+              name: r.name,
+              reason: s.errors[r.code],
+            })}
+          </Txt>
+          <Button variant="quiet" label={s.roster.refusedOk} onPress={() => dismissRefused(r.id)} />
+        </Card>
+      ))}
       {participants.length === 0 && <EmptyState icon="people-outline" text={s.roster.empty} />}
-      {participants.map(({ user: u, attendance: a, i_warned }) => {
+      {participants.map(({ user: u, attendance: a, i_warned, queued }) => {
         const state = !a ? 'notStarted' : a.ended_at ? 'done' : 'working';
         const self = u.id === me.id;
         return (
@@ -66,6 +98,7 @@ export default function RosterScreen() {
                 icon={state === 'working' ? 'radio-button-on' : state === 'done' ? 'checkmark-circle' : undefined}
               />
             </View>
+            {queued && <Badge label={s.roster.queuedBadge} color={colors.warning} icon="cloud-upload-outline" />}
             {a && (
               <Txt variant="caption" color={colors.inkMuted}>
                 {fmt(s.roster.startedAt, { time: time(a.started_at, s) })}
@@ -98,6 +131,7 @@ export default function RosterScreen() {
 
 const styles = StyleSheet.create({
   notice: { backgroundColor: colors.surfaceAlt },
+  refused: { borderWidth: 1, borderColor: colors.danger },
   head: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   flex: { flex: 1 },
 });

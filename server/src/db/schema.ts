@@ -41,6 +41,7 @@ export const adminAction = pgEnum('admin_action', [
   'handle_report',
   'uphold_warning',
   'withdraw_warning',
+  'issue_reset_code',
 ]);
 export const reportCategory = pgEnum('report_category', ['behaviour', 'safety', 'event', 'app', 'other']);
 export const reportStatus = pgEnum('report_status', ['open', 'handled']);
@@ -302,9 +303,25 @@ export const login_codes = pgTable(
     attempts: integer('attempts').notNull().default(0),
     created_at: at('created_at').notNull(),
     consumed_at: at('consumed_at'),
+    /** The admin who made it, for a password reset; empty for a code sent by SMS. */
+    issued_by: text('issued_by').references(() => users.id),
   },
   (t) => [index('login_codes_phone').on(t.phone, t.created_at)],
 );
+
+// A person's password, apart from `users` so it never travels with a user row.
+// Only a slow hash is kept (server/src/password.ts). No row = no password yet
+// (an account made before passwords): it is set with a reset code.
+// Wrong passwords are counted here, per account, over a day (routes/auth.ts).
+export const user_passwords = pgTable('user_passwords', {
+  user_id: text('user_id')
+    .primaryKey()
+    .references(() => users.id),
+  hash: text('hash').notNull(),
+  failed_count: integer('failed_count').notNull().default(0),
+  failed_since: at('failed_since'),
+  updated_at: at('updated_at').notNull(),
+});
 
 // Not in Data_Model.md yet: where to send a person's notifications. One row
 // per phone; signing in on a phone moves its token to the new account.

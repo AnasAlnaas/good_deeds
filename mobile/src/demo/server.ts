@@ -332,7 +332,6 @@ export function recordStart(
     end_source: null,
     hours: null,
     recorded_by: actorId,
-    recorded_at: new Date(now).toISOString(),
     participant_status: 'pending',
     participant_acted_at: null,
   });

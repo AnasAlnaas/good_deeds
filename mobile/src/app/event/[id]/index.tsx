@@ -3,11 +3,13 @@ import { StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/components/Avatar';
 import { Button } from '@/components/Button';
-import { NoticeReactions } from '@/components/NoticeReactions';
+import { NoticeReactions, withReaction } from '@/components/NoticeReactions';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
 import { Badge, Card, InfoRow, QueryState, Row, SectionTitle } from '@/components/ui';
-import { useEvent, useMeSummary } from '@/data/queries';
+import type { EventNoticeItem } from '@/data/api';
+import type { NoticeReactionKind } from '@/data/types';
+import { useEvent, useMeSummary, useUpdateEvent } from '@/data/queries';
 import { day, dayTimeRange, fmt, time } from '@/i18n/format';
 import * as dialog from '@/lib/dialog';
 import { openDirections } from '@/lib/directions';
@@ -24,6 +26,7 @@ export default function EventDetail() {
   const { run, busy } = useAction();
   const query = useEvent(id);
   const summary = useMeSummary();
+  const updateEvent = useUpdateEvent(id);
   if (!query.data) {
     return (
       <Screen back>
@@ -44,6 +47,15 @@ export default function EventDetail() {
   // Someone who was at the event may report a problem there (a report about anything else starts from the profile).
   const canReport =
     !!summary.data?.can_report && (organizer || reg?.status === 'joined') && status !== 'draft' && status !== 'rejected';
+
+  // The reaction shows at once; the server's answer follows. If it does not go
+  // through (offline, say), the notice goes back to how it was.
+  const react = async (notice: EventNoticeItem, reaction: NoticeReactionKind | null) => {
+    const put = (next: EventNoticeItem) =>
+      updateEvent((e) => ({ ...e, notices: e.notices?.map((n) => (n.id === notice.id ? next : n)) ?? null }));
+    put(withReaction(notice, reaction));
+    if (!(await run((b) => b.reactToNotice(event.id, notice.id, reaction)))) put(notice);
+  };
 
   const join = async () => {
     if (await run((b) => b.startJoin(event.id))) router.push(`/event/${event.id}/terms`);
@@ -179,7 +191,7 @@ export default function EventDetail() {
               <Txt variant="caption" color={colors.inkMuted}>
                 {fmt(s.event.noticeBy, { name: n.author?.full_name ?? s.event.deletedAuthor, time: `${day(n.created_at, s, now)} ${time(n.created_at, s)}` })}
               </Txt>
-              <NoticeReactions notice={n} disabled={busy} onReact={(reaction) => run((b) => b.reactToNotice(event.id, n.id, reaction))} />
+              <NoticeReactions notice={n} disabled={busy} onReact={(reaction) => react(n, reaction)} />
               {n.can_delete && <Button variant="quiet" icon="trash-outline" label={s.event.deleteNotice} disabled={busy} onPress={() => deleteNotice(n.id)} />}
             </Card>
           ))}

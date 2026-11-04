@@ -8,6 +8,12 @@
       "port": 8081
     },
     {
+      "name": "mobile-web-local",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "set EXPO_PUBLIC_API_URL=http://localhost:3000&& npm --prefix mobile run web -- --port 8082"],
+      "port": 8082
+    },
+    {
       "name": "server",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "server", "run", "dev"],

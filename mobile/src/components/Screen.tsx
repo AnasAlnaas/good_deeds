@@ -6,7 +6,7 @@ import { goBack } from '@/lib/goBack';
 import { useApp } from '@/state/app';
 import { colors, space } from '@/theme/tokens';
 import { Txt } from './Txt';
-import { IconButton } from './ui';
+import { IconButton, OfflineBanner } from './ui';
 
 interface Props {
   title?: string;
@@ -41,6 +41,9 @@ export function Screen({ title, back, scroll = true, scrollEnabled, background =
           )}
         </View>
       )}
+      <View style={styles.banner}>
+        <OfflineBanner />
+      </View>
       {/* The app draws edge to edge, so Android no longer shrinks the window for
           the keyboard: without this, it covers the fields and buttons below. */}
       <KeyboardAvoidingView style={styles.body} behavior="padding">
@@ -66,6 +69,7 @@ const styles = StyleSheet.create({
     paddingVertical: space.sm,
   },
   title: { flex: 1 },
+  banner: { paddingHorizontal: space.md },
   body: { flex: 1 },
   footer: {
     paddingHorizontal: space.md,

@@ -5,12 +5,13 @@
 import { sql } from 'drizzle-orm';
 
 import { buildSeed } from '../../../shared/demo-seed';
+import { hashPassword } from '../password';
 import type { Database } from './client';
 import { dated } from './rows';
 import * as s from './schema';
 
 const ALL_TABLES = [
-  'reports', 'warnings', 'admin_actions', 'user_photos', 'push_tokens', 'login_codes', 'points_ledger', 'attendance', 'term_acceptances', 'registrations', 'event_terms',
+  'reports', 'warnings', 'admin_actions', 'user_photos', 'push_tokens', 'login_codes', 'user_passwords', 'points_ledger', 'attendance', 'term_acceptances', 'registrations', 'event_terms',
   'notice_reactions', 'event_notices', 'event_organizers', 'events', 'levels', 'branches', 'users',
 ];
 
@@ -27,10 +28,9 @@ export async function seedReference(db: Database) {
 }
 
 /**
- * Development only: an admin to sign in to the admin panel with (the code
- * appears in the server log). The offline demo has no admin, so it is not in
- * shared/demo-seed.ts. In production, make the first admin with
- * `npm run make-admin -- <phone>`.
+ * Development only: an admin to sign in to the admin panel with. The offline
+ * demo has no admin, so it is not in shared/demo-seed.ts. In production, make
+ * the first admin with ADMIN_PHONES or `npm run make-admin -- <phone>`.
  */
 export const DEV_ADMIN = {
   id: 'u_admin',
@@ -42,11 +42,18 @@ export const DEV_ADMIN = {
   is_association_member: true,
 };
 
+/** Development and tests only: every demo account (and DEV_ADMIN) signs in with this password. */
+export const DEMO_PASSWORD = 'good-deeds-demo';
+
 /** The demo's people and events, with times relative to `nowMs` (one event is always running). */
 export async function seedDemo(db: Database, nowMs: number) {
   const d = buildSeed(nowMs);
+  const users = [...d.users.map(dated), { ...DEV_ADMIN, created_at: new Date(nowMs) }];
+  // One hash for them all: hashing is slow on purpose, and this is not a real secret.
+  const hash = await hashPassword(DEMO_PASSWORD);
   await db.transaction(async (tx) => {
-    await tx.insert(s.users).values([...d.users.map(dated), { ...DEV_ADMIN, created_at: new Date(nowMs) }]);
+    await tx.insert(s.users).values(users);
+    await tx.insert(s.user_passwords).values(users.map((u) => ({ user_id: u.id, hash, updated_at: new Date(nowMs) })));
     await tx.insert(s.levels).values(d.levels);
     await tx.insert(s.events).values(d.events.map(dated));
     await tx.insert(s.event_organizers).values(d.event_organizers);

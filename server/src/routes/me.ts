@@ -181,6 +181,7 @@ export const meRoutes = new Hono<AppEnv>()
       await tx.delete(s.push_tokens).where(eq(s.push_tokens.user_id, userId));
       await tx.delete(s.user_photos).where(eq(s.user_photos.user_id, userId));
       await tx.delete(s.login_codes).where(eq(s.login_codes.phone, phone));
+      await tx.delete(s.user_passwords).where(eq(s.user_passwords.user_id, userId));
       await eraseNameFromAdminLog(tx, userId);
     });
     return c.body(null, 204);

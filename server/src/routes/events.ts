@@ -56,7 +56,12 @@ import { type AppEnv, readBody } from '../http';
 import { notifyEventNotice, notifyHoursToConfirm, notifySupervisorAdded, notifyWarningGiven } from '../notify';
 import { proposalInput, writeLinks, writeTerms } from './event-input';
 
-const recordTimeBody = z.object({ at: z.iso.datetime({ offset: true }).optional() });
+// `recorded_at`: the record was made on the phone without a connection, at that time (rules.decideRecordStart).
+const recordTimeBody = z.object({
+  at: z.iso.datetime({ offset: true }).optional(),
+  recorded_at: z.iso.datetime({ offset: true }).optional(),
+});
+const recordedAt = (body: { recorded_at?: string }) => (body.recorded_at ? Date.parse(body.recorded_at) : undefined);
 // An empty reason is the rule's to refuse (reason_required), as in the offline demo.
 const warnBody = z.object({ reason: z.string().max(rules.REASON_MAX) });
 const reactBody = z.object({ reaction: z.string() });
@@ -556,6 +561,7 @@ export const eventRoutes = new Hono<AppEnv>()
         registration,
         attendance: await attendanceOf(tx, id, userId),
         startedAt: body.at ? Date.parse(body.at) : undefined,
+        recordedAt: recordedAt(body),
         now: t,
       });
       await tx.insert(s.attendance).values({
@@ -565,7 +571,7 @@ export const eventRoutes = new Hono<AppEnv>()
         started_at: new Date(start.started_at),
         start_source: start.start_source,
         recorded_by: me.id,
-        recorded_at: new Date(t),
+        recorded_at: new Date(start.recorded_at),
       });
       return (await attendanceOf(tx, id, userId))!;
     });
@@ -588,6 +594,7 @@ export const eventRoutes = new Hono<AppEnv>()
         event,
         attendance: current,
         endedAt: body.at ? Date.parse(body.at) : undefined,
+        recordedAt: recordedAt(body),
         now: t,
       });
       await tx

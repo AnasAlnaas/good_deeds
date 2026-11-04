@@ -17,10 +17,11 @@ import type {
   EventInput,
   HandleReportBody,
   HoursReportRow,
+  ResetCodeResponse,
   ResolveDisputeBody,
   StatusChangeBody,
 } from '../../shared/admin-api';
-import type { LoginResponse, RequestCodeResponse, VerifyCodeBody } from '../../shared/api';
+import type { LoginResponse, ResetPasswordBody, SignInBody } from '../../shared/api';
 import type { ReportStatus, WarningStatus } from '../../shared/types';
 import type { ErrorCode } from './strings';
 
@@ -67,8 +68,8 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 const enc = encodeURIComponent;
 
 export const api = {
-  requestCode: (phone: string) => call<RequestCodeResponse>('POST', '/auth/request-code', { phone }),
-  verifyCode: (body: VerifyCodeBody) => call<LoginResponse>('POST', '/auth/verify-code', body),
+  signIn: (body: SignInBody) => call<LoginResponse>('POST', '/auth/sign-in', body),
+  resetPassword: (body: ResetPasswordBody) => call<LoginResponse>('POST', '/auth/reset-password', body),
 
   overview: () => call<AdminOverview>('GET', '/admin/overview'),
   meta: () => call<AdminMeta>('GET', '/admin/meta'),
@@ -76,6 +77,7 @@ export const api = {
   users: (q: string) => call<AdminUserRow[]>('GET', `/admin/users${q ? `?q=${enc(q)}` : ''}`),
   changeRole: (id: string, body: ChangeRoleBody) => call<void>('PATCH', `/admin/users/${enc(id)}`, body),
   removePhoto: (id: string) => call<void>('DELETE', `/admin/users/${enc(id)}/photo`),
+  resetCode: (id: string) => call<ResetCodeResponse>('POST', `/admin/users/${enc(id)}/reset-code`),
   /** A profile photo (users.avatar_url). It is served only with the sign-in token, so an <img src> cannot load it directly. */
   photo: async (avatarUrl: string, signal?: AbortSignal): Promise<Blob> => {
     const res = await fetch(`${API_URL}${avatarUrl}`, { headers: token ? { Authorization: `Bearer ${token}` } : {}, signal });

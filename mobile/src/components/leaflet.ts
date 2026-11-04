@@ -1,10 +1,13 @@
 // What the two maps share (OsmMap: the events; LocationPicker: an event's
 // place): OpenStreetMap tiles drawn by Leaflet inside a web page. Each runs in a
 // WebView on a phone and in an iframe in the web build (the .web.tsx files).
+// Leaflet itself is inside the page (leaflet-lib.ts), so a map opens at once
+// and without the internet; only the tiles come from the network.
 
 import { StyleSheet } from 'react-native';
 
 import { colors, radius } from '@/theme/tokens';
+import { LEAFLET_CSS, LEAFLET_JS } from './leaflet-lib';
 
 export interface LatLng {
   lat: number;
@@ -31,10 +34,8 @@ export const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 export function leafletPage(script: string, extraCss = '') {
   return `<!doctype html><html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-  integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin=""></script>
+<style>${LEAFLET_CSS}</style>
+<script>${LEAFLET_JS}</script>
 <style>
   html, body, #map { margin: 0; height: 100%; background: ${colors.surfaceAlt}; }
   /* DESIGN.md: the map is context, the pins are content. */
@@ -42,9 +43,11 @@ export function leafletPage(script: string, extraCss = '') {
   .leaflet-control-attribution { font: 11px sans-serif; border-radius: 8px 0 0 0; }
   ${extraCss}
 </style></head><body><div id="map"></div><script>
+  // crossOrigin: the tiles may be copied into a picture (the events map's snapshot).
+  // keepBuffer: tiles just off screen are kept, so panning back shows them at once.
   const tiles = (map) => {
     map.attributionControl.setPrefix(false);
-    L.tileLayer('${TILE_URL}', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+    return L.tileLayer('${TILE_URL}', { maxZoom: 19, attribution: '© OpenStreetMap', crossOrigin: true, keepBuffer: 4 }).addTo(map);
   };
   ${script}
 </script></body></html>`;
@@ -81,21 +84,57 @@ export interface MapPin {
   selected: boolean;
 }
 
+export interface MapView {
+  lat: number;
+  lng: number;
+  zoom: number;
+}
+
+/**
+ * A picture of the events map as it was last seen with every tile loaded, and
+ * the area it shows ([south, west], [north, east]). Kept on the phone
+ * (mapCache.ts) and laid under the tiles, so the map still shows its streets
+ * where no tile can be loaded (no internet); also shown while the map starts.
+ */
+export interface MapSnapshot {
+  url: string;
+  bounds: [[number, number], [number, number]];
+  view: MapView;
+}
+
+/** The events map's blue-grey look: grey streets, tinted toward slate and darkened. */
+const EVENTS_TILE_FILTER = 'grayscale(1) brightness(0.5) contrast(1.55) sepia(0.5) hue-rotate(172deg) saturate(2)';
+
 /**
  * The events map: blue-grey streets, green pins. Only for seeing where events
  * are; directions open the phone's maps app (src/lib/directions.ts).
- * `bottomInset` keeps the OpenStreetMap credit above what floats at the bottom.
- * The page answers `window.setPins(pins)` and `window.recenter()`.
+ * It opens at `start` (where it was left) over `snapshot`; `home` is where the
+ * recenter button goes. `bottomInset` keeps the OpenStreetMap credit above what
+ * floats at the bottom.
+ * The page answers `window.setPins(pins)` and `window.recenter()`. It posts
+ * `ready`; `shown` once the first tiles are drawn (or could not be loaded);
+ * `view` after each move; `snapshot` once every tile of a view is in; and
+ * `select` and `clear` for the pins.
  */
-export function eventsPage(center: { lat: number; lng: number; zoom: number }, bottomInset: number, post: string) {
+export function eventsPage(
+  { home, start, snapshot }: { home: MapView; start: MapView; snapshot: MapSnapshot | null },
+  bottomInset: number,
+  post: string,
+) {
+  const underlay = snapshot
+    ? `L.imageOverlay(${JSON.stringify(snapshot.url)}, ${JSON.stringify(snapshot.bounds)}, { pane: 'snapshot', interactive: false }).addTo(map);`
+    : '';
   return leafletPage(
     `
   const post = ${post};
-  const map = L.map('map', { zoomControl: false }).setView([${center.lat}, ${center.lng}], ${center.zoom});
-  tiles(map);
+  const map = L.map('map', { zoomControl: false }).setView([${start.lat}, ${start.lng}], ${start.zoom});
+  // The last picture of the map lies under the tiles: where a tile cannot load, it shows instead.
+  map.createPane('snapshot').style.zIndex = 150;
+  ${underlay}
+  const tileLayer = tiles(map);
   const layer = L.layerGroup().addTo(map);
   map.on('click', () => post({ type: 'clear' }));
-  window.recenter = () => map.flyTo([${center.lat}, ${center.lng}], ${center.zoom}, { duration: 0.6 });
+  window.recenter = () => map.flyTo([${home.lat}, ${home.lng}], ${home.zoom}, { duration: 0.6 });
   window.setPins = (pins) => {
     layer.clearLayers();
     // The chosen pin last, so it sits on top.
@@ -108,12 +147,63 @@ export function eventsPage(center: { lat: number; lng: number; zoom: number }, b
         fillColor: '${colors.accent}', fillOpacity: p.dim ? 0.45 : 1, opacity: p.dim ? 0.6 : 1,
       }).on('click', select).addTo(layer);
     }
+    // The first pins fade in instead of popping up.
+    if (pins.length) map.getContainer().classList.add('pins');
   };
+
+  // The first tiles are drawn, or failed (no internet): the app can uncover the map.
+  let shown = false;
+  const show = () => { if (!shown) { shown = true; post({ type: 'shown' }); } };
+  tileLayer.once('load', show);
+  setTimeout(show, 2500);
+
+  const viewNow = () => { const c = map.getCenter(); return { lat: c.lat, lng: c.lng, zoom: map.getZoom() }; };
+  let failed = 0;
+  tileLayer.on('loading', () => { failed = 0; });
+  tileLayer.on('tileerror', () => { failed += 1; });
+
+  // A picture of what is on screen, drawn from the tiles themselves with the
+  // same look, once every tile of the view has loaded. Not when one failed, so
+  // a picture with holes never replaces a whole one.
+  const snap = () => {
+    if (tileLayer.isLoading() || failed) return;
+    const size = map.getSize();
+    const scale = Math.min(window.devicePixelRatio || 1, 2);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(size.x * scale);
+    canvas.height = Math.round(size.y * scale);
+    const ctx = canvas.getContext('2d');
+    if (!ctx || !('filter' in ctx)) return;
+    ctx.scale(scale, scale);
+    ctx.fillStyle = '${colors.slate}';
+    ctx.fillRect(0, 0, size.x, size.y);
+    ctx.filter = '${EVENTS_TILE_FILTER}';
+    const box = map.getContainer().getBoundingClientRect();
+    let drawn = 0;
+    for (const img of document.querySelectorAll('.leaflet-tile-pane img.leaflet-tile-loaded')) {
+      const r = img.getBoundingClientRect();
+      if (r.right <= box.left || r.left >= box.right || r.bottom <= box.top || r.top >= box.bottom) continue;
+      if (getComputedStyle(img).opacity === '0') continue;
+      ctx.drawImage(img, r.left - box.left, r.top - box.top, r.width, r.height);
+      drawn += 1;
+    }
+    if (!drawn) return;
+    let url;
+    try { url = canvas.toDataURL('image/jpeg', 0.72); } catch (e) { return; }
+    const b = map.getBounds();
+    post({ type: 'snapshot', snapshot: { url, bounds: [[b.getSouth(), b.getWest()], [b.getNorth(), b.getEast()]], view: viewNow() } });
+  };
+  let timer = 0;
+  const snapSoon = () => { clearTimeout(timer); timer = setTimeout(snap, 1200); };
+  map.on('movestart', () => clearTimeout(timer));
+  map.on('moveend', () => { post({ type: 'view', view: viewNow() }); snapSoon(); });
+  tileLayer.on('load', snapSoon);
   post({ type: 'ready' });`,
     `
-  /* The picture's blue-grey map: grey streets, tinted toward slate and darkened. */
-  .leaflet-tile-pane { filter: grayscale(1) brightness(0.5) contrast(1.55) sepia(0.5) hue-rotate(172deg) saturate(2); }
+  .leaflet-tile-pane { filter: ${EVENTS_TILE_FILTER}; }
   html, body, #map { background: ${colors.slate}; }
-  .leaflet-bottom { margin-bottom: ${bottomInset}px; }`,
+  .leaflet-bottom { margin-bottom: ${bottomInset}px; }
+  .leaflet-overlay-pane { opacity: 0; transition: opacity 0.35s ease-out; }
+  .pins .leaflet-overlay-pane { opacity: 1; }`,
   );
 }

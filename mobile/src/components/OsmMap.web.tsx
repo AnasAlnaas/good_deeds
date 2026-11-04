@@ -11,10 +11,12 @@ export type { MapPin } from './leaflet';
 
 type MapWindow = Window & { setPins?(pins: unknown): void; recenter?(): void };
 
-export function OsmMap({ center, pins, bottomInset, recenter, onSelect, onClear }: OsmMapProps) {
+export function OsmMap({ home, pins, bottomInset, recenter, onSelect, onClear }: OsmMapProps) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [loaded, setLoaded] = useState(false);
-  const [html] = useState(() => eventsPage(center, bottomInset, "(m) => window.parent.postMessage({ goodDeedsMap: m }, '*')"));
+  const [html] = useState(() =>
+    eventsPage({ home, start: home, snapshot: null }, bottomInset, "(m) => window.parent.postMessage({ goodDeedsMap: m }, '*')"),
+  );
   const page = () => frame.current?.contentWindow as MapWindow | null | undefined;
 
   useEffect(() => {

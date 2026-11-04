@@ -1,4 +1,6 @@
+import { useEffect, useRef, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withSequence, withSpring, withTiming } from 'react-native-reanimated';
 
 import type { EventNoticeItem } from '@/data/api';
 import type { NoticeReactionKind } from '@/data/types';
@@ -8,6 +10,19 @@ import { colors, radius, space } from '@/theme/tokens';
 import { Txt } from './Txt';
 
 const EMOJI: Record<NoticeReactionKind, string> = { noted: '✅', agree: '👍', disagree: '👎', undecided: '🤔', sad: '😢' };
+
+/** The notice as it is once the person's reaction is `reaction` (null: taken back), to show before the server answers. */
+export function withReaction(notice: EventNoticeItem, reaction: NoticeReactionKind | null): EventNoticeItem {
+  const before = notice.my_reaction;
+  return {
+    ...notice,
+    my_reaction: reaction,
+    reactions: notice.reactions.map((r) => ({
+      ...r,
+      count: r.count - (r.reaction === before ? 1 : 0) + (r.reaction === reaction ? 1 : 0),
+    })),
+  };
+}
 
 /**
  * The reactions under a notice (an announcement's, or a question's answers),
@@ -21,14 +36,12 @@ export function NoticeReactions({ notice, disabled, onReact }: { notice: EventNo
       {notice.reactions.map(({ reaction, count }) => {
         const mine = notice.my_reaction === reaction;
         return (
-          <Pressable
+          <Pill
             key={reaction}
-            accessibilityRole="button"
-            accessibilityLabel={`${s.reactions[reaction]}: ${num(count)}`}
-            accessibilityState={{ selected: mine, disabled }}
+            mine={mine}
             disabled={disabled}
-            onPress={() => onReact(mine ? null : reaction)}
-            style={({ pressed }) => [styles.pill, mine && styles.mine, pressed && styles.pressed]}>
+            label={`${s.reactions[reaction]}: ${num(count)}`}
+            onPress={() => onReact(mine ? null : reaction)}>
             <Txt>{EMOJI[reaction]}</Txt>
             <Txt variant="caption" color={mine ? colors.accentInk : colors.ink} label>
               {s.reactions[reaction]}
@@ -38,10 +51,34 @@ export function NoticeReactions({ notice, disabled, onReact }: { notice: EventNo
                 {num(count)}
               </Txt>
             )}
-          </Pressable>
+          </Pill>
         );
       })}
     </View>
+  );
+}
+
+// A pill gives a small bounce when it becomes the person's reaction.
+function Pill({ mine, disabled, label, onPress, children }: { mine: boolean; disabled?: boolean; label: string; onPress(): void; children: ReactNode }) {
+  const scale = useSharedValue(1);
+  const was = useRef(mine);
+  useEffect(() => {
+    if (mine && !was.current) scale.set(withSequence(withTiming(1.12, { duration: 110 }), withSpring(1, { damping: 12, stiffness: 260 })));
+    was.current = mine;
+  }, [mine, scale]);
+  const style = useAnimatedStyle(() => ({ transform: [{ scale: scale.get() }] }));
+  return (
+    <Animated.View style={style}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityState={{ selected: mine, disabled }}
+        disabled={disabled}
+        onPress={onPress}
+        style={({ pressed }) => [styles.pill, mine && styles.mine, pressed && styles.pressed]}>
+        {children}
+      </Pressable>
+    </Animated.View>
   );
 }
 

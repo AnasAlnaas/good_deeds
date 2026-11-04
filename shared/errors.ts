@@ -46,7 +46,8 @@ export type ApiErrorCode =
   | 'cannot_remove_supervisor'
   | 'message_required'
   | 'too_many_notices'
-  | 'not_your_notice';
+  | 'not_your_notice'
+  | 'sent_too_late';
 
 export class ApiError extends Error {
   readonly code: ApiErrorCode;

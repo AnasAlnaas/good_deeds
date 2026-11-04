@@ -35,6 +35,11 @@ export type ServerErrorCode =
   | 'try_later'
   | 'profile_required'
   | 'delivery_not_configured'
+  | 'wrong_password'
+  | 'password_not_set'
+  | 'password_too_short'
+  | 'password_too_simple'
+  | 'phone_taken'
   | 'photo_invalid'
   | 'too_large'
   | 'internal_error';
@@ -51,6 +56,33 @@ export interface ErrorBody {
 export type PublicUser = Pick<User, 'id' | 'full_name' | 'avatar_url' | 'gender'>;
 
 // ---------- sign-in ----------
+
+/** POST /api/auth/sign-in: the account's phone number and its password. */
+export interface SignInBody {
+  phone: string;
+  password: string;
+}
+
+/**
+ * POST /api/auth/sign-up: a new account. Nobody checks by SMS that the phone is
+ * the person's; one who finds their number taken asks the association, which
+ * gives them a reset code (POST /api/admin/users/:id/reset-code).
+ */
+export interface SignUpBody {
+  phone: string;
+  password: string;
+  profile: { full_name: string; gender: Gender; city: string };
+}
+
+/** POST /api/auth/reset-password: a new password, with the one-time code an admin gave the person. */
+export interface ResetPasswordBody {
+  phone: string;
+  code: string;
+  password: string;
+}
+
+// The SMS sign-in below is kept for when an SMS provider is affordable; the app
+// does not use it now.
 
 /** POST /api/auth/request-code */
 export interface RequestCodeBody {
@@ -204,9 +236,14 @@ export interface RosterResponse {
   }[];
 }
 
-/** POST /api/events/:id/attendance/:userId/start and /end. `at` absent = now. */
+/**
+ * POST /api/events/:id/attendance/:userId/start and /end. `at` absent = when it
+ * is recorded. `recorded_at`: recorded on the phone without a connection, at
+ * that time, and sent once it came back (rules.OFFLINE_RECORD_MAX_HOURS).
+ */
 export interface RecordTimeBody {
   at?: string; // ISO time
+  recorded_at?: string; // ISO time
 }
 
 // ---------- attendance and points ----------

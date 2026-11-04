@@ -64,9 +64,12 @@ export interface Backend {
   completeJoin(eventId: string): Promise<RegistrationResponse>;
   cancelJoin(eventId: string): Promise<RegistrationResponse>;
   roster(eventId: string): Promise<RosterResponse>;
-  /** `at` absent = now (the server's now). */
-  recordStart(eventId: string, userId: string, at?: number): Promise<AttendanceResponse>;
-  recordEnd(eventId: string, userId: string, at?: number): Promise<AttendanceResponse>;
+  /**
+   * `at` absent = when it is recorded (the server's now). `recordedAt`: recorded
+   * on the phone with no connection, at that time, and sent now (outbox.ts).
+   */
+  recordStart(eventId: string, userId: string, at?: number, recordedAt?: number): Promise<AttendanceResponse>;
+  recordEnd(eventId: string, userId: string, at?: number, recordedAt?: number): Promise<AttendanceResponse>;
   /** A supervisor of the event warns someone who joined it. */
   warn(eventId: string, userId: string, reason: string): Promise<WarningResponse>;
   /** A supervisor of the event, or an admin, makes someone who joined it a supervisor too. */
