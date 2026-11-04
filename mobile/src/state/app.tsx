@@ -7,7 +7,7 @@ import { AppState as NativeAppState } from 'react-native';
 
 import { createApiBackend } from '@/data/apiBackend';
 import type { Backend, Mode } from '@/data/backend';
-import { API_URL } from '@/data/config';
+import { API_URL, DEMO_AVAILABLE } from '@/data/config';
 import { createDemoBackend, type DemoStore } from '@/data/demoBackend';
 import { forgetPushToken, getPushToken, lastPushToken } from '@/data/push';
 import * as tokenStore from '@/data/tokenStore';
@@ -132,7 +132,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ]);
       setLangState(l === 'ar' || l === 'en' ? l : deviceLang());
       setOnboarded(o === '1');
-      setModeState(m === 'api' && API_URL ? 'api' : 'demo');
+      setModeState(API_URL && (m === 'api' || !DEMO_AVAILABLE) ? 'api' : 'demo');
       setSessionId(sess);
       setLastSessionId(sess);
       const user = parse<User>(apiUser);
