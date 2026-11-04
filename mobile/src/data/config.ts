@@ -21,3 +21,9 @@ export const API_URL = resolveApiUrl();
 
 // The published privacy policy (docs/privacy-*.md). Settings links to it; unset = no link.
 export const PRIVACY_URL = process.env.EXPO_PUBLIC_PRIVACY_URL || null;
+
+// The offline demo (sample accounts, data only on the phone) is for
+// development and for builds with no server. A build for real people, with a
+// server, offers only the real sign-in, so nobody tests on sample data by
+// mistake. EXPO_PUBLIC_DEMO=on brings the demo back in such a build.
+export const DEMO_AVAILABLE = __DEV__ || !API_URL || process.env.EXPO_PUBLIC_DEMO === 'on';

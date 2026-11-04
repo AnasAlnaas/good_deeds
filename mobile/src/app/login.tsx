@@ -10,6 +10,7 @@ import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
 import { Badge, Card, Chip, Field, PasswordField, Row } from '@/components/ui';
 import type { LoginResponse } from '@/data/api';
+import { DEMO_AVAILABLE } from '@/data/config';
 import { resetPassword, signIn, signUp } from '@/data/apiBackend';
 import { errorCode } from '@/data/backend';
 import type { Gender } from '@/data/types';
@@ -39,7 +40,7 @@ export default function Login() {
           {s.association}
         </Txt>
       </View>
-      {apiUrl && (
+      {apiUrl && DEMO_AVAILABLE && (
         <Row>
           <Chip label={s.login.modeServer} selected={mode === 'api'} onPress={() => setMode('api')} />
           <Chip label={s.login.modeDemo} selected={mode === 'demo'} onPress={() => setMode('demo')} />

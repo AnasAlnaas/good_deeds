@@ -59,6 +59,24 @@ are missing. It uses Neon's direct address, `DATABASE_URL_UNPOOLED`. The demo
 people and events are never loaded into this database. The branches of faith
 are not loaded either: they come back with the course before joining events.
 
+### Preview deployments
+
+Every pushed branch gets a preview deployment with the same database settings
+as production. `npm run db:migrate` does nothing there, so only a production
+deploy (from `main`) changes the database. Previews still read and write the
+production data; they are behind Vercel Authentication (step 4), so only the
+team can open them.
+
+### Starting with an empty database
+
+To delete every account and record (before a beta, or when migrations went
+wrong): either run `npm run db:reset -- --yes` in `server/` with the database
+address in `server/.env`, or, as that address cannot be read out of Vercel,
+add `RESET_DATABASE_AT_COMMIT` to the API project (Production) with the full
+commit id that `main` is at and redeploy it. That deploy alone empties the
+database before migrating; remove the setting afterwards. Then sign up again
+as the first admin (step 5).
+
 ## 3. The scheduled job
 
 `server/vercel.json` calls `/api/internal/tick` once a day, the most the Hobby
