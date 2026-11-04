@@ -56,7 +56,7 @@ The **city** is typed at sign-up; it is declared under Personal info below.
 | Email address | **No** | | | | `users.email` exists in the schema but nothing fills it: sign-up takes only name, gender, city (`auth.ts`). |
 | User IDs | **Yes** | No | Required | App functionality, Account management | `users.id`, a random ID made by the server (`newId()` in `queries.ts`), sent in the sign-in token (`server/src/auth.ts`). |
 | Address | **No** ⚠️ | | | | Only the city is asked, not a home address. If you prefer to be cautious, declare the city here instead of "Other info". |
-| Phone number | **Yes** | No | Required | App functionality, Account management, Fraud prevention / security | `users.phone`; sign-in by SMS code (`routes/auth.ts`, `login_codes`). Seen by admins only (`server/src/routes/admin.ts`). |
+| Phone number | **Yes** | No | Required | App functionality, Account management, Fraud prevention / security | `users.phone`; sign-in with a password, kept only as a scrypt hash (`user_passwords`, `server/src/password.ts`); reset codes from an admin (`login_codes`). Seen by admins only (`server/src/routes/admin.ts`). |
 | Race and ethnicity | No | | | | |
 | Political or religious beliefs | **No** ⚠️ | | | | The app never asks about beliefs. But the events are run by an Islamic educational association, points have a "spiritual" pillar, and events are tagged with branches of faith (`branches`, `points_ledger.pillar`). Our reading: that describes the event, not the person's beliefs. Decide whether you agree. |
 | Sexual orientation | No | | | | |
@@ -74,7 +74,7 @@ All **No**. Attendance hours are volunteer hours, not health data.
 
 | Type | Collected | Why (code) |
 |---|---|---|
-| Emails, SMS or MMS | **No** | The server sends the sign-in SMS; the app does not read the phone's messages. |
+| Emails, SMS or MMS | **No** | No SMS is sent; the app does not read the phone's messages. |
 | Other in-app messages | **No** | The app has no chat. Reports and appeals are declared as user-generated content below. |
 
 ### Photos and videos
@@ -155,7 +155,7 @@ What happens when someone deletes their account (`DELETE /api/me` in
 `server/src/routes/me.ts`, checked by `npm run check:api`):
 
 - **Deleted:** the profile photo (`user_photos`), every push token
-  (`push_tokens`), the phone's sign-in code records (`login_codes`).
+  (`push_tokens`), the password hash (`user_passwords`), the phone's sign-in and reset code records (`login_codes`).
 - **Erased:** name, phone, email and city (`rules.erasedProfile` in
   `shared/rules.ts`). The name becomes «حساب محذوف» ("deleted account"),
   also where the admin log copied it (`admin_actions` details).
@@ -179,7 +179,7 @@ These are separate from Data safety but are asked before the first release.
 | Section | Answer | Note |
 |---|---|---|
 | Ads | **No ads** | No ad library. |
-| App access | **Some features restricted** ⚠️ | Sign-in needs an SMS code, which the reviewer cannot receive. Give them a test phone number and a way in (for example a fixed code for that one number on the server), or explain the demo mode on the sign-in screen. The demo does not reach the server, so it cannot show account deletion. |
+| App access | **Some features restricted** ⚠️ | Sign-in needs an account. Make one for the reviewer (a test number and password) and give them both, or explain the demo mode on the sign-in screen. The demo does not reach the server, so it cannot show account deletion. |
 | Content rating | ⚠️ | Fill the questionnaire. Members can send reports and propose events (user-generated content, reviewed by admins before publishing). |
 | Target audience and content | ⚠️ | Decide the minimum age. If under 13 is included, the Families policy applies. |
 | News app | No | |

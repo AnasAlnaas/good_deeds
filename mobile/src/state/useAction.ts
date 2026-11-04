@@ -11,19 +11,23 @@ import { useApp } from './app';
  * since someone else may have changed it too (e.g. the last seat was taken).
  * Resolves to `{ value }` when it went through, `null` when it did not.
  * `busy` is true while a change is on its way, so buttons can't be tapped twice.
+ * `offline`: what to do instead of the message when the server could not be
+ * reached (e.g. keep the change on the phone, data/outbox.ts).
  */
 export function useAction() {
   const { s, backend } = useApp();
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
 
-  const run = async <T>(change: (b: Backend) => Promise<T>): Promise<{ value: T } | null> => {
+  const run = async <T>(change: (b: Backend) => Promise<T>, opts?: { offline?: () => void }): Promise<{ value: T } | null> => {
     if (!backend) return null;
     setBusy(true);
     try {
       return { value: await change(backend) };
     } catch (e) {
-      dialog.notify(s.errorTitle, s.errors[errorCode(e)]);
+      const code = errorCode(e);
+      if (code === 'network' && opts?.offline) opts.offline();
+      else dialog.notify(s.errorTitle, s.errors[code]);
       return null;
     } finally {
       await queryClient.invalidateQueries();

@@ -1,16 +1,27 @@
-// Sign-in by phone with a one-time code. The same two calls sign up a new
-// person: the first time a phone signs in, verify-code answers
-// `profile_required` and the app sends it again with the profile.
+// Signing in. The app uses a phone number and a password (sign-up, sign-in,
+// reset-password): an SMS for every sign-in costs too much for now, so nobody
+// checks by SMS that a number is the person's. A forgotten password is reset
+// with a one-time code that an admin makes in the admin panel and gives the
+// person (POST /api/admin/users/:id/reset-code); that also settles a number
+// someone else signed up with.
+//
+// Kept for when SMS becomes affordable: sign-in by a code sent to the phone
+// (request-code, verify-code), which also signs up a new person: the first
+// time a phone signs in, verify-code answers `profile_required` and the app
+// sends it again with the profile.
 
 import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
 
 import { and, count, desc, eq, gt, isNull, lt, sql } from 'drizzle-orm';
-import { Hono } from 'hono';
+import { type Context, Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 
 import type { LoginResponse, RequestCodeResponse } from '../../../shared/api';
 import * as rules from '../../../shared/rules';
+import type { User } from '../../../shared/types';
 import { signToken } from '../auth';
+import { checkPassword, hashPassword } from '../password';
 import type { Database } from '../db/client';
 import { newId } from '../db/queries';
 import { iso } from '../db/rows';
@@ -34,23 +45,34 @@ const MAX_FAILED_PER_DAY = 10;
 const HOUR_MS = 3_600_000;
 const MAX_CODES_PER_ADDRESS = 20;
 
+// Passwords. Ten wrong ones in a day lock the account until the day is over
+// (or an admin's reset code); per address, a few dozen wrong ones an hour.
+// New accounts per address and hour are capped too, as nothing else slows
+// down making them.
+const MAX_FAILED_SIGN_INS_PER_DAY = 10;
+const MAX_FAILED_SIGN_INS_PER_ADDRESS = 30;
+const MAX_SIGN_UPS_PER_ADDRESS = 10;
+/** How long a reset code from an admin can be used: the person may not be reached at once. */
+const RESET_CODE_HOURS = 24;
+
 // Libyan mobile numbers only (091–095), in the form the app sends: +218912345678.
 const phone = z.string().regex(rules.LIBYAN_MOBILE);
 // The same checks as the app's sign-up form, which sends what they give back.
 const checked = (clean: (v: string) => string | null) =>
   z.string().transform((v, ctx) => clean(v) ?? (ctx.addIssue({ code: 'custom', message: 'invalid' }), z.NEVER));
-const requestCodeBody = z.object({ phone });
-const verifyCodeBody = z.object({
-  phone,
-  code: z.string().regex(/^\d{6}$/),
-  profile: z
-    .object({
-      full_name: checked(rules.cleanName),
-      gender: z.enum(['male', 'female']),
-      city: checked(rules.cleanCity),
-    })
-    .optional(),
+const profile = z.object({
+  full_name: checked(rules.cleanName),
+  gender: z.enum(['male', 'female']),
+  city: checked(rules.cleanCity),
 });
+const oneTimeCode = z.string().regex(/^\d{6}$/);
+// A new password is also checked by rules.passwordProblem, for its own message.
+const password = z.string().min(1).max(rules.PASSWORD_MAX);
+const requestCodeBody = z.object({ phone });
+const verifyCodeBody = z.object({ phone, code: oneTimeCode, profile: profile.optional() });
+const signUpBody = z.object({ phone, password, profile });
+const signInBody = z.object({ phone, password });
+const resetPasswordBody = z.object({ phone, code: oneTimeCode, password });
 
 // Only a hash of the code is stored, keyed with the server's secret.
 function hashCode(secret: string, phoneNumber: string, code: string) {
@@ -125,21 +147,8 @@ export const authRoutes = new Hono<AppEnv>()
     const body = await readBody(c, verifyCodeBody);
     const t = now();
     const result = await db.transaction(async (tx) => {
-      const [code] = await tx
-        .select()
-        .from(s.login_codes)
-        .where(and(eq(s.login_codes.phone, body.phone), isNull(s.login_codes.consumed_at)))
-        .orderBy(desc(s.login_codes.created_at))
-        .limit(1)
-        .for('update');
-      if (!code || code.expires_at.getTime() <= t) return { error: 'code_expired' as const };
-      // Read after the lock, so wrong codes sent at once each see the others.
-      if ((await phoneDay(tx, body.phone, t)).failed >= MAX_FAILED_PER_DAY) return { error: 'try_later' as const };
-      if (code.attempts >= MAX_ATTEMPTS) return { error: 'too_many_attempts' as const };
-      if (!sameHash(code.code_hash, hashCode(jwtSecret, body.phone, body.code))) {
-        await tx.update(s.login_codes).set({ attempts: code.attempts + 1 }).where(eq(s.login_codes.id, code.id));
-        return { error: 'code_invalid' as const };
-      }
+      const code = await takeCode(tx, jwtSecret, body.phone, body.code, t);
+      if ('error' in code) return code;
 
       let [user] = await tx
         .select()
@@ -153,24 +162,209 @@ export const authRoutes = new Hono<AppEnv>()
           .values({ id: newId(), phone: body.phone, ...body.profile, created_at: new Date(t) })
           .returning();
       }
-      if (adminPhones?.includes(body.phone) && user.role !== 'admin') {
-        await tx.insert(s.admin_actions).values({
-          id: newId(),
-          actor_id: null,
-          action: 'change_role',
-          target_id: user.id,
-          details: { name: user.full_name, from: user.role, to: 'admin', via: 'ADMIN_PHONES' },
-          created_at: new Date(t),
-        });
-        [user] = await tx.update(s.users).set({ role: 'admin' }).where(eq(s.users.id, user.id)).returning();
-      }
+      user = await promoteIfAdminPhone(tx, user, adminPhones, t);
       await tx.update(s.login_codes).set({ consumed_at: new Date(t) }).where(eq(s.login_codes.id, code.id));
       return { user: iso(user) };
     });
-    // Errors are returned, not thrown, so the failed-attempt count is saved.
-    if (result.error) {
-      const status = result.error === 'profile_required' ? 409 : result.error === 'too_many_attempts' || result.error === 'try_later' ? 429 : 401;
-      throw new HttpError(status, result.error);
-    }
-    return c.json<LoginResponse>({ token: await signToken(result.user!.id, jwtSecret), user: result.user! });
+    return signedIn(c, result);
+  })
+
+  // ---------- phone and password ----------
+
+  .post('/sign-up', async (c) => {
+    const { db, now, adminPhones } = c.var.deps;
+    const body = await readBody(c, signUpBody);
+    const t = now();
+    const problem = rules.passwordProblem(body.password, body.phone);
+    if (problem) throw new HttpError(400, problem);
+    const address = c.var.deps.clientIp?.(c);
+    const fromHere = address ? recentFrom(c.var.deps, `sign-up:${address}`, t) : [];
+    if (fromHere.length >= MAX_SIGN_UPS_PER_ADDRESS) throw new HttpError(429, 'try_later');
+    const hash = await hashPassword(body.password);
+    const result = await db.transaction(async (tx) => {
+      const [taken] = await tx
+        .select({ id: s.users.id })
+        .from(s.users)
+        .where(and(eq(s.users.phone, body.phone), isNull(s.users.deleted_at)));
+      if (taken) return { error: 'phone_taken' as const };
+      let [user] = await tx
+        .insert(s.users)
+        .values({ id: newId(), phone: body.phone, ...body.profile, created_at: new Date(t) })
+        .returning();
+      await tx.insert(s.user_passwords).values({ user_id: user.id, hash, updated_at: new Date(t) });
+      user = await promoteIfAdminPhone(tx, user, adminPhones, t);
+      return { user: iso(user) };
+    });
+    fromHere.push(t);
+    return signedIn(c, result);
+  })
+
+  .post('/sign-in', async (c) => {
+    const { db, now, adminPhones } = c.var.deps;
+    const body = await readBody(c, signInBody);
+    const t = now();
+    // Wrong passwords from one network address, to any account.
+    const address = c.var.deps.clientIp?.(c);
+    const failedHere = address ? recentFrom(c.var.deps, `sign-in:${address}`, t) : [];
+    if (failedHere.length >= MAX_FAILED_SIGN_INS_PER_ADDRESS) throw new HttpError(429, 'try_later');
+    const result = await db.transaction(async (tx) => {
+      let [user] = await tx
+        .select()
+        .from(s.users)
+        .where(and(eq(s.users.phone, body.phone), isNull(s.users.deleted_at)));
+      if (!user) return { error: 'wrong_password' as const };
+      const [pw] = await tx.select().from(s.user_passwords).where(eq(s.user_passwords.user_id, user.id)).for('update');
+      if (!pw) {
+        // An account from before passwords. A number in ADMIN_PHONES may set its
+        // first one this way (the same trust as signing up with it); anyone else
+        // needs a reset code from an admin.
+        if (!adminPhones?.includes(body.phone)) return { error: 'password_not_set' as const };
+        const problem = rules.passwordProblem(body.password, body.phone);
+        if (problem) return { error: problem };
+        await tx.insert(s.user_passwords).values({ user_id: user.id, hash: await hashPassword(body.password), updated_at: new Date(t) });
+      } else {
+        const failed = failuresToday(pw, t);
+        if (failed >= MAX_FAILED_SIGN_INS_PER_DAY) return { error: 'try_later' as const };
+        if (!(await checkPassword(body.password, pw.hash))) {
+          await tx
+            .update(s.user_passwords)
+            .set({ failed_count: failed + 1, failed_since: failed ? pw.failed_since : new Date(t) })
+            .where(eq(s.user_passwords.user_id, user.id));
+          return { error: 'wrong_password' as const };
+        }
+        if (pw.failed_count) {
+          await tx.update(s.user_passwords).set({ failed_count: 0, failed_since: null }).where(eq(s.user_passwords.user_id, user.id));
+        }
+      }
+      user = await promoteIfAdminPhone(tx, user, adminPhones, t);
+      return { user: iso(user) };
+    });
+    if (result.error === 'wrong_password') failedHere.push(t);
+    return signedIn(c, result);
+  })
+
+  // A new password with a one-time code an admin gave the person. It also
+  // signs them in, and clears the count of wrong passwords.
+  .post('/reset-password', async (c) => {
+    const { db, now, jwtSecret, adminPhones } = c.var.deps;
+    const body = await readBody(c, resetPasswordBody);
+    const t = now();
+    const problem = rules.passwordProblem(body.password, body.phone);
+    if (problem) throw new HttpError(400, problem);
+    const hash = await hashPassword(body.password);
+    const result = await db.transaction(async (tx) => {
+      const code = await takeCode(tx, jwtSecret, body.phone, body.code, t);
+      if ('error' in code) return code;
+      let [user] = await tx
+        .select()
+        .from(s.users)
+        .where(and(eq(s.users.phone, body.phone), isNull(s.users.deleted_at)));
+      if (!user) return { error: 'code_invalid' as const };
+      await tx
+        .insert(s.user_passwords)
+        .values({ user_id: user.id, hash, updated_at: new Date(t) })
+        .onConflictDoUpdate({ target: s.user_passwords.user_id, set: { hash, failed_count: 0, failed_since: null, updated_at: new Date(t) } });
+      user = await promoteIfAdminPhone(tx, user, adminPhones, t);
+      await tx.update(s.login_codes).set({ consumed_at: new Date(t) }).where(eq(s.login_codes.id, code.id));
+      return { user: iso(user) };
+    });
+    return signedIn(c, result);
   });
+
+type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
+type Refusal =
+  | 'code_expired'
+  | 'code_invalid'
+  | 'too_many_attempts'
+  | 'try_later'
+  | 'profile_required'
+  | 'wrong_password'
+  | 'password_not_set'
+  | 'password_too_short'
+  | 'password_too_simple'
+  | 'phone_taken';
+
+const REFUSAL_STATUS: Record<Refusal, ContentfulStatusCode> = {
+  code_expired: 401,
+  code_invalid: 401,
+  wrong_password: 401,
+  too_many_attempts: 429,
+  try_later: 429,
+  profile_required: 409,
+  password_not_set: 409,
+  phone_taken: 409,
+  password_too_short: 400,
+  password_too_simple: 400,
+};
+
+// Refusals are returned from the transaction, not thrown, so what it counted
+// (a wrong code, a wrong password) is saved.
+async function signedIn(c: Context<AppEnv>, result: { error: Refusal } | { error?: undefined; user: User }) {
+  if (result.error) throw new HttpError(REFUSAL_STATUS[result.error], result.error);
+  return c.json<LoginResponse>({ token: await signToken(result.user.id, c.var.deps.jwtSecret), user: result.user });
+}
+
+/**
+ * The phone's latest unused code, if `code` is it: by SMS (verify-code) or
+ * from an admin (reset-password). A wrong code is counted against it.
+ */
+async function takeCode(tx: Tx, secret: string, phoneNumber: string, code: string, t: number) {
+  const [row] = await tx
+    .select()
+    .from(s.login_codes)
+    .where(and(eq(s.login_codes.phone, phoneNumber), isNull(s.login_codes.consumed_at)))
+    .orderBy(desc(s.login_codes.created_at))
+    .limit(1)
+    .for('update');
+  if (!row || row.expires_at.getTime() <= t) return { error: 'code_expired' as const };
+  // Read after the lock, so wrong codes sent at once each see the others.
+  if ((await phoneDay(tx, phoneNumber, t)).failed >= MAX_FAILED_PER_DAY) return { error: 'try_later' as const };
+  if (row.attempts >= MAX_ATTEMPTS) return { error: 'too_many_attempts' as const };
+  if (!sameHash(row.code_hash, hashCode(secret, phoneNumber, code))) {
+    await tx.update(s.login_codes).set({ attempts: row.attempts + 1 }).where(eq(s.login_codes.id, row.id));
+    return { error: 'code_invalid' as const };
+  }
+  return row;
+}
+
+/** A number in ADMIN_PHONES (the first admin, without database access) becomes an admin when it signs in. */
+async function promoteIfAdminPhone(tx: Tx, user: typeof s.users.$inferSelect, adminPhones: string[] | undefined, t: number) {
+  if (!adminPhones?.includes(user.phone) || user.role === 'admin') return user;
+  await tx.insert(s.admin_actions).values({
+    id: newId(),
+    actor_id: null,
+    action: 'change_role',
+    target_id: user.id,
+    details: { name: user.full_name, from: user.role, to: 'admin', via: 'ADMIN_PHONES' },
+    created_at: new Date(t),
+  });
+  const [admin] = await tx.update(s.users).set({ role: 'admin' }).where(eq(s.users.id, user.id)).returning();
+  return admin;
+}
+
+/** Wrong passwords counted in the day since the first of them. */
+function failuresToday(pw: typeof s.user_passwords.$inferSelect, t: number) {
+  return pw.failed_since && t - pw.failed_since.getTime() < DAY_MS ? pw.failed_count : 0;
+}
+
+/**
+ * A one-time code for a password reset, made by an admin (admin.ts). It
+ * replaces the phone's earlier unused codes and lasts a day.
+ */
+export async function issueResetCode(tx: Tx, secret: string, phoneNumber: string, adminId: string, t: number) {
+  const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+  await tx
+    .update(s.login_codes)
+    .set({ consumed_at: new Date(t) })
+    .where(and(eq(s.login_codes.phone, phoneNumber), isNull(s.login_codes.consumed_at)));
+  const expires = new Date(t + RESET_CODE_HOURS * HOUR_MS);
+  await tx.insert(s.login_codes).values({
+    id: newId(),
+    phone: phoneNumber,
+    code_hash: hashCode(secret, phoneNumber, code),
+    expires_at: expires,
+    created_at: new Date(t),
+    issued_by: adminId,
+  });
+  return { code, expires_at: expires.toISOString() };
+}

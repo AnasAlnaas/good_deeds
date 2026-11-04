@@ -5,7 +5,8 @@
 // Every cheat must be refused.
 // Run: npm run check:rules
 
-import type { EventProposal, ProfileEdit, ReportBody } from '../src/data/api';
+import type { EventProposal, ProfileEdit, ReportBody, RosterResponse } from '../src/data/api';
+import { rosterWithQueued } from '../src/data/queuedRoster';
 import type { Db } from '../src/data/types';
 import { buildSeed } from '../src/demo/seed';
 import * as server from '../src/demo/server';
@@ -290,6 +291,98 @@ expectError('an appeal without a reason', 'reason_required', () => server.appeal
 const appealed = server.appealWarning(given.db, 'u_ahmad', w.id, 'أبلغت المشرف المساعد.', NOW);
 expectEqual('it waits for an admin', appealed.warnings.find((x) => x.id === w.id)?.status, 'appealed');
 expectError('appeal twice', 'already_appealed', () => server.appealWarning(appealed, 'u_ahmad', w.id, 'مرة أخرى.', NOW));
+
+console.log('\n— supervisors added in the app');
+{
+  // e01 is happening now: Khaled supervises it; Ahmad, Mariam and f1–f4 joined.
+  const add = (d: Db, actor: string, user: string) => server.addSupervisor(d, actor, 'e01', user, NOW);
+  expectError('a member makes himself a supervisor', 'not_organizer', () => add(db, 'u_ahmad', 'u_ahmad'));
+  expectError('someone who has not joined', 'not_joined', () => add(db, 'u_khaled', 'u_fatima'));
+  const one = add(db, 'u_khaled', 'u_ahmad');
+  expectEqual('Ahmad is a supervisor, added in the app by Khaled', server.supervisorsOf(one, 'e01').map((u) => [u.id, u.added_by]), [['u_khaled', null], ['u_ahmad', 'u_khaled']]);
+  expectEqual('he may record attendance now', server.isOrganizer(one, 'e01', 'u_ahmad'), true);
+  expectError('added twice', 'already_supervisor', () => add(one, 'u_khaled', 'u_ahmad'));
+  const two = add(one, 'u_ahmad', 'u_mariam');
+  expectError('a fourth supervisor', 'too_many_supervisors', () => add(two, 'u_khaled', 'u_f1'));
+  expectError('the one it was made with is not taken off in the app', 'cannot_remove_supervisor', () => server.removeSupervisor(two, 'u_ahmad', 'e01', 'u_khaled', NOW));
+  const stepped = server.removeSupervisor(two, 'u_mariam', 'e01', 'u_mariam', NOW);
+  expectEqual('Mariam steps down', server.isOrganizer(stepped, 'e01', 'u_mariam'), false);
+  expectError('nobody is added once the event is over', 'event_closed', () => server.addSupervisor(db, 'u_khaled', 'e01', 'u_f1', NOW + 48 * 3_600_000));
+  expectEqual('an admin may run any event', rules.canManageEvent({ role: 'admin' }, false), true);
+
+  console.log('\n— notices to an event');
+  expectError('a member posts one', 'not_organizer', () => server.postNotice(db, 'u_f1', 'e01', 'غيّرنا الموعد.', 'announcement', NOW));
+  expectError('an empty one', 'message_required', () => server.postNotice(db, 'u_khaled', 'e01', '   ', 'announcement', NOW));
+  const posted = server.postNotice(one, 'u_ahmad', 'e01', '  أحضروا الماء.  ', 'announcement', NOW + 60_000);
+  expectEqual('a supervisor added in the app posts one, trimmed, newest first', server.noticesOf(posted.db, 'e01').map((n) => n.body), ['أحضروا الماء.', db.event_notices[1].body, db.event_notices[0].body]);
+  expectEqual('those who joined read them', rules.canReadNotices({ role: 'member' }, { status: 'joined' }, false), true);
+  expectEqual('others do not', rules.canReadNotices({ role: 'member' }, undefined, false), false);
+  expectError('a member deletes it', 'not_your_notice', () => server.deleteNotice(posted.db, 'u_f1', 'e01', posted.notice.id));
+  expectEqual('its author does', server.noticesOf(server.deleteNotice(posted.db, 'u_ahmad', 'e01', posted.notice.id), 'e01').length, 2);
+  expectError('none once the event is long over', 'event_closed', () => server.postNotice(db, 'u_khaled', 'e01', 'شكراً لكم.', 'announcement', NOW + 9 * 24 * 3_600_000));
+}
+
+console.log('\n— reactions to a notice');
+{
+  const [notice, question] = db.event_notices;
+  const counts = (d: Db, viewer: string, n = notice) =>
+    rules.reactionSummary(n.kind, d.notice_reactions.filter((r) => r.notice_id === n.id), viewer);
+  expectEqual('the seed has an announcement and a question', [notice.kind, question.kind], ['announcement', 'question']);
+  expectEqual('an announcement: noted, disagree, sad', counts(db, 'u_ahmad'), { reactions: [{ reaction: 'noted', count: 2 }, { reaction: 'disagree', count: 0 }, { reaction: 'sad', count: 1 }], my_reaction: null });
+  expectEqual('a question: agree, disagree, not sure yet', counts(db, 'u_ahmad', question).reactions.map((r) => [r.reaction, r.count]), [['agree', 2], ['disagree', 1], ['undecided', 1]]);
+  expectError('someone who did not join reacts', 'not_found', () => server.reactToNotice(db, 'u_fatima', 'e01', notice.id, 'noted', NOW));
+  expectError("a question's answer on an announcement", 'not_found', () => server.reactToNotice(db, 'u_ahmad', 'e01', notice.id, 'agree', NOW));
+  expectError('"noted" is no answer to a question', 'not_found', () => server.reactToNotice(db, 'u_ahmad', 'e01', question.id, 'noted', NOW));
+  const agreed = server.reactToNotice(db, 'u_ahmad', 'e01', question.id, 'agree', NOW);
+  expectEqual('Ahmad, who joined, answers', counts(agreed, 'u_ahmad', question).my_reaction, 'agree');
+  const switched = server.reactToNotice(agreed, 'u_ahmad', 'e01', question.id, 'disagree', NOW);
+  expectEqual('a new answer replaces his first', counts(switched, 'u_ahmad', question).reactions.map((r) => r.count), [2, 2, 1]);
+  expectEqual('and he can take it back', counts(server.reactToNotice(switched, 'u_ahmad', 'e01', question.id, null, NOW), 'u_ahmad', question).my_reaction, null);
+  expectEqual('a deleted notice takes its reactions with it', server.deleteNotice(switched, 'u_khaled', 'e01', question.id).notice_reactions.some((r) => r.notice_id === question.id), false);
+  expectError('a kind of notice that does not exist', 'not_found', () => server.postNotice(db, 'u_khaled', 'e01', 'نعم أم لا؟', 'poll' as never, NOW));
+}
+
+console.log('\n— attendance kept on the phone with no connection');
+{
+  const MIN = 60_000;
+  const db = buildSeed(NOW);
+  const e01 = db.events.find((e) => e.id === 'e01')!;
+  const ends = new Date(e01.ends_at).getTime();
+  const base = { actorId: 'u_khaled', participantId: 'u_f3', actorIsOrganizer: true, event: e01, attendance: undefined };
+  const reg = db.registrations.find((r) => r.event_id === 'e01' && r.user_id === 'u_f3');
+  const late = ends + 3 * 60 * MIN;
+  const start = rules.decideRecordStart({ ...base, registration: reg, recordedAt: ends - 60 * MIN, now: late });
+  expectEqual('a start tapped during the event, sent after it', [start.started_at, start.start_source], [new Date(ends - 60 * MIN).toISOString(), 'live']);
+  expectError('the same, sent without its tap time', 'event_closed', () => rules.decideRecordStart({ ...base, registration: reg, now: late }));
+  expectError('a tap time two days and more ago', 'sent_too_late', () =>
+    rules.decideRecordStart({ ...base, registration: reg, recordedAt: late - 49 * 60 * MIN, now: late }),
+  );
+  expectError('a tap time ahead of the server by more than a phone clock may be', 'time_in_future', () =>
+    rules.decideRecordStart({ ...base, registration: reg, recordedAt: NOW + 10 * MIN, now: NOW }),
+  );
+
+  // As the server sends it: who joined, and what it has recorded for each.
+  const roster = {
+    event: { id: 'e01' } as RosterResponse['event'],
+    participants: server.joinedUsers(db, 'e01').map((u) => ({
+      user: { id: u.id, full_name: u.full_name, avatar_url: null, gender: u.gender },
+      attendance: server.attendanceOf(db, 'e01', u.id) ?? null,
+      i_warned: false,
+    })),
+  };
+  const queued = [
+    { id: 'q1', kind: 'start' as const, eventId: 'e01', userId: 'u_f3', name: 'f3', recordedAt: NOW - 30 * MIN },
+    { id: 'q2', kind: 'end' as const, eventId: 'e01', userId: 'u_f3', name: 'f3', recordedAt: NOW - 6 * MIN },
+    { id: 'q3', kind: 'end' as const, eventId: 'e01', userId: 'u_f1', name: 'f1', at: NOW - 10 * MIN, recordedAt: NOW - 5 * MIN },
+    { id: 'q4', kind: 'start' as const, eventId: 'e02', userId: 'u_f4', name: 'f4', recordedAt: NOW },
+  ];
+  const shown = rosterWithQueued(roster, queued);
+  const of = (id: string) => shown.find((p) => p.user.id === id)!;
+  expectEqual('a start and finish kept on the phone show on the roster', [of('u_f3').attendance?.hours, of('u_f3').queued], [0.4, true]);
+  expectEqual('a finish for someone the server has working', [of('u_f1').attendance?.ended_at, of('u_f1').queued], [new Date(NOW - 10 * MIN).toISOString(), true]);
+  expectEqual("another event's records stay out", of('u_f4').queued, false);
+  expectEqual('people with nothing kept on the phone are as the server says', of('u_mariam'), { ...roster.participants.find((p) => p.user.id === 'u_mariam'), queued: false });
+}
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');
 process.exit(failed ? 1 : 0);

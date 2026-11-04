@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { onlineManager } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -9,6 +10,7 @@ import { Button } from '@/components/Button';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
 import { Card, Chip, EmptyState, QueryState, Row } from '@/components/ui';
+import { queueRecord, rosterWithQueued, useOutbox } from '@/data/outbox';
 import { useRoster } from '@/data/queries';
 import { END_GRACE_MINUTES } from '@/demo/placeholders';
 import { fmt, time } from '@/i18n/format';
@@ -18,19 +20,24 @@ import { colors, space, touch } from '@/theme/tokens';
 
 // Screens 15–16: record a participant's start or finish. The time defaults to
 // now; backdating is offered only inside the allowed window. The server
-// re-checks every rule with its own clock.
+// re-checks every rule with its own clock. With no connection (server mode),
+// the record is kept on the phone with the moment it was made, and sent later
+// (data/outbox.ts).
 export default function RecordScreen() {
   const { id, userId, mode } = useLocalSearchParams<{ id: string; userId: string; mode: 'start' | 'end' }>();
-  const { s, now } = useApp();
+  const { s, now, mode: appMode } = useApp();
   const { run, busy } = useAction();
   const query = useRoster(id);
+  const { queued } = useOutbox();
+  const [savedOnPhone, setSavedOnPhone] = useState(false);
   const [ack, setAck] = useState(mode === 'end');
   const [choice, setChoice] = useState(0);
   const [done, setDone] = useState(false);
   // Fixed when the screen opens, so the options don't shift while the supervisor reads them.
   const [openedAt] = useState(() => Date.now());
 
-  const entry = query.data?.participants.find((p) => p.user.id === userId);
+  // Records still on the phone count: a start kept offline can be finished offline too.
+  const entry = query.data ? rosterWithQueued(query.data, queued).find((p) => p.user.id === userId) : undefined;
 
   useEffect(() => {
     if (!done) return;
@@ -49,6 +56,11 @@ export default function RecordScreen() {
           <Txt align="center" color={colors.inkMuted}>
             {entry?.user.full_name ?? ''}
           </Txt>
+          {savedOnPhone && (
+            <Txt variant="caption" align="center" color={colors.inkMuted}>
+              {s.record.doneQueued}
+            </Txt>
+          )}
         </View>
       </Screen>
     );
@@ -89,7 +101,16 @@ export default function RecordScreen() {
   const chosen = options[Math.min(choice, options.length - 1)];
 
   const submit = async () => {
-    const ok = await run((b) => (mode === 'start' ? b.recordStart(id, userId, chosen.at) : b.recordEnd(id, userId, chosen.at)));
+    const tapped = Date.now();
+    const keepOnPhone = () => {
+      queueRecord({ kind: mode, eventId: id, userId, name: user.full_name, at: chosen.at, recordedAt: tapped });
+      setSavedOnPhone(true);
+      setDone(true);
+    };
+    // The demo needs no connection; the server does.
+    if (appMode === 'api' && !onlineManager.isOnline()) return keepOnPhone();
+    const offline = appMode === 'api' ? keepOnPhone : undefined;
+    const ok = await run((b) => (mode === 'start' ? b.recordStart(id, userId, chosen.at) : b.recordEnd(id, userId, chosen.at)), { offline });
     if (ok) setDone(true);
   };
 

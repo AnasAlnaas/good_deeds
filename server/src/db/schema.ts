@@ -41,6 +41,7 @@ export const adminAction = pgEnum('admin_action', [
   'handle_report',
   'uphold_warning',
   'withdraw_warning',
+  'issue_reset_code',
 ]);
 export const reportCategory = pgEnum('report_category', ['behaviour', 'safety', 'event', 'app', 'other']);
 export const reportStatus = pgEnum('report_status', ['open', 'handled']);
@@ -117,8 +118,40 @@ export const event_organizers = pgTable(
   {
     event_id: text('event_id').notNull().references(() => events.id),
     user_id: text('user_id').notNull().references(() => users.id),
+    /** Who made them a supervisor in the app; null = named when the event was made (shared/types.ts EventOrganizer). */
+    added_by: text('added_by').references(() => users.id),
   },
   (t) => [primaryKey({ columns: [t.event_id, t.user_id] }), index('event_organizers_user').on(t.user_id)],
+);
+
+// A supervisor's notice to the people of an event (shared/types.ts EventNotice): an announcement or a question.
+export const noticeKind = pgEnum('notice_kind', ['announcement', 'question']);
+
+export const event_notices = pgTable(
+  'event_notices',
+  {
+    id: text('id').primaryKey(),
+    event_id: text('event_id').notNull().references(() => events.id),
+    author_id: text('author_id').notNull().references(() => users.id),
+    kind: noticeKind('kind').notNull().default('announcement'),
+    body: text('body').notNull(),
+    created_at: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('event_notices_event').on(t.event_id, t.created_at)],
+);
+
+// One reaction per person per notice (shared/types.ts NoticeReaction).
+export const noticeReaction = pgEnum('notice_reaction', ['noted', 'agree', 'disagree', 'undecided', 'sad']);
+
+export const notice_reactions = pgTable(
+  'notice_reactions',
+  {
+    notice_id: text('notice_id').notNull().references(() => event_notices.id),
+    user_id: text('user_id').notNull().references(() => users.id),
+    reaction: noticeReaction('reaction').notNull(),
+    created_at: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.notice_id, t.user_id] })],
 );
 
 export const event_terms = pgTable(
@@ -270,9 +303,25 @@ export const login_codes = pgTable(
     attempts: integer('attempts').notNull().default(0),
     created_at: at('created_at').notNull(),
     consumed_at: at('consumed_at'),
+    /** The admin who made it, for a password reset; empty for a code sent by SMS. */
+    issued_by: text('issued_by').references(() => users.id),
   },
   (t) => [index('login_codes_phone').on(t.phone, t.created_at)],
 );
+
+// A person's password, apart from `users` so it never travels with a user row.
+// Only a slow hash is kept (server/src/password.ts). No row = no password yet
+// (an account made before passwords): it is set with a reset code.
+// Wrong passwords are counted here, per account, over a day (routes/auth.ts).
+export const user_passwords = pgTable('user_passwords', {
+  user_id: text('user_id')
+    .primaryKey()
+    .references(() => users.id),
+  hash: text('hash').notNull(),
+  failed_count: integer('failed_count').notNull().default(0),
+  failed_since: at('failed_since'),
+  updated_at: at('updated_at').notNull(),
+});
 
 // Not in Data_Model.md yet: where to send a person's notifications. One row
 // per phone; signing in on a phone moves its token to the new account.

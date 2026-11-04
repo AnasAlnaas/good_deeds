@@ -57,6 +57,20 @@
       "when": 1793297008882,
       "tag": "0007_branches_off_events",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793735089181,
+      "tag": "0008_event_supervisors_and_notices",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793793743788,
+      "tag": "0009_passwords",
+      "breakpoints": true
     }
   ]
 }

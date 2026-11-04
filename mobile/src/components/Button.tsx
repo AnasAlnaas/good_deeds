@@ -37,7 +37,7 @@ export function Button({ label, onPress, variant = 'primary', disabled, icon }: 
       ]}>
       <View style={styles.row}>
         {icon && <Ionicons name={icon} size={20} color={disabled ? colors.inkMuted : l.fg} />}
-        <Txt variant="bodyStrong" color={disabled ? colors.inkMuted : l.fg} align="center">
+        <Txt variant="bodyStrong" color={disabled ? colors.inkMuted : l.fg} align="center" label>
           {label}
         </Txt>
       </View>

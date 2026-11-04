@@ -4,7 +4,7 @@
 
 import { randomUUID } from 'node:crypto';
 
-import { and, asc, count, eq, inArray, isNull, lte, ne } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, lte, ne } from 'drizzle-orm';
 
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
@@ -17,7 +17,7 @@ import {
   type User,
   type Warning,
 } from '../../../shared/types';
-import type { PublicUser } from '../../../shared/api';
+import type { EventNoticeItem, PublicUser } from '../../../shared/api';
 import type { Database } from './client';
 import { iso } from './rows';
 import * as s from './schema';
@@ -129,6 +129,45 @@ export async function warnedBy(q: Database, eventId: string, issuerId: string): 
     .from(s.warnings)
     .where(and(eq(s.warnings.event_id, eventId), eq(s.warnings.issued_by, issuerId), ne(s.warnings.status, 'withdrawn')));
   return new Set(rows.map((r) => r.user_id));
+}
+
+/** An event's supervisors, deleted accounts left out: those it was made with first, then in the order they were added. */
+export async function supervisorsOf(q: Database, eventId: string): Promise<(PublicUser & { added_by: string | null })[]> {
+  const rows = await q
+    .select({ ...publicUser, added_by: s.event_organizers.added_by })
+    .from(s.event_organizers)
+    .innerJoin(s.users, eq(s.users.id, s.event_organizers.user_id))
+    .where(and(eq(s.event_organizers.event_id, eventId), isNull(s.users.deleted_at)));
+  return rows.sort((a, b) => Number(a.added_by !== null) - Number(b.added_by !== null));
+}
+
+/** The supervisor rows of an event, deleted accounts included (they still count until an admin changes them). */
+export async function supervisorLinks(q: Database, eventId: string) {
+  return q.select().from(s.event_organizers).where(eq(s.event_organizers.event_id, eventId));
+}
+
+/**
+ * An event's notices (or just one of them), newest first, as `viewer` sees them:
+ * the author (null = a deleted account), the reactions counted, the viewer's own.
+ */
+export async function noticeItems(q: Database, viewer: Pick<User, 'id' | 'gender' | 'role'>, eventId: string, noticeId?: string): Promise<EventNoticeItem[]> {
+  const rows = await q
+    .select({ notice: s.event_notices, author: publicUser, deleted_at: s.users.deleted_at })
+    .from(s.event_notices)
+    .innerJoin(s.users, eq(s.users.id, s.event_notices.author_id))
+    .where(and(eq(s.event_notices.event_id, eventId), noticeId ? eq(s.event_notices.id, noticeId) : undefined))
+    .orderBy(desc(s.event_notices.created_at));
+  const ids = rows.map((r) => r.notice.id);
+  const reactions = ids.length ? await q.select().from(s.notice_reactions).where(inArray(s.notice_reactions.notice_id, ids)) : [];
+  return rows.map(({ notice, author, deleted_at }) => ({
+    id: notice.id,
+    kind: notice.kind,
+    body: notice.body,
+    created_at: notice.created_at.toISOString(),
+    author: deleted_at ? null : shownTo(viewer, author),
+    can_delete: notice.author_id === viewer.id || viewer.role === 'admin',
+    ...rules.reactionSummary(notice.kind, reactions.filter((r) => r.notice_id === notice.id), viewer.id),
+  }));
 }
 
 /** People with a `joined` registration, deleted accounts left out. */

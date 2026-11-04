@@ -1,14 +1,15 @@
 import { Redirect, router } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/Avatar';
 import { EventCard } from '@/components/EventCard';
 import { OsmMap, type MapPin } from '@/components/OsmMap';
 import { Txt } from '@/components/Txt';
-import { ClassFilter, IconButton, QueryState } from '@/components/ui';
-import { useEvents, useMeSummary } from '@/data/queries';
+import { ClassFilter, IconButton, OfflineBanner, QueryState } from '@/components/ui';
+import { useEvents, useKeepOwnDataReady, useMeSummary, usePrefetchEvent } from '@/data/queries';
 import { useApp } from '@/state/app';
 import { useNotificationTaps } from '@/state/useNotificationTaps';
 import type { EventClassId } from '@/theme/classes';
@@ -31,6 +32,16 @@ export default function MapScreen() {
   const [selected, setSelected] = useState<string | null>(null);
   const [recenter, setRecenter] = useState(0);
   const clear = useCallback(() => setSelected(null), []);
+  const prefetch = usePrefetchEvent();
+  // The chosen pin's page is fetched while its card shows, so opening it is instant.
+  const select = useCallback(
+    (id: string) => {
+      setSelected(id);
+      prefetch(id);
+    },
+    [prefetch],
+  );
+  useKeepOwnDataReady(query.data);
 
   const events = useMemo(
     () =>
@@ -52,11 +63,11 @@ export default function MapScreen() {
   return (
     <View style={styles.root}>
       <OsmMap
-        center={TRIPOLI}
+        home={TRIPOLI}
         pins={pins}
         bottomInset={bottom + NAV + space.sm}
         recenter={recenter}
-        onSelect={setSelected}
+        onSelect={select}
         onClear={clear}
       />
 
@@ -75,6 +86,9 @@ export default function MapScreen() {
           </View>
           <IconButton icon="search" label={s.map.search} look="dark" onPress={() => router.push({ pathname: '/events', params: { search: '1' } })} />
         </View>
+        <View style={styles.banner}>
+          <OfflineBanner floating />
+        </View>
         <View style={styles.filter}>
           <ClassFilter value={filter} onChange={(c) => { setFilter(c); setSelected(null); }} floating />
         </View>
@@ -84,18 +98,21 @@ export default function MapScreen() {
       </View>
 
       <View style={[styles.bottom, { bottom }]} pointerEvents="box-none">
+        {/* The chosen pin's card rises in, and sinks away when the map is tapped. */}
         {selectedEvent ? (
-          <EventCard event={selectedEvent} floating />
-        ) : !query.data && query.isError ? (
-          <View style={[styles.note, shadow]}>
+          <Animated.View key={selectedEvent.id} entering={FadeInDown.duration(220)} exiting={FadeOutDown.duration(160)}>
+            <EventCard event={selectedEvent} floating />
+          </Animated.View>
+        ) : !query.data && (query.isError || query.fetchStatus === 'paused') ? (
+          <Animated.View entering={FadeIn.duration(200)} style={[styles.note, shadow]}>
             <QueryState query={query} />
-          </View>
+          </Animated.View>
         ) : query.data && events.length === 0 ? (
-          <View style={[styles.note, shadow]}>
+          <Animated.View key={filter ?? 'all'} entering={FadeIn.duration(200)} exiting={FadeOut.duration(120)} style={[styles.note, shadow]}>
             <Txt align="center" color={colors.inkMuted}>
               {filter ? s.map.emptyClass : s.map.empty}
             </Txt>
-          </View>
+          </Animated.View>
         ) : null}
 
         <View style={[styles.nav, shadow]} accessibilityRole="toolbar" accessibilityLabel={s.map.nav}>
@@ -122,6 +139,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.glass,
   },
   titles: { flex: 1 },
+  banner: { marginHorizontal: space.md },
   filter: { flexDirection: 'row' },
   side: { alignItems: 'flex-end', paddingHorizontal: space.md },
   bottom: { position: 'absolute', start: space.md, end: space.md, gap: space.sm },

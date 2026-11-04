@@ -28,7 +28,8 @@ app collects and why.
 
 **When you sign up**
 
-- Your **phone number**. You sign in with a code sent to it by SMS.
+- Your **phone number** and a **password** you choose, to sign in. We keep
+  only a scrambled form of the password (a hash), from which it cannot be read.
 - Your **full name**.
 - Your **gender** (man or woman). Some events are for men only or women only,
   and photos are shown by gender (see below).
@@ -104,8 +105,6 @@ app collects and why.
 
 These services handle some data for us, only to provide their service:
 
-- **SMS provider** ⚠️ [name, country]: receives your phone number and the
-  sign-in code, to send you the code.
 - **Expo** (650 Industries, USA): receives your notification address and the
   text of each notification (for example the event's name and new time), and
   passes it to Google or Apple.

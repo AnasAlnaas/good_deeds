@@ -8,12 +8,16 @@
     "@expo/ui": "~57.0.26",
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-community/netinfo": "12.0.1",
+    "@tanstack/query-async-storage-persister": "^5.105.3",
     "@tanstack/react-query": "^5.104.5",
+    "@tanstack/react-query-persist-client": "^5.105.3",
     "eslint-config-expo": "~57.0.2",
     "expo": "~57.0.31",
     "expo-constants": "~57.0.22",
     "expo-dev-client": "~57.0.20",
     "expo-device": "~57.0.2",
+    "expo-file-system": "~57.0.7",
     "expo-font": "~57.0.4",
     "expo-glass-effect": "~57.0.4",
     "expo-image": "~57.0.5",
@@ -45,6 +49,7 @@
     "@types/react": "~19.2.2",
     "eslint": "^9.39.5",
     "eslint-config-expo": "~57.0.2",
+    "leaflet": "1.9.4",
     "tsx": "^4.23.15",
     "typescript": "~6.0.3"
   },
@@ -56,7 +61,8 @@
     "lint": "expo lint",
     "check:rules": "tsx scripts/check-rules.ts",
     "apk": "node scripts/build-apk.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "leaflet:inline": "node scripts/inline-leaflet.mjs"
   },
   "private": true
 }

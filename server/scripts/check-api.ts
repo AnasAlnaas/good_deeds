@@ -11,6 +11,7 @@ import type { AdminEventDetail } from '../../shared/admin-api';
 import type {
   EventDetail,
   EventFormMeta,
+  EventNoticeItem,
   EventProposal,
   EventSummary,
   MeResponse,
@@ -20,7 +21,7 @@ import type {
   ReportFormMeta,
   RosterResponse,
 } from '../../shared/api';
-import { DELETED_NAME, PHOTO_MAX_BYTES } from '../../shared/rules';
+import { DELETED_NAME, NOTICE_MAX, PHOTO_MAX_BYTES } from '../../shared/rules';
 import * as s from '../src/db/schema';
 import { startHarness } from './harness';
 
@@ -147,6 +148,73 @@ console.log('\n— sign-in limits');
   h.setClock(NOW);
 }
 
+console.log('\n— phone and password (no SMS)');
+{
+  const HOURS = 3_600_000;
+  const PW = 'نخلة-طرابلس-2026';
+  const profile = { full_name: 'سالمة الورفلي', gender: 'female', city: 'طرابلس' };
+  const phoneP = '+218919990011';
+  const from = (address?: string): Record<string, string> => (address ? { 'X-Check-Address': address } : {});
+  const signUp = (body: object, address?: string) => call('POST', '/auth/sign-up', undefined, body, from(address));
+  const signIn = (phone: string, password: string) => call('POST', '/auth/sign-in', undefined, { phone, password });
+  const reset = (body: object) => call('POST', '/auth/reset-password', undefined, body);
+
+  const weak: [string, string, string][] = [
+    ['7 characters', 'abc1234', 'password_too_short'],
+    ['one character over and over', 'aaaaaaaa', 'password_too_simple'],
+    ['a run of digits', '12345678', 'password_too_simple'],
+    ['with the phone number in it', 'x919990011y', 'password_too_simple'],
+  ];
+  for (const [why, password, code] of weak) await expectError(`sign-up password refused: ${why}`, code, signUp({ phone: phoneP, password, profile }));
+  await expectError('sign-up without a profile', 'invalid_request', signUp({ phone: phoneP, password: PW }));
+  const made = await expectOk('sign up with a phone and a password', signUp({ phone: phoneP, password: PW, profile }));
+  expectEqual('the new account is a member', made.user.role, 'member');
+  expectEqual('nothing about the password comes back', /hash|password/.test(JSON.stringify(made)), false);
+  await expectError('the same number again', 'phone_taken', signUp({ phone: phoneP, password: PW, profile }));
+
+  await expectOk('sign in with it', signIn(phoneP, PW));
+  await expectOk('the same password typed with Arabic digits', signIn(phoneP, PW.replace('2026', '٢٠٢٦')));
+  await expectError('a wrong password', 'wrong_password', signIn(phoneP, `${PW}x`));
+  await expectError('a number with no account', 'wrong_password', signIn('+218919990012', PW));
+  for (let i = 0; i < 9; i++) await signIn(phoneP, `wrong-${i}`);
+  await expectError('the right password after ten wrong ones that day', 'try_later', signIn(phoneP, PW));
+  h.setClock(NOW + 24 * HOURS + 1000);
+  await expectOk('a day later it works again', signIn(phoneP, PW));
+  h.setClock(NOW);
+
+  const panel = await login('u_admin');
+  const target = made.user.id;
+  await expectError('a member cannot make reset codes', 'forbidden', call('POST', `/admin/users/${target}/reset-code`, made.token));
+  const issued = await expectOk('an admin makes a reset code for them', call('POST', `/admin/users/${target}/reset-code`, panel));
+  const otherCode = issued.code === '000000' ? '111111' : '000000';
+  const NEW = 'زيتونة-مصراتة-7';
+  await expectError('a wrong reset code', 'code_invalid', reset({ phone: phoneP, code: otherCode, password: NEW }));
+  await expectError('a weak new password', 'password_too_short', reset({ phone: phoneP, code: issued.code, password: 'short' }));
+  const afterReset = await expectOk('the code sets a new password and signs in', reset({ phone: phoneP, code: issued.code, password: NEW }));
+  expectEqual('as the same person', afterReset.user.id, target);
+  await expectError('the old password no longer works', 'wrong_password', signIn(phoneP, PW));
+  await expectOk('the new one does', signIn(phoneP, NEW));
+  await expectError('a reset code works once', 'code_expired', reset({ phone: phoneP, code: issued.code, password: PW }));
+  const second = (await call('POST', `/admin/users/${target}/reset-code`, panel)).body;
+  const third = (await call('POST', `/admin/users/${target}/reset-code`, panel)).body;
+  if (second.code !== third.code) {
+    await expectError('a newer code replaces the older one', 'code_invalid', reset({ phone: phoneP, code: second.code, password: PW }));
+  }
+  h.setClock(NOW + 25 * HOURS);
+  await expectError('a reset code after a day', 'code_expired', reset({ phone: phoneP, code: third.code, password: PW }));
+  h.setClock(NOW);
+  const log = (await call('GET', '/admin/audit', panel)).body as { action: string; target_id: string }[];
+  expectEqual('reset codes are in the admin log', log.filter((a) => a.action === 'issue_reset_code' && a.target_id === target).length, 3);
+
+  await expectError('an account from before passwords', 'password_not_set', signIn(phoneB, PW));
+  await expectError('ADMIN_PHONES: a weak first password', 'password_too_short', signIn(phoneAdmin, 'short'));
+  await expectOk('ADMIN_PHONES: an account from before passwords sets its first one by signing in', signIn(phoneAdmin, PW));
+  await expectError('ADMIN_PHONES: after that, the password is checked', 'wrong_password', signIn(phoneAdmin, `${PW}x`));
+
+  for (let i = 0; i < 10; i++) await signUp({ phone: `+21894${String(1000000 + i)}`, password: PW, profile }, '203.0.113.9');
+  await expectError('an 11th account from one address in an hour', 'try_later', signUp({ phone: '+218941999999', password: PW, profile }, '203.0.113.9'));
+}
+
 console.log('\n— request size');
 const huge = JSON.stringify({ phone: '+218919990005', padding: 'x'.repeat(2_000_000) });
 await expectError('a 2 MB body, even before sign-in', 'too_large', call('POST', '/auth/request-code', undefined, huge));
@@ -221,6 +289,22 @@ expectEqual('recorded_by kept', ended.recorded_by, 'u_khaled');
 const roster = (await call('GET', '/events/e01/roster', khaled)).body;
 expectEqual('roster shows the hours', roster.participants.find((p: { user: { id: string } }) => p.user.id === 'u_ahmad').attendance.hours, 0.5);
 
+console.log('\n— attendance recorded with no connection, sent later');
+{
+  const MIN = 60_000;
+  const rec = (userId: string, kind: 'start' | 'end', body: object) => call('POST', `/events/e01/attendance/${userId}/${kind}`, khaled, body);
+  // Tapped 20 minutes ago with no signal, sent now: the time is the tap's, and it is not "backdated".
+  const queued = await expectOk('a start tapped 20 minutes ago arrives', rec('u_f3', 'start', { recorded_at: iso(NOW - 20 * MIN) }));
+  expectEqual('it started when it was tapped', queued.attendance.started_at, iso(NOW - 20 * MIN));
+  expectEqual('a live record, not a backdated one', queued.attendance.start_source, 'live');
+  expectEqual('recorded at the tap', queued.attendance.recorded_at, iso(NOW - 20 * MIN));
+  const queuedEnd = await expectOk('then its finish, tapped 5 minutes ago', rec('u_f3', 'end', { recorded_at: iso(NOW - 5 * MIN) }));
+  expectEqual('the hours between the two taps', queuedEnd.attendance.hours, 0.25);
+  await expectError('a tap time in the future (beyond a phone clock a little fast)', 'time_in_future', rec('u_f4', 'start', { recorded_at: iso(NOW + 10 * MIN) }));
+  await expectError('a chosen time after the tap', 'time_in_future', rec('u_f4', 'start', { recorded_at: iso(NOW - 20 * MIN), at: iso(NOW - 10 * MIN) }));
+
+}
+
 // ---------------------------------------------------------------------------
 console.log('\n— confirming hours and points');
 await expectError("confirm someone else's hours", 'not_your_attendance', call('POST', `/attendance/${ended.id}/confirm`, mariam));
@@ -246,6 +330,25 @@ await settle();
 expectEqual('auto-close → participant asked to confirm, once', pushesTo(TOKEN_F1).map((p) => p.data.attendance_id), [closed.id]);
 expectEqual('English phone, English text', pushesTo(TOKEN_F1)[0]?.body.startsWith('Your activity at'), true);
 await expectError('scheduler endpoint off without a secret', 'not_found', call('POST', '/internal/tick'));
+
+// A start and a finish tapped during the event with no signal, sent after it
+// (and after the auto-close above).
+{
+  const MIN = 60_000;
+  const ends = new Date(running.ends_at).getTime();
+  const rec = (userId: string, kind: 'start' | 'end', body: object) => call('POST', `/events/e01/attendance/${userId}/${kind}`, khaled, body);
+  // The supervisor's phone stayed offline until three hours after the event.
+  h.setClock(ends + 3 * 60 * MIN);
+  await expectError('a start sent now, after the event, without a tap time', 'event_closed', rec('u_f4', 'start', {}));
+  await expectOk('a start tapped during the event, sent after it', rec('u_f4', 'start', { recorded_at: iso(ends - 120 * MIN) }));
+  // Anyone opening the app closes attendance left open at the event's end.
+  await call('GET', '/events/e01/roster', khaled);
+  const late = await expectOk('its finish, tapped during the event', rec('u_f4', 'end', { recorded_at: iso(ends - 60 * MIN) }));
+  expectEqual("the supervisor's time replaces the automatic close", [late.attendance.hours, late.attendance.end_source], [1, 'live']);
+  await expectError('a finish sent now, without a tap time, once it has ended', 'already_ended', rec('u_f4', 'end', {}));
+  await expectError('a tap time more than two days old', 'sent_too_late', rec('u_mariam', 'start', { recorded_at: iso(ends + 3 * 60 * MIN - 49 * 60 * MIN) }));
+  h.setClock(ends + 1000);
+}
 
 // ---------------------------------------------------------------------------
 console.log('\n— proposing an event in the app');
@@ -459,6 +562,101 @@ await expectError('an appeal without a reason', 'reason_required', call('POST', 
 const appealed: MyWarning = await expectOk('she appeals', call('POST', `/warnings/${given.id}/appeal`, mariam, { reason: 'استأذنتهم قبل التصوير.' }));
 expectEqual('it waits for an admin', [appealed.warning.status, appealed.warning.appeal_reason], ['appealed', 'استأذنتهم قبل التصوير.']);
 await expectError('appeal twice', 'already_appealed', call('POST', `/warnings/${given.id}/appeal`, mariam, { reason: 'مرة أخرى.' }));
+
+// ---------------------------------------------------------------------------
+console.log('\n— supervisors added in the app');
+{
+  const TOKEN_MARIAM_TEAM = 'ExponentPushToken[mariam-team-phone]';
+  const TOKEN_F1_TEAM = 'ExponentPushToken[f1-team-phone]';
+  await call('PUT', '/me/push-token', mariam, { token: TOKEN_MARIAM_TEAM, lang: 'ar' });
+  await call('PUT', '/me/push-token', f1, { token: TOKEN_F1_TEAM, lang: 'en' });
+  const team = (await expectOk('an admin makes an event in the app, and supervises it', call('POST', '/events', admin, proposal({ title: 'فريق الحي' })))).id;
+  for (const token of [ahmad, mariam, f1]) await joinFully(token, team);
+  const addAs = (token: string, userId: string) => call('POST', `/events/${team}/supervisors/${userId}`, token);
+  const supervisorsOf = async () => ((await call('GET', `/events/${team}`, admin)).body as EventDetail).supervisors.map((u) => [u.id, u.added_in_app]);
+
+  await expectError('a member makes himself a supervisor', 'not_organizer', addAs(ahmad, 'u_ahmad'));
+  await expectError('someone who has not joined', 'not_joined', addAs(admin, 'u_fatima'));
+  await expectOk('its supervisor adds Mariam, who joined', addAs(admin, 'u_mariam'));
+  expectEqual('she is one of its supervisors, added in the app', await supervisorsOf(), [['u_admin', false], ['u_mariam', true]]);
+  await settle();
+  expectEqual('and is told', pushesTo(TOKEN_MARIAM_TEAM).map((p) => [p.data.type, p.data.event_id]), [['supervisor_added', team]]);
+  await expectError('added twice', 'already_supervisor', addAs(admin, 'u_mariam'));
+  const asMariam: EventDetail = (await call('GET', `/events/${team}`, mariam)).body;
+  expectEqual('she runs it now', [asMariam.i_organize, asMariam.can_manage], [true, true]);
+  await expectOk('she opens its roster', call('GET', `/events/${team}/roster`, mariam));
+  await expectOk('and adds a third supervisor herself', addAs(mariam, 'u_ahmad'));
+  await expectError('a fourth is one too many', 'too_many_supervisors', addAs(mariam, 'u_f1'));
+  await expectError('the supervisor it was made with is not taken off in the app', 'cannot_remove_supervisor', call('DELETE', `/events/${team}/supervisors/u_admin`, mariam));
+  await expectError('nor someone who is not one', 'not_supervisor', call('DELETE', `/events/${team}/supervisors/u_f1`, mariam));
+  await expectOk('Ahmad steps down', call('DELETE', `/events/${team}/supervisors/u_ahmad`, ahmad));
+  await expectError('the roster is closed to him again', 'not_organizer', call('GET', `/events/${team}/roster`, ahmad));
+
+  // An admin's edit in the panel keeps who was added in the app.
+  const d = (await call('GET', `/admin/events/${team}`, admin)).body;
+  await expectOk('an admin corrects the title in the panel', call('PUT', `/admin/events/${team}`, admin, {
+    title: 'فريق الحي الشمالي', description: d.event.description, subtype: d.event.subtype, address_text: d.event.address_text,
+    lat: d.event.lat, lng: d.event.lng, starts_at: d.event.starts_at, ends_at: d.event.ends_at, capacity: d.event.capacity,
+    gender_category: d.event.gender_category, organizer_ids: d.organizers.map((o: { id: string }) => o.id), terms: d.terms.map((t: { text: string }) => t.text),
+  }));
+  expectEqual('Mariam is still a supervisor added in the app', await supervisorsOf(), [['u_admin', false], ['u_mariam', true]]);
+
+  console.log('\n— notices to an event');
+  const post = (token: string, body: string) => call('POST', `/events/${team}/notices`, token, { body });
+  await expectError('a member posts one', 'not_organizer', post(f1, 'غيّرنا الموعد.'));
+  await expectError('an empty one', 'message_required', post(mariam, '   '));
+  await expectError('one too long', 'invalid_request', post(mariam, 'أ'.repeat(NOTICE_MAX + 1)));
+  const before = pushes.length;
+  const posted = (await expectOk('a supervisor added in the app posts one', post(mariam, '  نلتقي عند البوابة الشمالية بدل الجنوبية.  '))).notice;
+  expectEqual('trimmed, and hers to take down', [posted.body, posted.author.id, posted.can_delete], ['نلتقي عند البوابة الشمالية بدل الجنوبية.', 'u_mariam', true]);
+  await settle();
+  const told = pushes.slice(before);
+  expectEqual('those who joined are told, not its author', [told.some((p) => p.to === TOKEN_F1_TEAM), told.some((p) => p.to === TOKEN_MARIAM_TEAM)], [true, false]);
+  expectEqual('with the event in the title', told.find((p) => p.to === TOKEN_F1_TEAM)?.title, 'A notice about "فريق الحي الشمالي"');
+  expectEqual('which opens the event', told.find((p) => p.to === TOKEN_F1_TEAM)?.data, { type: 'event_notice', event_id: team });
+  const asF1: EventDetail = (await call('GET', `/events/${team}`, f1)).body;
+  expectEqual('a member who joined reads it on the page, not his to take down', asF1.notices?.map((n) => [n.body, n.can_delete]), [[posted.body, false]]);
+  expectEqual('someone who did not join does not', ((await call('GET', `/events/${team}`, fatima)).body as EventDetail).notices, null);
+  await expectError('a member takes it down', 'not_your_notice', call('DELETE', `/events/${team}/notices/${posted.id}`, f1));
+  h.setClock(h.clock() + 60_000);
+  await post(admin, 'تذكير: أحضروا الماء.');
+  expectEqual('newest first', ((await call('GET', `/events/${team}`, f1)).body as EventDetail).notices?.map((n) => n.body), ['تذكير: أحضروا الماء.', posted.body]);
+  console.log('\n— reactions to an announcement');
+  const react = (token: string, reaction: string, id = posted.id) => call('PUT', `/events/${team}/notices/${id}/reaction`, token, { reaction });
+  const counts = (n: EventNoticeItem) => n.reactions.map((r) => [r.reaction, r.count]);
+  expectEqual('it is an announcement', posted.kind, 'announcement');
+  await expectError('someone who did not join reacts', 'not_found', react(fatima, 'noted'));
+  await expectError('a reaction not in the list', 'not_found', react(f1, 'angry'));
+  await expectError("a question's answer on an announcement", 'not_found', react(f1, 'agree'));
+  const pushesBefore = pushes.length;
+  const noted: EventNoticeItem = (await expectOk('a member reacts', react(f1, 'noted'))).notice;
+  expectEqual('counted, and shown as his', [counts(noted), noted.my_reaction], [[['noted', 1], ['disagree', 0], ['sad', 0]], 'noted']);
+  await expectOk('another member reacts', react(ahmad, 'noted'));
+  const switched: EventNoticeItem = (await expectOk('the first changes his mind', react(f1, 'sad'))).notice;
+  expectEqual('one reaction per person', [counts(switched), switched.my_reaction], [[['noted', 1], ['disagree', 0], ['sad', 1]], 'sad']);
+  const byAuthor = ((await call('GET', `/events/${team}`, mariam)).body as EventDetail).notices?.find((n) => n.id === posted.id);
+  expectEqual('its author sees the counts, with no reaction of her own', [byAuthor && counts(byAuthor), byAuthor?.my_reaction], [counts(switched), null]);
+  await settle();
+  expectEqual('nobody is notified of a reaction', pushes.length, pushesBefore);
+  const back: EventNoticeItem = (await expectOk('he takes his back', call('DELETE', `/events/${team}/notices/${posted.id}/reaction`, f1))).notice;
+  expectEqual('it no longer counts', [counts(back), back.my_reaction], [[['noted', 1], ['disagree', 0], ['sad', 0]], null]);
+
+  console.log('\n— a question to the participants');
+  await expectError('a kind of notice that does not exist', 'not_found', call('POST', `/events/${team}/notices`, mariam, { body: 'نعم أم لا؟', kind: 'poll' }));
+  const asked: EventNoticeItem = (await expectOk('a supervisor asks', call('POST', `/events/${team}/notices`, mariam, { body: 'هل نلتقي عند البوابة الشمالية بدل الجنوبية؟', kind: 'question' }))).notice;
+  expectEqual('with its answers to choose from', counts(asked), [['agree', 0], ['disagree', 0], ['undecided', 0]]);
+  await settle();
+  expectEqual('those who joined are asked', pushesTo(TOKEN_F1_TEAM).at(-1)?.title, 'A question about "فريق الحي الشمالي"');
+  await expectError('"noted" is no answer to a question', 'not_found', react(f1, 'noted', asked.id));
+  await react(f1, 'agree', asked.id);
+  await react(ahmad, 'disagree', asked.id);
+  const answered: EventNoticeItem = (await expectOk('a third is not sure yet', react(admin, 'undecided', asked.id))).notice;
+  expectEqual('each answer counted', counts(answered), [['agree', 1], ['disagree', 1], ['undecided', 1]]);
+
+  await expectOk('its author takes hers down', call('DELETE', `/events/${team}/notices/${posted.id}`, mariam));
+  await expectError('a notice taken down takes no reactions', 'not_found', react(f1, 'noted'));
+  expectEqual('gone from the page', ((await call('GET', `/events/${team}`, f1)).body as EventDetail).notices?.length, 2);
+}
 
 // ---------------------------------------------------------------------------
 console.log('\n— deleting an account');

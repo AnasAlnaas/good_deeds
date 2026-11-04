@@ -187,7 +187,14 @@ export type AdminAction =
   | 'remove_photo'
   | 'handle_report'
   | 'uphold_warning'
-  | 'withdraw_warning';
+  | 'withdraw_warning'
+  | 'issue_reset_code';
+
+/** POST /api/admin/users/:id/reset-code: shown to the admin once, to give the person (by phone or in person). */
+export interface ResetCodeResponse {
+  code: string;
+  expires_at: string;
+}
 
 /** GET /api/admin/audit (newest first) */
 export interface AuditEntry {

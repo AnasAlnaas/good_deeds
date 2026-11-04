@@ -65,6 +65,54 @@ export interface AppEvent {
 export interface EventOrganizer {
   event_id: string;
   user_id: string;
+  /**
+   * The supervisor or admin who made this person a supervisor in the app, from
+   * among the people who joined. null = named when the event was made (by its
+   * proposer, or by an admin in the panel). Only those added in the app can be
+   * taken off again in the app.
+   */
+  added_by: string | null;
+}
+
+/**
+ * Owner's decision (2026-11-03): a supervisor of the event (or an admin) posts a
+ * notice to its people: a change, a reminder, a detail that came up. Everyone
+ * who joined is notified and sees it on the event's page.
+ */
+export interface EventNotice {
+  id: string;
+  event_id: string;
+  author_id: string;
+  kind: NoticeKind;
+  body: string;
+  created_at: string;
+}
+
+/**
+ * Owner's decision (2026-11-03): a notice is an announcement (إعلان) or a
+ * question (سؤال), e.g. "shall we meet at the north gate instead?". Each kind
+ * has its own reactions; a question's are its answers.
+ */
+export type NoticeKind = 'announcement' | 'question';
+export const NOTICE_KINDS: NoticeKind[] = ['announcement', 'question'];
+
+/**
+ * Owner's decision (2026-11-03): the people of an event react to a notice, so
+ * its supervisors see it was read. One of a few fixed reactions, one per person
+ * per notice; nobody is notified of a reaction.
+ */
+export type NoticeReactionKind = 'noted' | 'agree' | 'disagree' | 'undecided' | 'sad';
+/** The reactions each kind of notice offers, in the order they are shown (owner's choice, 2026-11-03). */
+export const NOTICE_REACTIONS: Record<NoticeKind, NoticeReactionKind[]> = {
+  announcement: ['noted', 'disagree', 'sad'],
+  question: ['agree', 'disagree', 'undecided'],
+};
+
+export interface NoticeReaction {
+  notice_id: string;
+  user_id: string;
+  reaction: NoticeReactionKind;
+  created_at: string;
 }
 
 export interface EventTerm {
@@ -189,6 +237,8 @@ export interface Db {
   branches: Branch[];
   events: AppEvent[];
   event_organizers: EventOrganizer[];
+  event_notices: EventNotice[];
+  notice_reactions: NoticeReaction[];
   event_terms: EventTerm[];
   registrations: Registration[];
   term_acceptances: TermAcceptance[];

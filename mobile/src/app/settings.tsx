@@ -5,6 +5,8 @@ import { Button } from '@/components/Button';
 import { Screen } from '@/components/Screen';
 import { Chip, Row, SectionTitle } from '@/components/ui';
 import { PRIVACY_URL } from '@/data/config';
+import { queuedCount } from '@/data/outbox';
+import { fmt } from '@/i18n/format';
 import * as dialog from '@/lib/dialog';
 import { useApp } from '@/state/app';
 import { useAction } from '@/state/useAction';
@@ -17,6 +19,19 @@ export default function SettingsScreen() {
     if (router.canDismiss()) router.dismissAll();
     router.replace('/login');
     signOut();
+  };
+
+  // Records kept offline are not lost by signing out, but the supervisor should know.
+  const signOutOfServer = () => {
+    const n = queuedCount();
+    if (!n) return toLogin();
+    dialog.confirm({
+      title: s.settings.signOutQueuedTitle,
+      message: fmt(s.settings.signOutQueuedBody, { n }),
+      cancel: s.cancel,
+      action: s.settings.signOut,
+      onConfirm: toLogin,
+    });
   };
 
   const reset = () =>
@@ -74,7 +89,7 @@ export default function SettingsScreen() {
       )}
 
       <SectionTitle>{s.settings.account}</SectionTitle>
-      {mode === 'api' && <Button variant="secondary" icon="log-out-outline" label={s.settings.signOut} onPress={toLogin} />}
+      {mode === 'api' && <Button variant="secondary" icon="log-out-outline" label={s.settings.signOut} onPress={signOutOfServer} />}
       <Button variant="danger" icon="trash-outline" label={s.settings.deleteAccount} disabled={busy} onPress={deleteAccount} />
     </Screen>
   );

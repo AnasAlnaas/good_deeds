@@ -11,12 +11,16 @@
 import { cityOf } from './cities';
 import { ApiError } from './errors';
 import { END_GRACE_MINUTES } from './placeholders';
+import { NOTICE_KINDS, NOTICE_REACTIONS } from './types';
 import type {
   AppEvent,
   Attendance,
   EventStatus,
   EventTerm,
+  EventNotice,
   Level,
+  NoticeKind,
+  NoticeReaction,
   PointsLedgerEntry,
   Registration,
   ReportCategory,
@@ -151,6 +155,36 @@ export function libyanMobile(input: string): string | null {
 /** Repeated spaces or tabs become one space; the Arabic stretching mark (ـ) is dropped. */
 const tidy = (text: string) => text.replace(/\u0640/g, '').replace(/\s+/g, ' ').trim();
 
+// ---------- the password ----------
+
+// There is no SMS check of the number (too costly for now): an account is its
+// phone number and a password. A forgotten password is reset with a one-time
+// code that an admin gives the person (server/src/routes/auth.ts).
+export const PASSWORD_MIN = 8;
+export const PASSWORD_MAX = 128;
+
+/**
+ * A password as it is checked and stored: the same whichever keyboard typed it
+ * (\u0660\u0661\u0662 and 012 alike, one Unicode form for Arabic letters with marks).
+ */
+export function normalizePassword(password: string): string {
+  return latinDigits(password).normalize('NFC');
+}
+
+/**
+ * Why a new password is refused, or null if it may be used: at least 8
+ * characters, not one or two characters over and over, not a run like
+ * 12345678, and without the phone number in it.
+ */
+export function passwordProblem(password: string, phone: string): 'password_too_short' | 'password_too_simple' | null {
+  const p = normalizePassword(password);
+  if ([...p].length < PASSWORD_MIN) return 'password_too_short';
+  const local = phone.replace(/^\+218/, '');
+  const runs = ['0123456789', '9876543210', 'abcdefghijklmnopqrstuvwxyz'];
+  if (new Set(p).size < 3 || p.includes(local) || runs.some((r) => r.includes(p.toLowerCase()))) return 'password_too_simple';
+  return null;
+}
+
 /**
  * A name and family name (الاسم واللقب): letters only (Arabic or Latin, with
  * their marks), at least two words, each of at least two letters; a hyphen or
@@ -278,7 +312,29 @@ function assertRecorder(args: { actorId: string; participantId: string; actorIsO
   if (args.actorId === args.participantId) throw new ApiError('cannot_record_self');
 }
 
-/** Recording when a participant started. `startedAt` absent = now; earlier = backdated, never before the event. */
+/**
+ * A record made on the supervisor's phone without a connection reaches the
+ * server later, with `recordedAt`: when it was tapped. It is judged as at that
+ * moment (the event was running, the time was not in the future), not as at
+ * its arrival. The phone's clock may be a little ahead of the server's; a
+ * record older than this is refused, as nobody would remember it right.
+ */
+export const OFFLINE_RECORD_MAX_HOURS = 48;
+const CLOCK_SKEW_MS = 5 * 60_000;
+
+/** The moment a record was made: now, or when it was tapped offline (see OFFLINE_RECORD_MAX_HOURS). */
+function recordingMoment(recordedAt: number | undefined, now: number): number {
+  if (recordedAt === undefined) return now;
+  if (recordedAt > now + CLOCK_SKEW_MS) throw new ApiError('time_in_future');
+  if (recordedAt < now - OFFLINE_RECORD_MAX_HOURS * MS_HOUR) throw new ApiError('sent_too_late');
+  return Math.min(recordedAt, now);
+}
+
+/**
+ * Recording when a participant started. `startedAt` absent = the moment it is
+ * recorded; earlier = backdated, never before the event. `recordedAt`: made
+ * offline at that moment (recordingMoment).
+ */
 export function decideRecordStart(args: {
   actorId: string;
   participantId: string;
@@ -287,26 +343,35 @@ export function decideRecordStart(args: {
   registration: Registration | undefined;
   attendance: Attendance | undefined;
   startedAt?: number;
+  recordedAt?: number;
   now: number;
-}): Pick<Attendance, 'started_at' | 'start_source'> {
-  const { event, now } = args;
+}): Pick<Attendance, 'started_at' | 'start_source' | 'recorded_at'> {
+  const { event } = args;
   assertRecorder(args);
+  const at = recordingMoment(args.recordedAt, args.now);
   // A cancelled event keeps its time and its joined members, but nobody works at it.
   if (event.status === 'cancelled') throw new ApiError('event_closed');
-  if (now < toMs(event.starts_at)) throw new ApiError('event_not_started');
-  if (now > toMs(event.ends_at)) throw new ApiError('event_closed');
+  if (at < toMs(event.starts_at)) throw new ApiError('event_not_started');
+  if (at > toMs(event.ends_at)) throw new ApiError('event_closed');
   if (args.registration?.status !== 'joined') throw new ApiError('not_joined');
   if (args.attendance) throw new ApiError('already_started');
-  const startedAt = args.startedAt ?? now;
+  const startedAt = args.startedAt ?? at;
   if (startedAt < toMs(event.starts_at)) throw new ApiError('start_before_event');
-  if (startedAt > now) throw new ApiError('time_in_future');
+  if (startedAt > at) throw new ApiError('time_in_future');
   return {
     started_at: toIso(startedAt),
-    start_source: now - startedAt > BACKDATE_AFTER_MS ? 'backdated' : 'live',
+    start_source: at - startedAt > BACKDATE_AFTER_MS ? 'backdated' : 'live',
+    recorded_at: toIso(at),
   };
 }
 
-/** Recording when a participant finished. The hours are computed here, never by a screen. */
+/**
+ * Recording when a participant finished. The hours are computed here, never by
+ * a screen. `recordedAt`: made offline at that moment (recordingMoment). Such
+ * a record may arrive after the event's end closed the attendance by itself:
+ * the supervisor's real time then replaces the automatic one, as long as the
+ * participant has not answered it yet.
+ */
 export function decideRecordEnd(args: {
   actorId: string;
   participantId: string;
@@ -314,20 +379,23 @@ export function decideRecordEnd(args: {
   event: Pick<AppEvent, 'status' | 'ends_at'>;
   attendance: Attendance | undefined;
   endedAt?: number;
+  recordedAt?: number;
   now: number;
 }): Pick<Attendance, 'ended_at' | 'end_source' | 'hours'> {
-  const { attendance: a, now } = args;
+  const { attendance: a } = args;
   assertRecorder(args);
+  const at = recordingMoment(args.recordedAt, args.now);
   if (args.event.status === 'cancelled') throw new ApiError('event_closed');
   if (!a) throw new ApiError('not_started');
-  if (a.ended_at) throw new ApiError('already_ended');
-  const endedAt = args.endedAt ?? now;
-  if (endedAt > now) throw new ApiError('time_in_future');
+  const replacesAutoClose = args.recordedAt !== undefined && a.end_source === 'auto_closed' && a.participant_status === 'pending';
+  if (a.ended_at && !replacesAutoClose) throw new ApiError('already_ended');
+  const endedAt = args.endedAt ?? at;
+  if (endedAt > at) throw new ApiError('time_in_future');
   if (endedAt <= toMs(a.started_at)) throw new ApiError('end_before_start');
   if (endedAt > toMs(args.event.ends_at) + END_GRACE_MINUTES * 60_000) throw new ApiError('end_after_event');
   return {
     ended_at: toIso(endedAt),
-    end_source: now - endedAt > BACKDATE_AFTER_MS ? 'backdated' : 'live',
+    end_source: at - endedAt > BACKDATE_AFTER_MS ? 'backdated' : 'live',
     hours: round2((endedAt - toMs(a.started_at)) / MS_HOUR),
   };
 }
@@ -487,6 +555,116 @@ export function assertCanAppeal(w: Warning | undefined, userId: string, reason: 
   if (w.status === 'withdrawn') throw new ApiError('warning_withdrawn');
   if (w.status !== 'active') throw new ApiError('already_appealed');
   if (!reason) throw new ApiError('reason_required');
+}
+
+// ---------- an event's supervisors ----------
+// Owner's decision (2026-11-03): a supervisor is not alone at an event. A
+// supervisor of it, or an admin, may make one or two of the people who joined it
+// supervisors too; they then do all a supervisor does there (record attendance,
+// give warnings, post notices, add or take off a supervisor).
+
+/** The supervisors one event may have: the one it was made with and up to two more. */
+export const MAX_EVENT_SUPERVISORS = 3;
+
+/** Who may run an event in the app: its supervisors, and admins. */
+export function canManageEvent(user: Pick<User, 'role'>, isOrganizer: boolean) {
+  return isOrganizer || user.role === 'admin';
+}
+
+/** An event still being prepared or held: one that is cancelled, a draft or over is past changing. */
+function assertEventOpen(event: EventTimes, now: number) {
+  if (event.status === 'cancelled' || isHidden(event) || now >= toMs(event.ends_at)) throw new ApiError('event_closed');
+}
+
+export function assertCanAddSupervisor(args: {
+  actorCanManage: boolean;
+  event: EventTimes;
+  /** The registration of the person to add. */
+  registration: Pick<Registration, 'status'> | undefined;
+  alreadySupervisor: boolean;
+  supervisorCount: number;
+  now: number;
+}) {
+  if (!args.actorCanManage) throw new ApiError('not_organizer');
+  assertEventOpen(args.event, args.now);
+  if (args.alreadySupervisor) throw new ApiError('already_supervisor');
+  // Only someone who joined: they accepted its terms and fit its category.
+  if (args.registration?.status !== 'joined') throw new ApiError('not_joined');
+  if (args.supervisorCount >= MAX_EVENT_SUPERVISORS) throw new ApiError('too_many_supervisors');
+}
+
+/**
+ * Taking a supervisor off an event in the app: only one added in the app (the
+ * ones it was made with are the admins' to change, in the panel), and never the
+ * last. A supervisor may also step down this way.
+ */
+export function assertCanRemoveSupervisor(args: {
+  actorCanManage: boolean;
+  event: EventTimes;
+  link: { added_by: string | null } | undefined;
+  supervisorCount: number;
+  now: number;
+}) {
+  if (!args.actorCanManage) throw new ApiError('not_organizer');
+  assertEventOpen(args.event, args.now);
+  if (!args.link) throw new ApiError('not_supervisor');
+  if (args.link.added_by === null || args.supervisorCount <= 1) throw new ApiError('cannot_remove_supervisor');
+}
+
+// ---------- an event's notices ----------
+
+export const NOTICE_MAX = 1000;
+/** A notice can be posted until this many days after the event ends (a thank-you, a follow-up). */
+export const NOTICE_DAYS_AFTER_EVENT = 7;
+/** Enough for any real event; it stops a flood of notifications. */
+export const MAX_NOTICES_PER_EVENT = 50;
+
+/** Who reads an event's notices: the people who joined it, its supervisors, and admins. */
+export function canReadNotices(user: Pick<User, 'role'>, registration: Pick<Registration, 'status'> | undefined, isOrganizer: boolean) {
+  return canManageEvent(user, isOrganizer) || registration?.status === 'joined';
+}
+
+export function assertCanPostNotice(args: {
+  actorCanManage: boolean;
+  event: EventTimes;
+  /** Already cleaned (cleanText). */
+  body: string | null;
+  kind: string;
+  noticeCount: number;
+  now: number;
+}) {
+  const { event, now } = args;
+  if (!args.actorCanManage) throw new ApiError('not_organizer');
+  if (event.status === 'cancelled' || isHidden(event) || now > toMs(event.ends_at) + NOTICE_DAYS_AFTER_EVENT * 24 * MS_HOUR) {
+    throw new ApiError('event_closed');
+  }
+  if (!args.body) throw new ApiError('message_required');
+  if (!(NOTICE_KINDS as string[]).includes(args.kind)) throw new ApiError('not_found');
+  if (args.noticeCount >= MAX_NOTICES_PER_EVENT) throw new ApiError('too_many_notices');
+}
+
+/**
+ * Reacting to a notice: whoever may read it, with one of the fixed reactions.
+ * A new reaction replaces the person's earlier one; taking it back is always allowed.
+ */
+export function assertCanReact(args: { canRead: boolean; notice: Pick<EventNotice, 'kind'> | undefined; reaction: string }) {
+  if (!args.notice || !args.canRead) throw new ApiError('not_found');
+  // Only the reactions of this kind of notice: a question is not "noted", an announcement not voted on.
+  if (!(NOTICE_REACTIONS[args.notice.kind] as string[]).includes(args.reaction)) throw new ApiError('not_found');
+}
+
+/** Counts per reaction of the notice's kind, in the order shown, and the viewer's own. */
+export function reactionSummary(kind: NoticeKind, rows: Pick<NoticeReaction, 'user_id' | 'reaction'>[], viewerId: string) {
+  return {
+    reactions: NOTICE_REACTIONS[kind].map((reaction) => ({ reaction, count: rows.filter((r) => r.reaction === reaction).length })),
+    my_reaction: rows.find((r) => r.user_id === viewerId)?.reaction ?? null,
+  };
+}
+
+/** A notice is taken down by whoever posted it, or by an admin. */
+export function assertCanDeleteNotice(notice: { author_id: string } | undefined, user: Pick<User, 'id' | 'role'>) {
+  if (!notice) throw new ApiError('not_found');
+  if (notice.author_id !== user.id && user.role !== 'admin') throw new ApiError('not_your_notice');
 }
 
 // ---------- deleting an account ----------

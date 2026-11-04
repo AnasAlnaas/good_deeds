@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
 import type { EventSummary } from '@/data/api';
+import { usePrefetchEvent } from '@/data/queries';
 import { dayTimeRange, fmt } from '@/i18n/format';
 import { openDirections } from '@/lib/directions';
 import { useApp } from '@/state/app';
@@ -17,6 +18,7 @@ import { Badge, Card, IconButton, Row } from './ui';
  */
 export function EventCard({ event, floating }: { event: EventSummary; floating?: boolean }) {
   const { s, now, lang } = useApp();
+  const prefetch = usePrefetchEvent();
   const full = event.joined_count >= event.capacity;
   const badges =
     event.status === 'running' ||
@@ -30,6 +32,7 @@ export function EventCard({ event, floating }: { event: EventSummary; floating?:
     // Over the map the card stays solid; the men / women badge says why the event is not for this person.
     <Card
       onPress={() => router.push(`/event/${event.id}`)}
+      onPressIn={() => prefetch(event.id)}
       style={[!event.can_join_category && !floating && styles.dim, floating && shadow]}>
       <View style={[styles.head, floating && styles.headRoom]}>
         <View style={styles.icon}>

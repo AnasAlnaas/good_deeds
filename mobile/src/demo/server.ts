@@ -4,7 +4,8 @@
 // The screens never compute hours or points themselves.
 
 import type { EventProposal, ProfileEdit, ReportBody } from '@/data/api';
-import type { AppEvent, Attendance, Db, EventStatus, EventTerm, Registration, Report, User, Warning } from '@/data/types';
+import type { AppEvent, Attendance, Db, EventNotice, EventStatus, EventTerm, NoticeKind, NoticeReactionKind, Registration, Report, User, Warning } from '@/data/types';
+import { NOTICE_REACTIONS } from '@/data/types';
 import { BASE_POINTS_BY_SUBTYPE } from './placeholders';
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
@@ -150,7 +151,7 @@ export function proposeEvent(db: Db, userId: string, input: EventProposal, now: 
     created_at: at,
   };
   next.events.push(event);
-  next.event_organizers.push({ event_id: event.id, user_id: userId });
+  next.event_organizers.push({ event_id: event.id, user_id: userId, added_by: null });
   writeTerms(next, event.id, input, at);
   return { db: next, event };
 }
@@ -331,7 +332,6 @@ export function recordStart(
     end_source: null,
     hours: null,
     recorded_by: actorId,
-    recorded_at: new Date(now).toISOString(),
     participant_status: 'pending',
     participant_acted_at: null,
   });
@@ -489,6 +489,98 @@ export function warn(db: Db, actorId: string, args: { eventId: string; userId: s
   const next = clone(db);
   next.warnings.push(warning);
   return { db: next, warning };
+}
+
+// ---------- an event's supervisors and notices ----------
+
+/** Like the server's supervisorsOf: deleted accounts left out, those the event was made with first. */
+export function supervisorsOf(db: Db, eventId: string): (User & { added_by: string | null })[] {
+  return db.event_organizers
+    .filter((o) => o.event_id === eventId)
+    .flatMap((o) => {
+      const u = getUser(db, o.user_id);
+      return u && !u.deleted_at ? [{ ...u, added_by: o.added_by }] : [];
+    })
+    .sort((a, b) => Number(a.added_by !== null) - Number(b.added_by !== null));
+}
+
+export function addSupervisor(db: Db, actorId: string, eventId: string, userId: string, now: number): Db {
+  const event = getEvent(db, eventId);
+  const links = db.event_organizers.filter((o) => o.event_id === eventId);
+  rules.assertCanAddSupervisor({
+    actorCanManage: rules.canManageEvent(getUser(db, actorId)!, isOrganizer(db, eventId, actorId)),
+    event,
+    registration: registrationOf(db, eventId, userId),
+    alreadySupervisor: links.some((l) => l.user_id === userId),
+    supervisorCount: links.length,
+    now,
+  });
+  const next = clone(db);
+  next.event_organizers.push({ event_id: eventId, user_id: userId, added_by: actorId });
+  return next;
+}
+
+export function removeSupervisor(db: Db, actorId: string, eventId: string, userId: string, now: number): Db {
+  const event = getEvent(db, eventId);
+  const links = db.event_organizers.filter((o) => o.event_id === eventId);
+  rules.assertCanRemoveSupervisor({
+    actorCanManage: rules.canManageEvent(getUser(db, actorId)!, isOrganizer(db, eventId, actorId)),
+    event,
+    link: links.find((l) => l.user_id === userId),
+    supervisorCount: links.length,
+    now,
+  });
+  const next = clone(db);
+  next.event_organizers = next.event_organizers.filter((o) => !(o.event_id === eventId && o.user_id === userId));
+  return next;
+}
+
+/** Newest first. */
+export function noticesOf(db: Db, eventId: string): EventNotice[] {
+  return db.event_notices.filter((n) => n.event_id === eventId).sort((a, b) => rules.toMs(b.created_at) - rules.toMs(a.created_at));
+}
+
+export function postNotice(db: Db, actorId: string, eventId: string, body: string, kind: NoticeKind, now: number): { db: Db; notice: EventNotice } {
+  const event = getEvent(db, eventId);
+  const cleaned = rules.cleanText(body);
+  rules.assertCanPostNotice({
+    actorCanManage: rules.canManageEvent(getUser(db, actorId)!, isOrganizer(db, eventId, actorId)),
+    event,
+    body: cleaned,
+    kind,
+    noticeCount: noticesOf(db, eventId).length,
+    now,
+  });
+  const notice: EventNotice = { id: newId('notice'), event_id: eventId, author_id: actorId, kind, body: cleaned!, created_at: new Date(now).toISOString() };
+  const next = clone(db);
+  next.event_notices.push(notice);
+  return { db: next, notice };
+}
+
+export function deleteNotice(db: Db, actorId: string, eventId: string, noticeId: string): Db {
+  getEvent(db, eventId);
+  rules.assertCanDeleteNotice(db.event_notices.find((n) => n.id === noticeId && n.event_id === eventId), getUser(db, actorId)!);
+  const next = clone(db);
+  next.event_notices = next.event_notices.filter((n) => n.id !== noticeId);
+  next.notice_reactions = next.notice_reactions.filter((r) => r.notice_id !== noticeId);
+  return next;
+}
+
+/** A reaction replaces the person's earlier one; null takes it back (rules.assertCanReact). */
+export function reactToNotice(db: Db, userId: string, eventId: string, noticeId: string, reaction: NoticeReactionKind | null, now: number): Db {
+  getEvent(db, eventId);
+  const user = getUser(db, userId)!;
+  const notice = db.event_notices.find((n) => n.id === noticeId && n.event_id === eventId);
+  rules.assertCanReact({
+    canRead: rules.canReadNotices(user, registrationOf(db, eventId, userId), isOrganizer(db, eventId, userId)),
+    notice,
+    // Taking a reaction back needs none named: any the notice offers passes the check.
+    reaction: reaction ?? (notice ? NOTICE_REACTIONS[notice.kind][0] : ''),
+  });
+  const next = clone(db);
+  next.notice_reactions = next.notice_reactions.filter((r) => !(r.notice_id === noticeId && r.user_id === userId));
+  if (reaction) next.notice_reactions.push({ notice_id: noticeId, user_id: userId, reaction, created_at: new Date(now).toISOString() });
+  return next;
 }
 
 /** The member appeals their warning. The demo has no admin, so the appeal stays waiting. */

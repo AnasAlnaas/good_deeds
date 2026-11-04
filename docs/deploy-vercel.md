@@ -31,7 +31,7 @@ need your account and a browser.
    | `JWT_SECRET` | a long random value: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
    | `CRON_SECRET` | another random value, made the same way |
    | `TRUST_PROXY` | `1` (Vercel sets the caller's address itself) |
-   | `LOGIN_CODE_DELIVERY` | `console` (testing only, see step 4) |
+   | `LOGIN_CODE_DELIVERY` | leave it out: the app signs in with a password (see step 4) |
    | `CORS_ORIGINS` | the admin panel's address, after step 5, e.g. `https://good-deeds-admin.vercel.app` |
    | `ADMIN_PHONES` | the first admin's phone, e.g. `0912345678` (see step 5) |
    | `VERCEL_EXPERIMENTAL_BACKENDS` | `1`: Vercel's Hono build mode that bundles the server (its imports have no `.js` endings, which the default mode needs) |
@@ -70,20 +70,35 @@ attendance waits for it. To send that sooner, a free outside scheduler (e.g.
 - URL: `https://good-deeds-api.vercel.app/api/internal/tick` (GET)
 - Header: `Authorization: Bearer <CRON_SECRET>`
 
-## 4. Sign-in codes while testing
+## 4. Sign-in: phone number and password
 
-There is no SMS provider yet, so with `LOGIN_CODE_DELIVERY=console` a sign-in
-code is written to the log instead of being sent. Read it in `good-deeds-api` →
-**Logs** (search `sign-in code`). Hobby keeps logs for one hour. Testers ask
-whoever watches the logs for their code. Before real members use the app, add
-an SMS provider.
+SMS costs too much for now, so the app and the admin panel sign in with a phone
+number and a password; nothing is sent to the phone. Nobody checks that a
+number is the person's, so:
+
+- **Forgotten password:** an admin opens **الأعضاء** in the panel, finds the
+  person and presses **رمز استعادة**. The panel shows a 6-digit code once. The
+  admin gives it to the person after checking it is them (a call to that
+  number, or in person). In the app, the person taps **نسيت كلمة المرور؟** and
+  types the code with a new password. A code works once, for a day.
+- **Someone signed up with another person's number:** the same. The code lets
+  the real owner choose a new password, and the other person is shut out.
+- **Accounts made before passwords** (signed up with an SMS code while
+  testing) get a reset code the same way. The app asks them for one.
+- Ten wrong passwords in a day lock an account until the next day, or until
+  a reset code.
+
+The SMS sign-in is still in the server for later. Leave `LOGIN_CODE_DELIVERY`
+unset (or `none`), so sign-in codes are no longer written to the log.
 
 ## 5. The first admin
 
 1. Put the admin's phone number in `ADMIN_PHONES` (step 4; several are
    separated by commas) and redeploy.
 2. Sign up in the app (step 6) with that number. The account is made admin as
-   it signs in, and can sign in to the admin panel.
+   it signs in, and can sign in to the admin panel. If that number already has
+   an account from before passwords, sign in with it instead: while the number
+   is in `ADMIN_PHONES`, the password typed then becomes its password.
 3. Then remove the number from `ADMIN_PHONES`: while it is there, demoting that
    person in the panel is undone at their next sign-in. After that, admins
    change roles in the panel.

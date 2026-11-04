@@ -47,9 +47,16 @@ export async function assertIdsExist(q: Database, input: { organizer_ids: string
   return { organizerIds };
 }
 
+/** The event's supervisors become exactly these. Those who stay keep their row (and who added them in the app). */
 export async function writeLinks(q: Database, eventId: string, organizerIds: string[]) {
-  await q.delete(s.event_organizers).where(eq(s.event_organizers.event_id, eventId));
-  if (organizerIds.length) await q.insert(s.event_organizers).values(organizerIds.map((user_id) => ({ event_id: eventId, user_id })));
+  const wanted = [...new Set(organizerIds)];
+  const current = await q.select({ user_id: s.event_organizers.user_id }).from(s.event_organizers).where(eq(s.event_organizers.event_id, eventId));
+  const gone = current.map((r) => r.user_id).filter((id) => !wanted.includes(id));
+  const added = wanted.filter((id) => !current.some((r) => r.user_id === id));
+  if (gone.length) {
+    await q.delete(s.event_organizers).where(and(eq(s.event_organizers.event_id, eventId), inArray(s.event_organizers.user_id, gone)));
+  }
+  if (added.length) await q.insert(s.event_organizers).values(added.map((user_id) => ({ event_id: eventId, user_id, added_by: null })));
 }
 
 export async function writeTerms(q: Database, eventId: string, terms: string[], at: Date) {

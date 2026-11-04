@@ -18,6 +18,7 @@ import type {
   AuditEntry,
   DisputeRow,
   HoursReportRow,
+  ResetCodeResponse,
 } from '../../../shared/admin-api';
 import * as adminRules from '../../../shared/admin-rules';
 import { eventSubtypes } from '../../../shared/classes';
@@ -40,6 +41,7 @@ import {
   notifyReportHandled,
   notifyWarningDecided,
 } from '../notify';
+import { issueResetCode } from './auth';
 import { assertIdsExist, eventInput, isoTime, writeLinks, writeTerms } from './event-input';
 
 const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
@@ -273,6 +275,24 @@ export const adminRoutes = new Hono<AppEnv>()
     });
     notifyPhotoRemoved(c.var.deps, id);
     return c.body(null, 204);
+  })
+
+  // A one-time code to set a new password, for someone who forgot theirs, has an
+  // account from before passwords, or finds their number signed up by someone
+  // else. The admin gives it to the person once sure it is them (by a call to
+  // the number, or in person). Shown only here, only once.
+  .post('/users/:id/reset-code', async (c) => {
+    const { db, now, jwtSecret } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    const t = now();
+    const issued = await db.transaction(async (tx) => {
+      const [target] = await tx.select().from(s.users).where(eq(s.users.id, id)).for('update');
+      if (!target || target.deleted_at) throw new ApiError('not_found');
+      await audit(tx, { actorId: me.id, action: 'issue_reset_code', targetId: id, details: { name: target.full_name }, at: new Date(t) });
+      return issueResetCode(tx, jwtSecret, target.phone, me.id, t);
+    });
+    return c.json<ResetCodeResponse>(issued, 201);
   })
 
   // ---------- events ----------

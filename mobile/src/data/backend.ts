@@ -16,6 +16,7 @@ import type {
   MeResponse,
   MyReport,
   MyWarning,
+  NoticeResponse,
   PhotoResponse,
   ProfileEdit,
   ProfileResponse,
@@ -25,8 +26,10 @@ import type {
   ReportFormMeta,
   RosterResponse,
   ServerErrorCode,
+  SupervisorsResponse,
   WarningResponse,
 } from './api';
+import type { NoticeKind, NoticeReactionKind } from './types';
 
 export type Mode = 'demo' | 'api';
 
@@ -61,11 +64,24 @@ export interface Backend {
   completeJoin(eventId: string): Promise<RegistrationResponse>;
   cancelJoin(eventId: string): Promise<RegistrationResponse>;
   roster(eventId: string): Promise<RosterResponse>;
-  /** `at` absent = now (the server's now). */
-  recordStart(eventId: string, userId: string, at?: number): Promise<AttendanceResponse>;
-  recordEnd(eventId: string, userId: string, at?: number): Promise<AttendanceResponse>;
+  /**
+   * `at` absent = when it is recorded (the server's now). `recordedAt`: recorded
+   * on the phone with no connection, at that time, and sent now (outbox.ts).
+   */
+  recordStart(eventId: string, userId: string, at?: number, recordedAt?: number): Promise<AttendanceResponse>;
+  recordEnd(eventId: string, userId: string, at?: number, recordedAt?: number): Promise<AttendanceResponse>;
   /** A supervisor of the event warns someone who joined it. */
   warn(eventId: string, userId: string, reason: string): Promise<WarningResponse>;
+  /** A supervisor of the event, or an admin, makes someone who joined it a supervisor too. */
+  addSupervisor(eventId: string, userId: string): Promise<SupervisorsResponse>;
+  /** Takes off a supervisor added in the app (or the supervisor steps down). */
+  removeSupervisor(eventId: string, userId: string): Promise<SupervisorsResponse>;
+  /** A notice to the event's people; they are notified. */
+  /** An announcement, or a question whose reactions are its answers. */
+  postNotice(eventId: string, body: string, kind: NoticeKind): Promise<NoticeResponse>;
+  deleteNotice(eventId: string, noticeId: string): Promise<void>;
+  /** One reaction per person per notice: a new one replaces it, null takes it back. */
+  reactToNotice(eventId: string, noticeId: string, reaction: NoticeReactionKind | null): Promise<NoticeResponse>;
   /** What the report screen offers; refused for someone whose level does not allow reporting. */
   reportForm(): Promise<ReportFormMeta>;
   report(body: ReportBody): Promise<MyReport>;

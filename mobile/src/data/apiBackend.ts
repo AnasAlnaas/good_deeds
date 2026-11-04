@@ -1,7 +1,7 @@
 // The real server. Every call carries the sign-in token; an error comes back
 // as `{ "error": "<code>" }` and becomes a BackendError with that code.
 
-import type { LoginResponse, RequestCodeResponse, VerifyCodeBody } from './api';
+import type { LoginResponse, ResetPasswordBody, SignInBody, SignUpBody } from './api';
 import { type Backend, BackendError, type ErrorCode } from './backend';
 
 const TIMEOUT_MS = 15_000;
@@ -43,12 +43,19 @@ const enc = encodeURIComponent;
 
 // ---------- sign-in (no token yet) ----------
 
-export function requestCode(baseUrl: string, phone: string) {
-  return call<RequestCodeResponse>(baseUrl, 'POST', '/auth/request-code', { body: { phone } });
+// By phone number and password: no SMS (server/src/routes/auth.ts).
+
+export function signIn(baseUrl: string, body: SignInBody) {
+  return call<LoginResponse>(baseUrl, 'POST', '/auth/sign-in', { body });
 }
 
-export function verifyCode(baseUrl: string, body: VerifyCodeBody) {
-  return call<LoginResponse>(baseUrl, 'POST', '/auth/verify-code', { body });
+export function signUp(baseUrl: string, body: SignUpBody) {
+  return call<LoginResponse>(baseUrl, 'POST', '/auth/sign-up', { body });
+}
+
+/** With the one-time code an admin of the association gave the person. */
+export function resetPassword(baseUrl: string, body: ResetPasswordBody) {
+  return call<LoginResponse>(baseUrl, 'POST', '/auth/reset-password', { body });
 }
 
 // ---------- everything else ----------
@@ -58,7 +65,10 @@ export function createApiBackend(opts: { baseUrl: string; token: string; onUnaut
   const get = <T>(path: string) => call<T>(opts.baseUrl, 'GET', path, opts);
   const send = <T>(method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown) =>
     call<T>(opts.baseUrl, method, path, { ...opts, body });
-  const atBody = (at?: number) => (at === undefined ? {} : { at: new Date(at).toISOString() });
+  const atBody = (at?: number, recordedAt?: number) => ({
+    ...(at === undefined ? {} : { at: new Date(at).toISOString() }),
+    ...(recordedAt === undefined ? {} : { recorded_at: new Date(recordedAt).toISOString() }),
+  });
 
   return {
     listEvents: () => get('/events'),
@@ -72,9 +82,19 @@ export function createApiBackend(opts: { baseUrl: string; token: string; onUnaut
     completeJoin: (eventId) => send('POST', `/events/${enc(eventId)}/join/complete`),
     cancelJoin: (eventId) => send('DELETE', `/events/${enc(eventId)}/join`),
     roster: (eventId) => get(`/events/${enc(eventId)}/roster`),
-    recordStart: (eventId, userId, at) => send('POST', `/events/${enc(eventId)}/attendance/${enc(userId)}/start`, atBody(at)),
-    recordEnd: (eventId, userId, at) => send('POST', `/events/${enc(eventId)}/attendance/${enc(userId)}/end`, atBody(at)),
+    recordStart: (eventId, userId, at, recordedAt) =>
+      send('POST', `/events/${enc(eventId)}/attendance/${enc(userId)}/start`, atBody(at, recordedAt)),
+    recordEnd: (eventId, userId, at, recordedAt) =>
+      send('POST', `/events/${enc(eventId)}/attendance/${enc(userId)}/end`, atBody(at, recordedAt)),
     warn: (eventId, userId, reason) => send('POST', `/events/${enc(eventId)}/warnings/${enc(userId)}`, { reason }),
+    addSupervisor: (eventId, userId) => send('POST', `/events/${enc(eventId)}/supervisors/${enc(userId)}`),
+    removeSupervisor: (eventId, userId) => send('DELETE', `/events/${enc(eventId)}/supervisors/${enc(userId)}`),
+    postNotice: (eventId, body, kind) => send('POST', `/events/${enc(eventId)}/notices`, { body, kind }),
+    deleteNotice: (eventId, noticeId) => send('DELETE', `/events/${enc(eventId)}/notices/${enc(noticeId)}`),
+    reactToNotice: (eventId, noticeId, reaction) =>
+      reaction
+        ? send('PUT', `/events/${enc(eventId)}/notices/${enc(noticeId)}/reaction`, { reaction })
+        : send('DELETE', `/events/${enc(eventId)}/notices/${enc(noticeId)}/reaction`),
     reportForm: () => get('/reports/form'),
     report: (body) => send('POST', '/reports', body),
     myReports: () => get('/me/reports'),

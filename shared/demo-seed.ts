@@ -12,7 +12,10 @@ import { pointsForAttendance } from './rules';
 // 2: reports and warnings were added; phones holding version 1 start again from this seed.
 // 3: the pillars were removed (one points total per person).
 // 4: events no longer have branches of faith (they move to the course before joining).
-export const SEED_VERSION = 4;
+// 5: events have notices, and supervisors added in the app.
+// 6: notices have reactions.
+// 7: a notice is an announcement or a question, each with its own reactions.
+export const SEED_VERSION = 7;
 
 export const DEMO_ACCOUNTS = {
   participant: 'u_ahmad',
@@ -218,6 +221,8 @@ export function buildSeed(nowMs: number): Db {
     branches: [],
     events: [],
     event_organizers: [],
+    event_notices: [],
+    notice_reactions: [],
     event_terms: [],
     registrations: [],
     term_acceptances: [],
@@ -249,7 +254,7 @@ export function buildSeed(nowMs: number): Db {
       created_at: created,
     };
     db.events.push(e);
-    s.organizers.forEach((u) => db.event_organizers.push({ event_id: s.id, user_id: u }));
+    s.organizers.forEach((u) => db.event_organizers.push({ event_id: s.id, user_id: u, added_by: null }));
     const texts = [ARRIVE, ...(TERMS[s.subtype] ?? []), LEAVE];
     texts.forEach((text, i) =>
       db.event_terms.push({
@@ -266,6 +271,30 @@ export function buildSeed(nowMs: number): Db {
         db.term_acceptances.push({ id: `acc_${regId}_${i + 1}`, registration_id: regId, term_id: `${s.id}_t${i + 1}`, accepted_at: created }),
       );
     }
+  }
+
+  // An announcement and a question from the supervisor of the event happening now, so its page shows both kinds.
+  db.event_notices.push({
+    id: 'n_e01_1',
+    event_id: 'e01',
+    author_id: 'u_khaled',
+    kind: 'announcement',
+    body: 'نلتقي عند مدخل مسجد السراج. أحضروا معكم قبعة وماءً، والقفازات والأكياس متوفرة عندنا.',
+    created_at: iso(minutes(-180)),
+  });
+  db.event_notices.push({
+    id: 'n_e01_2',
+    event_id: 'e01',
+    author_id: 'u_khaled',
+    kind: 'question',
+    body: 'المدخل الرئيسي مزدحم. هل ننقل نقطة التجمع إلى البوابة الشمالية للمسجد؟',
+    created_at: iso(minutes(-120)),
+  });
+  for (const [notice_id, user_id, reaction] of [
+    ['n_e01_1', 'u_mariam', 'noted'], ['n_e01_1', 'u_f1', 'noted'], ['n_e01_1', 'u_f2', 'sad'],
+    ['n_e01_2', 'u_mariam', 'agree'], ['n_e01_2', 'u_f1', 'agree'], ['n_e01_2', 'u_f2', 'undecided'], ['n_e01_2', 'u_f3', 'disagree'],
+  ] as const) {
+    db.notice_reactions.push({ notice_id, user_id, reaction, created_at: iso(minutes(-110)) });
   }
 
   const att = (

@@ -2,13 +2,13 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 
-import type { AdminUserRow } from '../../../shared/admin-api';
+import type { AdminUserRow, ResetCodeResponse } from '../../../shared/admin-api';
 import type { Role } from '../../../shared/types';
 import { api } from '../api';
 import { useAuth } from '../auth';
-import { fill, num } from '../format';
+import { dateTime, fill, num } from '../format';
 import { t } from '../strings';
-import { Button, ErrorNote, PageHeader, QueryState, useAction } from '../ui';
+import { Button, ErrorNote, Notice, PageHeader, QueryState, useAction } from '../ui';
 
 export function Users() {
   const { session } = useAuth();
@@ -21,11 +21,18 @@ export function Users() {
   }, [search]);
   const query = useQuery({ queryKey: ['users', q], queryFn: () => api.users(q), placeholderData: (prev) => prev });
   const { run, busy, error } = useAction();
+  // The last reset code made here, shown until closed: the server never shows it again.
+  const [issued, setIssued] = useState<(ResetCodeResponse & { name: string }) | null>(null);
 
   const changeRole = (u: AdminUserRow, role: Role) => {
     if (window.confirm(fill(t.users.roleConfirm, { name: u.full_name, from: t.role[u.role], to: t.role[role] }))) {
       run(() => api.changeRole(u.id, { role }));
     }
+  };
+  const resetCode = async (u: AdminUserRow) => {
+    if (!window.confirm(fill(t.users.resetCodeConfirm, { name: u.full_name }))) return;
+    const r = await run(() => api.resetCode(u.id));
+    if (r) setIssued({ ...r.value, name: u.full_name });
   };
   const removePhoto = (u: AdminUserRow) => {
     if (window.confirm(fill(t.users.removePhotoConfirm, { name: u.full_name }))) run(() => api.removePhoto(u.id));
@@ -36,6 +43,18 @@ export function Users() {
       <PageHeader title={t.users.title} />
       <input type="search" placeholder={t.users.search} value={search} onChange={(e) => setSearch(e.target.value)} style={{ maxWidth: 420 }} />
       <ErrorNote code={error} />
+      {issued && (
+        <Notice tone="warning">
+          <strong>{fill(t.users.resetCodeTitle, { name: issued.name })}</strong>
+          <p className="ltr tabular reset-code" dir="ltr">
+            {issued.code}
+          </p>
+          <p className="small">{fill(t.users.resetCodeBody, { until: dateTime(issued.expires_at) })}</p>
+          <Button variant="quiet" className="btn-small" onClick={() => setIssued(null)}>
+            {t.users.resetCodeClose}
+          </Button>
+        </Notice>
+      )}
       {!query.data ? (
         <QueryState query={query} />
       ) : (
@@ -73,7 +92,14 @@ export function Users() {
                       {u.full_name}
                       {self && <span className="small muted"> ({t.users.you})</span>}
                     </td>
-                    <td className="ltr tabular">{u.phone}</td>
+                    <td>
+                      <div className="row">
+                        <span className="ltr tabular">{u.phone}</span>
+                        <Button variant="quiet" className="btn-small" disabled={busy} onClick={() => resetCode(u)}>
+                          {t.users.resetCode}
+                        </Button>
+                      </div>
+                    </td>
                     <td>{u.city}</td>
                     <td>
                       <select
