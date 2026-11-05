@@ -10,6 +10,7 @@ import { useEffect } from 'react';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { NavIsland, NavIslandProvider } from '@/components/NavIsland';
 import { useOnline } from '@/data/network';
 import { openOutbox, sendQueued, useOutbox } from '@/data/outbox';
 import { persistOptions, queryClient } from '@/data/queries';
@@ -65,14 +66,18 @@ function Root() {
     <View style={{ flex: 1, direction, backgroundColor: colors.surface }}>
       <LocaleProvider direction={direction}>
         <StatusBar style="dark" />
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: colors.surface },
-            // A screen slides in from the side the language reads from, the one under it moving a little with it.
-            animation: isRTL ? 'ios_from_left' : 'ios_from_right',
-          }}
-        />
+        <NavIslandProvider>
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: colors.surface },
+              // A screen slides in from the side the language reads from, the one under it moving a little with it.
+              animation: isRTL ? 'ios_from_left' : 'ios_from_right',
+            }}
+          />
+          {/* Over the stack, so it stays put while the main screens change under it. */}
+          <NavIsland />
+        </NavIslandProvider>
       </LocaleProvider>
     </View>
   );

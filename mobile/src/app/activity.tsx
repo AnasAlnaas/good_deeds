@@ -17,7 +17,7 @@ export default function ActivityScreen() {
 
   if (!records.data || !summary.data) {
     return (
-      <Screen back title={s.activity.title}>
+      <Screen back title={s.activity.title} island>
         <QueryState query={records.data ? summary : records} />
       </Screen>
     );
@@ -30,7 +30,7 @@ export default function ActivityScreen() {
   const total = summary.data.total_points;
 
   return (
-    <Screen back title={s.activity.title}>
+    <Screen back title={s.activity.title} island>
       <View style={styles.metrics}>
         <View style={styles.hero}>
           <Txt variant="hero" color={colors.accentInk} tabular>

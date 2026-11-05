@@ -6,10 +6,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/Avatar';
 import { EventCard } from '@/components/EventCard';
+import { NAV_GAP, NAV_HEIGHT } from '@/components/NavIsland';
 import { OsmMap, type MapPin } from '@/components/OsmMap';
 import { Txt } from '@/components/Txt';
 import { ClassFilter, IconButton, OfflineBanner, QueryState } from '@/components/ui';
-import { useEvents, useKeepOwnDataReady, useMeSummary, usePrefetchEvent } from '@/data/queries';
+import { useEvents, useKeepOwnDataReady, usePrefetchEvent } from '@/data/queries';
 import { useApp } from '@/state/app';
 import { useNotificationTaps } from '@/state/useNotificationTaps';
 import type { EventClassId } from '@/theme/classes';
@@ -17,17 +18,15 @@ import { colors, radius, shadow, space } from '@/theme/tokens';
 import { cityName } from '../../../shared/cities';
 
 const TRIPOLI = { lat: 32.868, lng: 13.18, zoom: 12 };
-// The floating bar at the bottom: its height and its gap to the screen edge.
-const NAV = 64;
 
-// The app's one main screen. Everything else opens from the icons on it, as a
-// full screen that comes back here.
+// The app's home. The events list and activity open from the nav island
+// (components/NavIsland.tsx, drawn over every main screen), everything else
+// from the icons and cards here.
 export default function MapScreen() {
   const { s, me, lang } = useApp();
   useNotificationTaps();
   const insets = useSafeAreaInsets();
   const query = useEvents();
-  const canPropose = useMeSummary().data?.can_create_events ?? false;
   const [filter, setFilter] = useState<EventClassId | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [recenter, setRecenter] = useState(0);
@@ -58,14 +57,14 @@ export default function MapScreen() {
 
   if (!me) return <Redirect href="/login" />;
   const selectedEvent = events.find((e) => e.id === selected);
-  const bottom = insets.bottom + space.md;
+  const bottom = insets.bottom + NAV_GAP;
 
   return (
     <View style={styles.root}>
       <OsmMap
         home={TRIPOLI}
         pins={pins}
-        bottomInset={bottom + NAV + space.sm}
+        bottomInset={bottom + NAV_HEIGHT + space.sm}
         recenter={recenter}
         onSelect={select}
         onClear={clear}
@@ -115,12 +114,8 @@ export default function MapScreen() {
           </Animated.View>
         ) : null}
 
-        <View style={[styles.nav, shadow]} accessibilityRole="toolbar" accessibilityLabel={s.map.nav}>
-          <IconButton icon="map" label={s.tabs.map} look="dark" />
-          <IconButton icon="list" label={s.map.events} look="light" onPress={() => router.push('/events')} />
-          <IconButton icon="pulse" label={s.map.activity} look="light" onPress={() => router.push('/activity')} />
-          {canPropose && <IconButton icon="add" label={s.map.propose} look="accent" onPress={() => router.push('/event/new')} />}
-        </View>
+        {/* The nav island floats here, drawn over the whole stack. */}
+        <View style={styles.navSpace} />
       </View>
     </View>
   );
@@ -144,14 +139,5 @@ const styles = StyleSheet.create({
   side: { alignItems: 'flex-end', paddingHorizontal: space.md },
   bottom: { position: 'absolute', start: space.md, end: space.md, gap: space.sm },
   note: { backgroundColor: colors.surface, borderRadius: radius.card, padding: space.md },
-  nav: {
-    alignSelf: 'center',
-    height: NAV,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.xs,
-    paddingHorizontal: space.sm,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surface,
-  },
+  navSpace: { height: NAV_HEIGHT },
 });
