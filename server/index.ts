@@ -13,7 +13,7 @@ import type { Hono } from 'hono';
 
 import { createApp } from './src/create-app';
 import { openDatabase } from './src/db/client';
-import { env, jwtSecret } from './src/env';
+import { emailSender, env, jwtSecret } from './src/env';
 import type { AppDeps, AppEnv } from './src/http';
 import { consolePush, expoPush } from './src/push';
 
@@ -26,6 +26,7 @@ const deps: AppDeps = {
   jwtSecret: jwtSecret(),
   sendLoginCode:
     env.loginCodeDelivery === 'console' ? async (phone, code) => console.log(`[sign-in code] ${phone}: ${code}`) : null,
+  sendEmail: emailSender(),
   sendPush: env.pushDelivery === 'expo' ? expoPush(env.expoAccessToken) : env.pushDelivery === 'console' ? consolePush : null,
   timeZone: env.timeZone,
   runLater: (task) => waitUntil(task().catch((err) => console.error('background task failed', err))),

@@ -53,7 +53,7 @@ The **city** is typed at sign-up; it is declared under Personal info below.
 | Type | Collected | Shared | Optional? | Purposes | Why (code) |
 |---|---|---|---|---|---|
 | Name | **Yes** | No | Required | App functionality, Account management | `users.full_name` (`server/src/db/schema.ts`). Shown on event participant lists and to supervisors (`publicUser` in `server/src/db/queries.ts`). |
-| Email address | **No** | | | | `users.email` exists in the schema but nothing fills it: sign-up takes only name, gender, city (`auth.ts`). |
+| Email address | **Yes** | No | Required | App functionality, Account management | `users.email`, confirmed with a code before sign-up (`server/src/routes/auth.ts`); used to sign in and to email password-reset codes. Brevo sends those emails as a service provider (not "sharing"). Admins see it in the panel; other members never do (`publicUser`). |
 | User IDs | **Yes** | No | Required | App functionality, Account management | `users.id`, a random ID made by the server (`newId()` in `queries.ts`), sent in the sign-in token (`server/src/auth.ts`). |
 | Address | **No** ⚠️ | | | | Only the city is asked, not a home address. If you prefer to be cautious, declare the city here instead of "Other info". |
 | Phone number | **Yes** | No | Required | App functionality, Account management, Fraud prevention / security | `users.phone`; sign-in with a password, kept only as a scrypt hash (`user_passwords`, `server/src/password.ts`); reset codes from an admin (`login_codes`). Seen by admins only (`server/src/routes/admin.ts`). |

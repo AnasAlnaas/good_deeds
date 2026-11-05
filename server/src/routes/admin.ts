@@ -205,7 +205,11 @@ export const adminRoutes = new Hono<AppEnv>()
   .get('/users', async (c) => {
     const { db } = c.var.deps;
     const q = c.req.query('q')?.trim();
-    const match = q ? or(ilike(s.users.full_name, `%${escapeLike(q)}%`), ilike(s.users.phone, `%${escapeLike(q)}%`)) : undefined;
+    const match = q ? or(
+          ilike(s.users.full_name, `%${escapeLike(q)}%`),
+          ilike(s.users.phone, `%${escapeLike(q)}%`),
+          ilike(s.users.email, `%${escapeLike(q)}%`),
+        ) : undefined;
     const users = await db
       .select()
       .from(s.users)
@@ -231,6 +235,7 @@ export const adminRoutes = new Hono<AppEnv>()
         id: u.id,
         full_name: u.full_name,
         phone: u.phone,
+        email: u.email,
         gender: u.gender,
         city: u.city,
         avatar_url: u.avatar_url,

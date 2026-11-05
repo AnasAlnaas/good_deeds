@@ -71,6 +71,13 @@
       "when": 1793793743788,
       "tag": "0009_passwords",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793828571896,
+      "tag": "0010_email",
+      "breakpoints": true
     }
   ]
 }

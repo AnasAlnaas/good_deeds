@@ -1,5 +1,5 @@
 // What the check scripts share: the API on a fresh in-memory database with
-// the demo data and a fixed clock, sign-in codes and notifications captured
+// the demo data and a fixed clock, sign-in codes, emails and notifications captured
 // instead of sent (a push token with "gone" in it acts like an uninstalled
 // app), and helpers that print ✓ / ✗ lines.
 
@@ -16,6 +16,8 @@ export async function startHarness(start: number) {
   let clock = start;
   let failed = 0;
   const sentCodes = new Map<string, string>();
+  /** The last code emailed to each address. */
+  const sentEmails = new Map<string, string>();
   const pushes: PushMessage[] = [];
   const background: Promise<void>[] = [];
 
@@ -29,6 +31,11 @@ export async function startHarness(start: number) {
     now: () => clock,
     jwtSecret: 'check-secret',
     sendLoginCode: async (phone, code) => void sentCodes.set(phone, code),
+    sendEmail: async (m) => {
+      // An address with "bounce" in it acts like Brevo refusing the email.
+      if (m.to.includes('bounce')) throw new Error('refused');
+      sentEmails.set(m.to, m.text.match(/\d{6}/)![0]);
+    },
     sendPush: async (messages) => {
       pushes.push(...messages);
       return messages.map((m) => (m.to.includes('gone') ? 'device_not_registered' : 'ok'));
@@ -100,6 +107,7 @@ export async function startHarness(start: number) {
     conn,
     seed,
     sentCodes,
+    sentEmails,
     pushes,
     call,
     raw,

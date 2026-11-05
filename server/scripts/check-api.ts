@@ -27,7 +27,7 @@ import { startHarness } from './harness';
 
 const NOW = new Date('2026-10-21T12:00:00').getTime();
 const h = await startHarness(NOW);
-const { conn, seed, sentCodes, pushes, call, login, expectError, expectOk, expectEqual, settle } = h;
+const { conn, seed, sentCodes, sentEmails, pushes, call, login, expectError, expectOk, expectEqual, settle } = h;
 
 async function joinFully(token: string, eventId: string) {
   const start = await call('POST', `/events/${eventId}/join`, token);
@@ -148,16 +148,19 @@ console.log('\n— sign-in limits');
   h.setClock(NOW);
 }
 
-console.log('\n— phone and password (no SMS)');
+console.log('\n— phone, email and password (no SMS)');
 {
   const HOURS = 3_600_000;
   const PW = 'نخلة-طرابلس-2026';
   const profile = { full_name: 'سالمة الورفلي', gender: 'female', city: 'طرابلس' };
   const phoneP = '+218919990011';
+  const emailP = 'salma@example.ly';
   const from = (address?: string): Record<string, string> => (address ? { 'X-Check-Address': address } : {});
+  const emailCode = (body: object, address?: string) => call('POST', '/auth/email-code', undefined, { lang: 'ar', ...body }, from(address));
   const signUp = (body: object, address?: string) => call('POST', '/auth/sign-up', undefined, body, from(address));
-  const signIn = (phone: string, password: string) => call('POST', '/auth/sign-in', undefined, { phone, password });
+  const signIn = (login: string, password: string) => call('POST', '/auth/sign-in', undefined, { login, password });
   const reset = (body: object) => call('POST', '/auth/reset-password', undefined, body);
+  const otherThan = (code: string | undefined) => (code === '000000' ? '111111' : '000000');
 
   const weak: [string, string, string][] = [
     ['7 characters', 'abc1234', 'password_too_short'],
@@ -165,14 +168,75 @@ console.log('\n— phone and password (no SMS)');
     ['a run of digits', '12345678', 'password_too_simple'],
     ['with the phone number in it', 'x919990011y', 'password_too_simple'],
   ];
-  for (const [why, password, code] of weak) await expectError(`sign-up password refused: ${why}`, code, signUp({ phone: phoneP, password, profile }));
-  await expectError('sign-up without a profile', 'invalid_request', signUp({ phone: phoneP, password: PW }));
-  const made = await expectOk('sign up with a phone and a password', signUp({ phone: phoneP, password: PW, profile }));
+  for (const [why, password, code] of weak)
+    await expectError(`sign-up password refused: ${why}`, code, signUp({ phone: phoneP, email: emailP, email_code: '123456', password, profile }));
+  await expectError('sign-up without a profile', 'invalid_request', signUp({ phone: phoneP, email: emailP, email_code: '123456', password: PW }));
+  await expectError('sign-up without an email', 'invalid_request', signUp({ phone: phoneP, password: PW, profile }));
+  await expectError('an email code for something that is not an email', 'invalid_request', emailCode({ email: 'salma.example.ly', purpose: 'sign_up' }));
+  await expectError('sign-up before any code was sent', 'code_expired', signUp({ phone: phoneP, email: emailP, email_code: '123456', password: PW, profile }));
+  await expectOk('a code to confirm the email', emailCode({ email: ' Salma@Example.LY ', purpose: 'sign_up', phone: phoneP }));
+  const sentP = sentEmails.get(emailP);
+  expectEqual('sent to the address in lowercase', typeof sentP, 'string');
+  await expectError('ask again within a minute', 'code_recently_sent', emailCode({ email: emailP, purpose: 'sign_up' }));
+  await expectError('sign-up with a wrong email code', 'code_invalid', signUp({ phone: phoneP, email: emailP, email_code: otherThan(sentP), password: PW, profile }));
+  await expectError('the code is for that address only', 'code_expired', signUp({ phone: phoneP, email: 'other@example.ly', email_code: sentP, password: PW, profile }));
+  const made = await expectOk('sign up with a phone, a confirmed email and a password', signUp({ phone: phoneP, email: 'SALMA@example.ly', email_code: sentP, password: PW, profile }));
   expectEqual('the new account is a member', made.user.role, 'member');
+  expectEqual('with its email', made.user.email, emailP);
   expectEqual('nothing about the password comes back', /hash|password/.test(JSON.stringify(made)), false);
-  await expectError('the same number again', 'phone_taken', signUp({ phone: phoneP, password: PW, profile }));
+  await expectError('a second account with the same email', 'email_taken', signUp({ phone: '+218919990013', email: emailP, email_code: sentP, password: PW, profile }));
+  await expectError('the same number again', 'phone_taken', signUp({ phone: phoneP, email: 'new@example.ly', email_code: '123456', password: PW, profile }));
+  await expectError('a code for a taken number is not sent', 'phone_taken', emailCode({ email: 'new@example.ly', purpose: 'sign_up', phone: phoneP }));
+  await expectError('a code for a taken email is not sent', 'email_taken', emailCode({ email: emailP, purpose: 'sign_up' }));
+  await expectError('an email Brevo refuses', 'email_not_sent', emailCode({ email: 'bounce@example.ly', purpose: 'sign_up' }));
+  await expectError('…can be asked for again at once', 'email_not_sent', emailCode({ email: 'bounce@example.ly', purpose: 'sign_up' }));
 
-  await expectOk('sign in with it', signIn(phoneP, PW));
+  await expectOk('sign in with the phone', signIn(phoneP, PW));
+  await expectOk('sign in with the phone as typed locally', signIn('091 999 0011', PW));
+  await expectOk('sign in with the email, in any case', signIn(' Salma@EXAMPLE.ly', PW));
+  await expectError('a wrong password by email', 'wrong_password', signIn(emailP, `${PW}x`));
+  await expectError('an email with no account', 'wrong_password', signIn('nobody@example.ly', PW));
+  await expectError('neither a phone nor an email', 'wrong_password', signIn('salma', PW));
+  await expectOk('an older app sends { phone, password }', call('POST', '/auth/sign-in', undefined, { phone: phoneP, password: PW }));
+
+  // Forgot the password: a code to the email.
+  const before = sentEmails.size;
+  await expectOk('a reset code for an email with no account answers the same', emailCode({ email: 'nobody@example.ly', purpose: 'reset_password' }));
+  expectEqual('…and sends nothing', sentEmails.size, before);
+  await expectError('a reset with no account', 'code_expired', reset({ email: 'nobody@example.ly', code: '123456', password: 'زيتونة-درنة-5' }));
+  sentEmails.delete(emailP);
+  await expectOk('a reset code to the email', emailCode({ email: emailP, purpose: 'reset_password', lang: 'en' }));
+  const resetP = sentEmails.get(emailP)!;
+  await expectError('the reset code does not change an email', 'code_expired', call('PUT', '/me/email', made.token, { email: emailP, code: resetP }));
+  await expectError('a weak new password', 'password_too_simple', reset({ email: emailP, code: resetP, password: 'x919990011y' }));
+  await expectError('a wrong reset code', 'code_invalid', reset({ email: emailP, code: otherThan(resetP), password: 'زيتونة-درنة-5' }));
+  const byEmail = await expectOk('the emailed code sets a new password and signs in', reset({ email: emailP, code: resetP, password: 'زيتونة-درنة-5' }));
+  expectEqual('as the same person', byEmail.user?.id, made.user.id);
+  await expectError('the old password no longer works', 'wrong_password', signIn(emailP, PW));
+  await expectError('the emailed code works once', 'code_expired', reset({ email: emailP, code: resetP, password: PW }));
+  h.setClock(NOW + 2 * 60_000);
+  await emailCode({ email: emailP, purpose: 'reset_password' });
+  const back = sentEmails.get(emailP)!;
+  h.setClock(NOW + 20 * 60_000);
+  await expectError('an emailed code after 15 minutes', 'code_expired', reset({ email: emailP, code: back, password: PW }));
+  h.setClock(NOW + 22 * 60_000);
+  await emailCode({ email: emailP, purpose: 'reset_password' });
+  await expectOk('back to the first password', reset({ email: emailP, code: sentEmails.get(emailP)!, password: PW }));
+  h.setClock(NOW);
+
+  // A new email address from the profile.
+  const tokenP = made.token;
+  await expectError('changing to an address another account has', 'email_taken', call('POST', '/me/email-code', firstAdmin.token, { email: emailP, lang: 'ar' }));
+  await expectOk('a code to a new address', call('POST', '/me/email-code', tokenP, { email: 'salma.w@example.ly', lang: 'ar' }));
+  const changeCode = sentEmails.get('salma.w@example.ly')!;
+  await expectError('someone else cannot use that code', 'code_expired', call('PUT', '/me/email', firstAdmin.token, { email: 'salma.w@example.ly', code: changeCode }));
+  await expectError('a wrong code', 'code_invalid', call('PUT', '/me/email', tokenP, { email: 'salma.w@example.ly', code: otherThan(changeCode) }));
+  expectEqual('the address is unchanged until the code comes back', (await call('GET', '/me', tokenP)).body.user.email, emailP);
+  const changed = await expectOk('the right code changes it', call('PUT', '/me/email', tokenP, { email: 'salma.w@example.ly', code: changeCode }));
+  expectEqual('to the new address', changed.user.email, 'salma.w@example.ly');
+  await expectOk('signing in with the new address', signIn('salma.w@example.ly', PW));
+  await expectError('not the old one', 'wrong_password', signIn(emailP, PW));
+  await expectError('PATCH /me cannot set the email', 'invalid_request', call('PATCH', '/me', tokenP, { email: 'x@example.ly' }));
   await expectOk('the same password typed with Arabic digits', signIn(phoneP, PW.replace('2026', '٢٠٢٦')));
   await expectError('a wrong password', 'wrong_password', signIn(phoneP, `${PW}x`));
   await expectError('a number with no account', 'wrong_password', signIn('+218919990012', PW));
@@ -211,8 +275,25 @@ console.log('\n— phone and password (no SMS)');
   await expectOk('ADMIN_PHONES: an account from before passwords sets its first one by signing in', signIn(phoneAdmin, PW));
   await expectError('ADMIN_PHONES: after that, the password is checked', 'wrong_password', signIn(phoneAdmin, `${PW}x`));
 
-  for (let i = 0; i < 10; i++) await signUp({ phone: `+21894${String(1000000 + i)}`, password: PW, profile }, '203.0.113.9');
-  await expectError('an 11th account from one address in an hour', 'try_later', signUp({ phone: '+218941999999', password: PW, profile }, '203.0.113.9'));
+  const withEmail = async (phone: string, address: string) => {
+    const mail = `p${phone.slice(-7)}@example.ly`;
+    await emailCode({ email: mail, purpose: 'sign_up' });
+    return signUp({ phone, email: mail, email_code: sentEmails.get(mail), password: PW, profile }, address);
+  };
+  for (let i = 0; i < 10; i++) await withEmail(`+21894${String(1000000 + i)}`, '203.0.113.9');
+  await expectError('an 11th account from one address in an hour', 'try_later', withEmail('+218941999999', '203.0.113.9'));
+
+  // Email codes: five a day to one address, twenty an hour from one network.
+  const flood = 'flood@example.ly';
+  for (let i = 0; i < 5; i++) {
+    h.setClock(NOW + i * 61_000);
+    await emailCode({ email: flood, purpose: 'sign_up' });
+  }
+  h.setClock(NOW + 6 * 61_000);
+  await expectError('a sixth email code to one address in a day', 'try_later', emailCode({ email: flood, purpose: 'sign_up' }));
+  for (let i = 0; i < 20; i++) await emailCode({ email: `n${i}@example.ly`, purpose: 'sign_up' }, '203.0.113.10');
+  await expectError('a 21st email code from one network in an hour', 'try_later', emailCode({ email: 'n20@example.ly', purpose: 'sign_up' }, '203.0.113.10'));
+  h.setClock(NOW);
 }
 
 console.log('\n— request size');

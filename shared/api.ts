@@ -40,6 +40,8 @@ export type ServerErrorCode =
   | 'password_too_short'
   | 'password_too_simple'
   | 'phone_taken'
+  | 'email_taken'
+  | 'email_not_sent'
   | 'photo_invalid'
   | 'too_large'
   | 'internal_error';
@@ -57,29 +59,50 @@ export type PublicUser = Pick<User, 'id' | 'full_name' | 'avatar_url' | 'gender'
 
 // ---------- sign-in ----------
 
-/** POST /api/auth/sign-in: the account's phone number and its password. */
+/**
+ * POST /api/auth/sign-in: the account's phone number or email address (as
+ * typed: an @ means an email) and its password.
+ */
 export interface SignInBody {
-  phone: string;
+  login: string;
   password: string;
 }
 
 /**
- * POST /api/auth/sign-up: a new account. Nobody checks by SMS that the phone is
- * the person's; one who finds their number taken asks the association, which
- * gives them a reset code (POST /api/admin/users/:id/reset-code).
+ * POST /api/auth/email-code: a 6-digit code emailed to the address, valid 15
+ * minutes. `sign_up` confirms the address before the account is made (refused
+ * with phone_taken / email_taken; give `phone` to check it first);
+ * `reset_password` is for the account with that address (the same answer when
+ * there is none, and nothing is sent). Answers RequestCodeResponse.
+ */
+export interface EmailCodeBody {
+  email: string;
+  purpose: 'sign_up' | 'reset_password';
+  phone?: string;
+  /** The language of the email. */
+  lang: 'ar' | 'en';
+}
+
+/**
+ * POST /api/auth/sign-up: a new account, with the code emailed to its address
+ * (EmailCodeBody, purpose sign_up). Nobody checks by SMS that the phone is the
+ * person's; one who finds their number taken asks the association, which gives
+ * them a reset code (POST /api/admin/users/:id/reset-code).
  */
 export interface SignUpBody {
   phone: string;
+  email: string;
+  email_code: string;
   password: string;
   profile: { full_name: string; gender: Gender; city: string };
 }
 
-/** POST /api/auth/reset-password: a new password, with the one-time code an admin gave the person. */
-export interface ResetPasswordBody {
-  phone: string;
-  code: string;
-  password: string;
-}
+/**
+ * POST /api/auth/reset-password: a new password, with a one-time code: the one
+ * emailed to the account's address (`email`), or the one an admin gave the
+ * person (`phone`).
+ */
+export type ResetPasswordBody = { email: string; code: string; password: string } | { phone: string; code: string; password: string };
 
 // The SMS sign-in below is kept for when an SMS provider is affordable; the app
 // does not use it now.
@@ -302,6 +325,20 @@ export interface ProfileEdit {
 }
 export interface ProfileResponse {
   user: User;
+}
+
+/**
+ * POST /api/me/email-code: a code to a new email address for this account
+ * (refused with email_taken if another account has it). Answers RequestCodeResponse.
+ * PUT /api/me/email: the address and that code; answers ProfileResponse.
+ */
+export interface EmailChangeCodeBody {
+  email: string;
+  lang: 'ar' | 'en';
+}
+export interface EmailChangeBody {
+  email: string;
+  code: string;
 }
 
 /**

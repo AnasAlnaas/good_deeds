@@ -1,7 +1,7 @@
 // The real server. Every call carries the sign-in token; an error comes back
 // as `{ "error": "<code>" }` and becomes a BackendError with that code.
 
-import type { LoginResponse, ResetPasswordBody, SignInBody, SignUpBody } from './api';
+import type { EmailCodeBody, LoginResponse, RequestCodeResponse, ResetPasswordBody, SignInBody, SignUpBody } from './api';
 import { type Backend, BackendError, type ErrorCode } from './backend';
 
 const TIMEOUT_MS = 15_000;
@@ -43,7 +43,7 @@ const enc = encodeURIComponent;
 
 // ---------- sign-in (no token yet) ----------
 
-// By phone number and password: no SMS (server/src/routes/auth.ts).
+// By phone number or email, and password: no SMS (server/src/routes/auth.ts).
 
 export function signIn(baseUrl: string, body: SignInBody) {
   return call<LoginResponse>(baseUrl, 'POST', '/auth/sign-in', { body });
@@ -53,7 +53,12 @@ export function signUp(baseUrl: string, body: SignUpBody) {
   return call<LoginResponse>(baseUrl, 'POST', '/auth/sign-up', { body });
 }
 
-/** With the one-time code an admin of the association gave the person. */
+/** A 6-digit code to the email: to confirm it before signing up, or to reset the password. */
+export function requestEmailCode(baseUrl: string, body: EmailCodeBody) {
+  return call<RequestCodeResponse>(baseUrl, 'POST', '/auth/email-code', { body });
+}
+
+/** With the code sent to the email, or the one an admin of the association gave the person. */
 export function resetPassword(baseUrl: string, body: ResetPasswordBody) {
   return call<LoginResponse>(baseUrl, 'POST', '/auth/reset-password', { body });
 }
@@ -107,6 +112,8 @@ export function createApiBackend(opts: { baseUrl: string; token: string; onUnaut
     confirmAttendance: (id) => send('POST', `/attendance/${enc(id)}/confirm`),
     disputeAttendance: (id) => send('POST', `/attendance/${enc(id)}/dispute`),
     updateProfile: (edit) => send('PATCH', '/me', edit),
+    requestEmailChange: (email, lang) => send('POST', '/me/email-code', { email, lang }),
+    changeEmail: (email, code) => send('PUT', '/me/email', { email, code }),
     setPhoto: (jpegBase64) => send('PUT', '/me/photo', { jpeg_base64: jpegBase64 }),
     removePhoto: () => send('DELETE', '/me/photo'),
     deleteAccount: () => send('DELETE', '/me'),

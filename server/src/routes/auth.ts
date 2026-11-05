@@ -1,14 +1,17 @@
-// Signing in. The app uses a phone number and a password (sign-up, sign-in,
-// reset-password): an SMS for every sign-in costs too much for now, so nobody
-// checks by SMS that a number is the person's. A forgotten password is reset
-// with a one-time code that an admin makes in the admin panel and gives the
-// person (POST /api/admin/users/:id/reset-code); that also settles a number
-// someone else signed up with.
+// Signing in. An account has a phone number, an email address and a password
+// (sign-up, sign-in, reset-password). An SMS for every sign-in costs too much
+// for now, so nobody checks by SMS that a number is the person's; the email
+// address is confirmed with a code sent to it before the account is made
+// (email-code, then sign-up). One signs in with the phone or the email.
+// A forgotten password is reset with a one-time code sent to the email, or
+// with one an admin makes in the admin panel and gives the person
+// (POST /api/admin/users/:id/reset-code); the admin's code also settles a
+// number someone else signed up with.
 //
 // Kept for when SMS becomes affordable: sign-in by a code sent to the phone
 // (request-code, verify-code), which also signs up a new person: the first
 // time a phone signs in, verify-code answers `profile_required` and the app
-// sends it again with the profile.
+// sends it again with the profile. An account made that way has no email.
 
 import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
 
@@ -22,6 +25,7 @@ import * as rules from '../../../shared/rules';
 import type { User } from '../../../shared/types';
 import { signToken } from '../auth';
 import { checkPassword, hashPassword } from '../password';
+import { EMAIL_CODE_MINUTES, recentFrom, sendEmailCode, takeEmailCode } from '../email-codes';
 import type { Database } from '../db/client';
 import { newId } from '../db/queries';
 import { iso } from '../db/rows';
@@ -70,9 +74,13 @@ const oneTimeCode = z.string().regex(/^\d{6}$/);
 const password = z.string().min(1).max(rules.PASSWORD_MAX);
 const requestCodeBody = z.object({ phone });
 const verifyCodeBody = z.object({ phone, code: oneTimeCode, profile: profile.optional() });
-const signUpBody = z.object({ phone, password, profile });
-const signInBody = z.object({ phone, password });
-const resetPasswordBody = z.object({ phone, code: oneTimeCode, password });
+const email = z.string().max(rules.EMAIL_MAX + 20).pipe(checked(rules.cleanEmail));
+const lang = z.enum(['ar', 'en']).default('ar');
+const emailCodeBody = z.object({ email, purpose: z.enum(['sign_up', 'reset_password']), phone: phone.optional(), lang });
+const signUpBody = z.object({ phone, email, email_code: oneTimeCode, password, profile });
+// `login` is the phone number or the email address, as typed. `phone` alone: app builds from before email.
+const signInBody = z.union([z.object({ login: z.string().min(1).max(300), password }), z.object({ phone, password })]);
+const resetPasswordBody = z.union([z.object({ phone, code: oneTimeCode, password }), z.object({ email, code: oneTimeCode, password })]);
 
 // Only a hash of the code is stored, keyed with the server's secret.
 function hashCode(secret: string, phoneNumber: string, code: string) {
@@ -90,20 +98,6 @@ async function phoneDay(q: Database, phoneNumber: string, t: number) {
     .from(s.login_codes)
     .where(and(eq(s.login_codes.phone, phoneNumber), gt(s.login_codes.created_at, new Date(t - DAY_MS))));
   return { codes: row.codes, failed: Number(row.failed) };
-}
-
-// Codes sent per network address, kept in this process's memory (one list per app).
-const sentFrom = new WeakMap<AppDeps, Map<string, number[]>>();
-
-function recentFrom(deps: AppDeps, address: string, t: number) {
-  let all = sentFrom.get(deps);
-  if (!all) sentFrom.set(deps, (all = new Map()));
-  if (all.size > 10_000) {
-    for (const [key, times] of all) if (times.every((x) => t - x >= HOUR_MS)) all.delete(key);
-  }
-  const times = (all.get(address) ?? []).filter((x) => t - x < HOUR_MS);
-  all.set(address, times);
-  return times;
 }
 
 export const authRoutes = new Hono<AppEnv>()
@@ -171,8 +165,28 @@ export const authRoutes = new Hono<AppEnv>()
 
   // ---------- phone and password ----------
 
+  // A code to the email address: to confirm it before signing up (the phone, if
+  // given, is checked first so a taken number is said before the email is sent),
+  // or to reset the password of the account that has it. A reset for an address
+  // with no account answers the same, and sends nothing.
+  .post('/email-code', async (c) => {
+    const { db } = c.var.deps;
+    const body = await readBody(c, emailCodeBody);
+    const active = (column: typeof s.users.email | typeof s.users.phone, value: string) =>
+      db.select({ id: s.users.id }).from(s.users).where(and(eq(column, value), isNull(s.users.deleted_at)));
+    if (body.purpose === 'sign_up') {
+      if (body.phone && (await active(s.users.phone, body.phone)).length) throw new HttpError(409, 'phone_taken');
+      if ((await active(s.users.email, body.email)).length) throw new HttpError(409, 'email_taken');
+      await sendEmailCode(c, c.var.deps, { email: body.email, purpose: 'sign_up', userId: null, lang: body.lang });
+    } else {
+      const [user] = await active(s.users.email, body.email);
+      await sendEmailCode(c, c.var.deps, { email: body.email, purpose: 'reset_password', userId: user?.id ?? null, lang: body.lang, send: !!user });
+    }
+    return c.json<RequestCodeResponse>({ expires_in_seconds: EMAIL_CODE_MINUTES * 60 });
+  })
+
   .post('/sign-up', async (c) => {
-    const { db, now, adminPhones } = c.var.deps;
+    const { db, now, jwtSecret, adminPhones } = c.var.deps;
     const body = await readBody(c, signUpBody);
     const t = now();
     const problem = rules.passwordProblem(body.password, body.phone);
@@ -187,9 +201,16 @@ export const authRoutes = new Hono<AppEnv>()
         .from(s.users)
         .where(and(eq(s.users.phone, body.phone), isNull(s.users.deleted_at)));
       if (taken) return { error: 'phone_taken' as const };
+      const [emailTaken] = await tx
+        .select({ id: s.users.id })
+        .from(s.users)
+        .where(and(eq(s.users.email, body.email), isNull(s.users.deleted_at)));
+      if (emailTaken) return { error: 'email_taken' as const };
+      const code = await takeEmailCode(tx, jwtSecret, { email: body.email, purpose: 'sign_up', code: body.email_code }, t);
+      if ('error' in code) return code;
       let [user] = await tx
         .insert(s.users)
-        .values({ id: newId(), phone: body.phone, ...body.profile, created_at: new Date(t) })
+        .values({ id: newId(), phone: body.phone, email: body.email, ...body.profile, created_at: new Date(t) })
         .returning();
       await tx.insert(s.user_passwords).values({ user_id: user.id, hash, updated_at: new Date(t) });
       user = await promoteIfAdminPhone(tx, user, adminPhones, t);
@@ -207,19 +228,22 @@ export const authRoutes = new Hono<AppEnv>()
     const address = c.var.deps.clientIp?.(c);
     const failedHere = address ? recentFrom(c.var.deps, `sign-in:${address}`, t) : [];
     if (failedHere.length >= MAX_FAILED_SIGN_INS_PER_ADDRESS) throw new HttpError(429, 'try_later');
+    const who = signInWho(body);
     const result = await db.transaction(async (tx) => {
-      let [user] = await tx
-        .select()
-        .from(s.users)
-        .where(and(eq(s.users.phone, body.phone), isNull(s.users.deleted_at)));
+      let [user] = who
+        ? await tx
+            .select()
+            .from(s.users)
+            .where(and('email' in who ? eq(s.users.email, who.email) : eq(s.users.phone, who.phone), isNull(s.users.deleted_at)))
+        : [];
       if (!user) return { error: 'wrong_password' as const };
       const [pw] = await tx.select().from(s.user_passwords).where(eq(s.user_passwords.user_id, user.id)).for('update');
       if (!pw) {
         // An account from before passwords. A number in ADMIN_PHONES may set its
         // first one this way (the same trust as signing up with it); anyone else
         // needs a reset code from an admin.
-        if (!adminPhones?.includes(body.phone)) return { error: 'password_not_set' as const };
-        const problem = rules.passwordProblem(body.password, body.phone);
+        if (!adminPhones?.includes(user.phone)) return { error: 'password_not_set' as const };
+        const problem = rules.passwordProblem(body.password, user.phone);
         if (problem) return { error: problem };
         await tx.insert(s.user_passwords).values({ user_id: user.id, hash: await hashPassword(body.password), updated_at: new Date(t) });
       } else {
@@ -243,12 +267,30 @@ export const authRoutes = new Hono<AppEnv>()
     return signedIn(c, result);
   })
 
-  // A new password with a one-time code an admin gave the person. It also
-  // signs them in, and clears the count of wrong passwords.
+  // A new password with a one-time code: sent to the account's email, or given
+  // by an admin. It also signs them in, and clears the count of wrong passwords.
   .post('/reset-password', async (c) => {
     const { db, now, jwtSecret, adminPhones } = c.var.deps;
     const body = await readBody(c, resetPasswordBody);
     const t = now();
+    if ('email' in body) {
+      const [found] = await db
+        .select()
+        .from(s.users)
+        .where(and(eq(s.users.email, body.email), isNull(s.users.deleted_at)));
+      // No account, so no code was sent to it.
+      if (!found) throw new HttpError(401, 'code_expired');
+      const problem = rules.passwordProblem(body.password, found.phone);
+      if (problem) throw new HttpError(400, problem);
+      const hash = await hashPassword(body.password);
+      const result = await db.transaction(async (tx) => {
+        const code = await takeEmailCode(tx, jwtSecret, { email: body.email, purpose: 'reset_password', code: body.code, userId: found.id }, t);
+        if ('error' in code) return code;
+        await setPassword(tx, found.id, hash, t);
+        return { user: iso(await promoteIfAdminPhone(tx, found, adminPhones, t)) };
+      });
+      return signedIn(c, result);
+    }
     const problem = rules.passwordProblem(body.password, body.phone);
     if (problem) throw new HttpError(400, problem);
     const hash = await hashPassword(body.password);
@@ -260,10 +302,7 @@ export const authRoutes = new Hono<AppEnv>()
         .from(s.users)
         .where(and(eq(s.users.phone, body.phone), isNull(s.users.deleted_at)));
       if (!user) return { error: 'code_invalid' as const };
-      await tx
-        .insert(s.user_passwords)
-        .values({ user_id: user.id, hash, updated_at: new Date(t) })
-        .onConflictDoUpdate({ target: s.user_passwords.user_id, set: { hash, failed_count: 0, failed_since: null, updated_at: new Date(t) } });
+      await setPassword(tx, user.id, hash, t);
       user = await promoteIfAdminPhone(tx, user, adminPhones, t);
       await tx.update(s.login_codes).set({ consumed_at: new Date(t) }).where(eq(s.login_codes.id, code.id));
       return { user: iso(user) };
@@ -282,7 +321,8 @@ type Refusal =
   | 'password_not_set'
   | 'password_too_short'
   | 'password_too_simple'
-  | 'phone_taken';
+  | 'phone_taken'
+  | 'email_taken';
 
 const REFUSAL_STATUS: Record<Refusal, ContentfulStatusCode> = {
   code_expired: 401,
@@ -293,6 +333,7 @@ const REFUSAL_STATUS: Record<Refusal, ContentfulStatusCode> = {
   profile_required: 409,
   password_not_set: 409,
   phone_taken: 409,
+  email_taken: 409,
   password_too_short: 400,
   password_too_simple: 400,
 };
@@ -340,6 +381,25 @@ async function promoteIfAdminPhone(tx: Tx, user: typeof s.users.$inferSelect, ad
   });
   const [admin] = await tx.update(s.users).set({ role: 'admin' }).where(eq(s.users.id, user.id)).returning();
   return admin;
+}
+
+/** Who is signing in: by the email address if what was typed has an @, otherwise by the phone number. null = neither. */
+function signInWho(body: { login: string } | { phone: string }): { email: string } | { phone: string } | null {
+  if ('phone' in body) return { phone: body.phone };
+  if (body.login.includes('@')) {
+    const address = rules.cleanEmail(body.login);
+    return address ? { email: address } : null;
+  }
+  const number = rules.libyanMobile(body.login);
+  return number ? { phone: number } : null;
+}
+
+/** A new password, which also clears the count of wrong ones. */
+async function setPassword(tx: Tx, userId: string, hash: string, t: number) {
+  await tx
+    .insert(s.user_passwords)
+    .values({ user_id: userId, hash, updated_at: new Date(t) })
+    .onConflictDoUpdate({ target: s.user_passwords.user_id, set: { hash, failed_count: 0, failed_since: null, updated_at: new Date(t) } });
 }
 
 /** Wrong passwords counted in the day since the first of them. */

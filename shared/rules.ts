@@ -152,14 +152,32 @@ export function libyanMobile(input: string): string | null {
   return LIBYAN_MOBILE.test(phone) ? phone : null;
 }
 
+// ---------- the email address ----------
+
+// Every account has an email address as well as its phone (owner's decision,
+// 2026-11-04): a forgotten password is reset with a code sent to it, and one may
+// sign in with either. An address is confirmed with a code before it is kept.
+export const EMAIL_MAX = 254;
+
+/**
+ * An email address as people type it, in the form it is stored and compared:
+ * trimmed and in lowercase. null = not an email address.
+ */
+export function cleanEmail(input: string): string | null {
+  const email = input.replace(/[\s‎‏⁦-⁩]/g, '').toLowerCase();
+  if (email.length > EMAIL_MAX) return null;
+  return /^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$/.test(email) ? email : null;
+}
+
 /** Repeated spaces or tabs become one space; the Arabic stretching mark (ـ) is dropped. */
 const tidy = (text: string) => text.replace(/\u0640/g, '').replace(/\s+/g, ' ').trim();
 
 // ---------- the password ----------
 
 // There is no SMS check of the number (too costly for now): an account is its
-// phone number and a password. A forgotten password is reset with a one-time
-// code that an admin gives the person (server/src/routes/auth.ts).
+// phone number, its confirmed email address and a password. A forgotten
+// password is reset with a one-time code sent to the email, or one that an
+// admin gives the person (server/src/routes/auth.ts).
 export const PASSWORD_MIN = 8;
 export const PASSWORD_MAX = 128;
 
@@ -174,14 +192,15 @@ export function normalizePassword(password: string): string {
 /**
  * Why a new password is refused, or null if it may be used: at least 8
  * characters, not one or two characters over and over, not a run like
- * 12345678, and without the phone number in it.
+ * 12345678, and without the phone number in it ('' = the number is not known
+ * yet, as when the app resets a password by email: the server checks it).
  */
 export function passwordProblem(password: string, phone: string): 'password_too_short' | 'password_too_simple' | null {
   const p = normalizePassword(password);
   if ([...p].length < PASSWORD_MIN) return 'password_too_short';
   const local = phone.replace(/^\+218/, '');
   const runs = ['0123456789', '9876543210', 'abcdefghijklmnopqrstuvwxyz'];
-  if (new Set(p).size < 3 || p.includes(local) || runs.some((r) => r.includes(p.toLowerCase()))) return 'password_too_simple';
+  if (new Set(p).size < 3 || (local && p.includes(local)) || runs.some((r) => r.includes(p.toLowerCase()))) return 'password_too_simple';
   return null;
 }
 

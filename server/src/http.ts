@@ -10,6 +10,7 @@ import type { ErrorBody, ServerErrorCode } from '../../shared/api';
 import { AdminError, type AdminErrorCode, ApiError, type ApiErrorCode } from '../../shared/errors';
 import type { User } from '../../shared/types';
 import type { Database } from './db/client';
+import type { SendEmail } from './email';
 import type { SendPush } from './push';
 
 export interface AppDeps {
@@ -19,6 +20,8 @@ export interface AppDeps {
   jwtSecret: string;
   /** Delivers a sign-in code (SMS later). `null` = no delivery set up: sign-in is refused. */
   sendLoginCode: ((phone: string, code: string) => Promise<void>) | null;
+  /** Sends email (codes that confirm an address or reset a password). `null` = not set up: those requests are refused. */
+  sendEmail: SendEmail | null;
   /** Delivers push notifications. `null` = notifications are off. */
   sendPush: SendPush | null;
   /** The association's time zone, for times written into notifications (e.g. Africa/Tripoli). */
