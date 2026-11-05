@@ -32,7 +32,7 @@ export default function Login() {
         </View>
       </View>
       <View style={styles.brand}>
-        <AnimatedLogo size={96} />
+        <AnimatedLogo size={120} />
         <Txt variant="screenTitle" align="center">
           {s.appName}
         </Txt>

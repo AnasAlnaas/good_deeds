@@ -10,7 +10,7 @@ interface Props {
   size?: number;
   layout?: 'row' | 'stack';
   variant?: MarkVariant;
-  // Name colour; defaults to navy, or white for the reverse variant.
+  // Name colour; defaults to forest green, or cream for the reverse variant.
   color?: string;
 }
 
@@ -26,7 +26,8 @@ export function Logo({ size = 40, layout = 'row', variant = 'color', color }: Pr
       accessibilityRole="image"
       accessibilityLabel={s.appName}
       style={[layout === 'row' ? styles.row : styles.stack, { gap: size * (layout === 'row' ? 0.22 : 0.16) }]}>
-      <LogoMark size={size} variant={variant} color={ink} />
+      {/* A name colour of its own (on forest, say) draws the mark in that colour too. */}
+      <LogoMark size={size} variant={color && variant === 'color' ? 'mono' : variant} color={ink} ring={size >= 32} />
       <Txt
         align="center"
         color={ink}

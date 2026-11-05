@@ -1,55 +1,54 @@
-import { useId } from 'react';
-import Svg, { Mask, Path, Rect } from 'react-native-svg';
+import Svg, { Circle, Path } from 'react-native-svg';
 
 import { colors } from '@/theme/tokens';
-import { LEAF_BIG, LEAF_SMALL, MARK_GRID, PIN, STEM, STEM_WIDTH } from './geometry';
+import { BADGE_BOX, RING, TREE_BODY, TREE_BOX, TREE_LEAVES, viewBoxOf } from './geometry';
 
 export type MarkVariant = 'color' | 'reverse' | 'mono';
 
 interface Props {
   size?: number;
-  // color: green pin, white seedling — the default, on light or navy.
-  // reverse: white pin, green seedling — on green or photos.
-  // mono: one colour with the seedling cut out — tinted icons, stamps.
+  // color: forest tree in a sage ring: the default, on cream or white.
+  // reverse: cream tree and a soft ring, on forest green or photos.
+  // mono: one colour, ring and all: tinted icons, stamps.
   variant?: MarkVariant;
   color?: string;
+  // The ring around the tree. Leave it off where the mark is small (under ~32) or already sits in a circle.
+  ring?: boolean;
   accessibilityLabel?: string;
 }
 
-export function LogoMark({ size = 64, variant = 'color', color = colors.primary, accessibilityLabel }: Props) {
-  const maskId = `gd-mark-${useId().replace(/[^\w-]/g, '')}`;
+export function LogoMark({ size = 64, variant = 'color', color = colors.primary, ring = true, accessibilityLabel }: Props) {
   const a11y = accessibilityLabel
     ? { accessible: true, accessibilityRole: 'image' as const, accessibilityLabel }
     : { accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants' as const };
-
-  if (variant === 'mono') {
-    return (
-      <Svg width={size} height={size} viewBox={`0 0 ${MARK_GRID} ${MARK_GRID}`} {...a11y}>
-        <Mask id={maskId} x={0} y={0} width={MARK_GRID} height={MARK_GRID} maskUnits="userSpaceOnUse">
-          <Rect width={MARK_GRID} height={MARK_GRID} fill="#fff" />
-          <Seedling color="#000" />
-        </Mask>
-        <Path d={PIN} fill={color} mask={`url(#${maskId})`} />
-      </Svg>
-    );
-  }
-
-  const pin = variant === 'color' ? colors.brandGreen : colors.surface;
-  const seed = variant === 'color' ? colors.surface : colors.brandGreen;
+  const tree = variant === 'color' ? colors.brandGreen : variant === 'reverse' ? colors.surface : color;
+  const circle = variant === 'color' ? colors.brandSage : tree;
   return (
-    <Svg width={size} height={size} viewBox={`0 0 ${MARK_GRID} ${MARK_GRID}`} {...a11y}>
-      <Path d={PIN} fill={pin} />
-      <Seedling color={seed} />
+    <Svg width={size} height={size} viewBox={viewBoxOf(ring ? BADGE_BOX : TREE_BOX)} {...a11y}>
+      {ring && (
+        <Circle
+          cx={RING.cx}
+          cy={RING.cy}
+          r={RING.r}
+          fill="none"
+          stroke={circle}
+          strokeWidth={RING.width}
+          strokeOpacity={variant === 'reverse' ? 0.55 : 1}
+        />
+      )}
+      <TreePaths color={tree} />
     </Svg>
   );
 }
 
-function Seedling({ color }: { color: string }) {
+/** The whole tree, in one colour, for use inside an Svg in the logo's coordinates. */
+export function TreePaths({ color }: { color: string }) {
   return (
     <>
-      <Path d={STEM} stroke={color} strokeWidth={STEM_WIDTH} strokeLinecap="round" />
-      <Path d={LEAF_SMALL} fill={color} />
-      <Path d={LEAF_BIG} fill={color} />
+      <Path d={TREE_BODY} fill={color} fillRule="evenodd" />
+      {TREE_LEAVES.map((l, i) => (
+        <Path key={i} d={l.d} fill={color} fillRule="evenodd" />
+      ))}
     </>
   );
 }

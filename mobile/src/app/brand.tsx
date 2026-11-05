@@ -26,14 +26,14 @@ export default function BrandGallery() {
       <Txt variant="sectionTitle">Mark</Txt>
       <View style={styles.row}>
         <LogoMark size={72} />
-        <View style={[styles.tile, { backgroundColor: colors.primary }]}>
+        <View style={[styles.tile, { backgroundColor: colors.accentSoft }]}>
           <LogoMark size={56} />
         </View>
         <View style={[styles.tile, { backgroundColor: colors.brandGreen }]}>
           <LogoMark size={56} variant="reverse" />
         </View>
         <LogoMark size={56} variant="mono" color={colors.primary} />
-        <LogoMark size={24} />
+        <LogoMark size={24} ring={false} />
       </View>
 
       <Txt variant="sectionTitle">Lockup</Txt>

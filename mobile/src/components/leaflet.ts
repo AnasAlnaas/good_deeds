@@ -102,8 +102,8 @@ export interface MapSnapshot {
   view: MapView;
 }
 
-/** The events map's blue-grey look: grey streets, tinted toward slate and darkened. */
-const EVENTS_TILE_FILTER = 'grayscale(1) brightness(0.5) contrast(1.55) sepia(0.5) hue-rotate(172deg) saturate(2)';
+/** The events map's deep green look: grey streets, tinted toward the forest slate and darkened. */
+const EVENTS_TILE_FILTER = 'grayscale(1) brightness(0.5) contrast(1.5) sepia(0.45) hue-rotate(95deg) saturate(1.3)';
 
 /**
  * The events map: blue-grey streets, green pins. Only for seeing where events

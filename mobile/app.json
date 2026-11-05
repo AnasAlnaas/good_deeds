@@ -18,7 +18,7 @@
       "googleServicesFile": "./google-services.json",
       "versionCode": 2,
       "adaptiveIcon": {
-        "backgroundColor": "#103048",
+        "backgroundColor": "#1E5E3B",
         "foregroundImage": "./assets/brand/android-icon-foreground.png",
         "backgroundImage": "./assets/brand/android-icon-background.png",
         "monochromeImage": "./assets/brand/android-icon-monochrome.png"
@@ -34,9 +34,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#FFFFFF",
+          "backgroundColor": "#F4F0E6",
           "image": "./assets/brand/splash-icon.png",
-          "imageWidth": 110
+          "imageWidth": 150
         }
       ],
       [
@@ -59,7 +59,7 @@
         "expo-notifications",
         {
           "icon": "./assets/brand/notification-icon.png",
-          "color": "#103048",
+          "color": "#1E5E3B",
           "defaultChannel": "default"
         }
       ]

@@ -19,9 +19,9 @@ const IDLE = 2200;
 const COL_W = 40;
 const AREA = { x: 44, w: 152, base: 172, h: 150 };
 const COLUMNS = [
-  { key: 'seed', icon: 'leaf', color: colors.accent, height: 80, at: 150 },
+  { key: 'seed', icon: 'leaf', color: colors.brandSage, height: 80, at: 150 },
   { key: 'grow', icon: 'star', color: colors.brandGreen, height: 104, at: 350 },
-  { key: 'rise', icon: 'trophy', color: colors.primary, height: 126, at: 550 },
+  { key: 'rise', icon: 'trophy', color: colors.accent, height: 126, at: 550 },
 ] as const;
 
 export function GrowthMotion({ size = 280, play = true, onDone }: MotionProps) {
@@ -99,7 +99,7 @@ function Column({ column, index, u, t, idle, still }: ColumnProps) {
           grow,
         ]}>
         <Animated.View style={icon}>
-          <Ionicons name={column.icon} size={20 * u} color={column.key === 'seed' ? colors.accentInk : colors.surface} />
+          <Ionicons name={column.icon} size={20 * u} color={column.key === 'grow' ? colors.surface : colors.accentInk} />
         </Animated.View>
       </Animated.View>
     </View>

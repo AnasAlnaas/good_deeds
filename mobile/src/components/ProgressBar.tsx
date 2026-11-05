@@ -11,7 +11,7 @@ interface Props {
   height?: number;
   /** Read out instead of the bar, e.g. "120 of 150 points". */
   label?: string;
-  /** On a green card: a navy fill on a light track. */
+  /** On a gold card: a forest fill on a light track. */
   onAccent?: boolean;
 }
 

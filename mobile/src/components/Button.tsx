@@ -17,8 +17,8 @@ interface Props {
 const look: Record<Variant, { bg: string; pressed: string; fg: string; border: string }> = {
   primary: { bg: colors.primary, pressed: colors.primaryPressed, fg: colors.surface, border: colors.primary },
   accent: { bg: colors.accent, pressed: colors.accentPressed, fg: colors.accentInk, border: colors.accent },
-  secondary: { bg: colors.surface, pressed: colors.primarySoft, fg: colors.primary, border: colors.surface },
-  danger: { bg: colors.surface, pressed: colors.surfaceAlt, fg: colors.danger, border: colors.surface },
+  secondary: { bg: colors.surface, pressed: colors.primarySoft, fg: colors.primary, border: colors.border },
+  danger: { bg: colors.surface, pressed: colors.surfaceAlt, fg: colors.danger, border: colors.border },
   quiet: { bg: 'transparent', pressed: colors.primarySoft, fg: colors.primary, border: 'transparent' },
 };
 
