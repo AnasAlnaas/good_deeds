@@ -21,6 +21,7 @@ import type {
   ProfileEdit,
   ProfileResponse,
   ProposeEventResponse,
+  RequestCodeResponse,
   RegistrationResponse,
   ReportBody,
   ReportFormMeta,
@@ -96,6 +97,9 @@ export interface Backend {
   disputeAttendance(id: string): Promise<AttendanceResponse>;
   /** The name, the city, or both. Gender and phone never change. */
   updateProfile(edit: ProfileEdit): Promise<ProfileResponse>;
+  /** A code to a new email address; the address is kept only once the code comes back (changeEmail). */
+  requestEmailChange(email: string, lang: 'ar' | 'en'): Promise<RequestCodeResponse>;
+  changeEmail(email: string, code: string): Promise<ProfileResponse>;
   /** A square JPEG, base64-encoded (src/lib/photo.ts makes it). */
   setPhoto(jpegBase64: string): Promise<PhotoResponse>;
   removePhoto(): Promise<void>;

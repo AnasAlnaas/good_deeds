@@ -6,6 +6,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { libyanMobile } from '../../shared/rules';
+import { brevoEmail, consoleEmail, type SendEmail } from './email';
 
 try {
   process.loadEnvFile('.env');
@@ -31,6 +32,21 @@ if (isProduction && !databaseUrl) throw new Error('DATABASE_URL must be set in p
 const pgliteDir = process.env.PGLITE_DIR ?? '.data/pglite';
 
 const JWT_SECRET_MIN = 32;
+
+/**
+ * How the server sends email, from the settings above (EMAIL_DELIVERY, BREVO_API_KEY,
+ * EMAIL_FROM). Brevo without its key or sender is logged and treated as `none`:
+ * signing in still works, but sign-ups and email resets are refused until it is set.
+ */
+export function emailSender(): SendEmail | null {
+  if (env.emailDelivery === 'none') return null;
+  if (env.emailDelivery === 'console') return consoleEmail;
+  if (!env.brevoApiKey || !env.emailFrom) {
+    console.error('EMAIL_DELIVERY=brevo (the production default) needs BREVO_API_KEY and EMAIL_FROM: sign-ups and email resets are refused until they are set.');
+    return null;
+  }
+  return brevoEmail({ apiKey: env.brevoApiKey, from: env.emailFrom, fromName: env.emailFromName });
+}
 
 /**
  * The secret that signs sign-in tokens. A real database (DATABASE_URL) or
@@ -70,6 +86,15 @@ export const env = {
   mayLoadDemoData: !isProduction && !databaseUrl,
   /** `console` prints sign-in codes in the server log; `none` refuses to send until an SMS provider is added. */
   loginCodeDelivery: (process.env.LOGIN_CODE_DELIVERY ?? (isProduction ? 'none' : 'console')) as 'console' | 'none',
+  /**
+   * `brevo` sends email (sign-up and password-reset codes) through Brevo; `console` prints it
+   * (development default); `none` refuses those requests. Production default: brevo.
+   */
+  emailDelivery: (process.env.EMAIL_DELIVERY || (isProduction ? 'brevo' : 'console')) as 'brevo' | 'console' | 'none',
+  brevoApiKey: process.env.BREVO_API_KEY || undefined,
+  /** The sender: an address verified in Brevo (Senders, domains & dedicated IPs). */
+  emailFrom: process.env.EMAIL_FROM || undefined,
+  emailFromName: process.env.EMAIL_FROM_NAME || 'الأعمال الصالحة - Good Deeds',
   /** `expo` sends through Expo's push service; `console` prints them (development); `none` turns them off. */
   pushDelivery: (process.env.PUSH_DELIVERY ?? (isProduction ? 'expo' : 'console')) as 'expo' | 'console' | 'none',
   /** Only needed if "enhanced push security" is on in the EAS dashboard. */

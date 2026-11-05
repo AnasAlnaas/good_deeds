@@ -32,6 +32,9 @@ need your account and a browser.
    | `CRON_SECRET` | another random value, made the same way |
    | `TRUST_PROXY` | `1` (Vercel sets the caller's address itself) |
    | `LOGIN_CODE_DELIVERY` | leave it out: the app signs in with a password (see step 4) |
+   | `BREVO_API_KEY` | Brevo's API key, for sign-up and password-reset emails (see step 4) |
+   | `EMAIL_FROM` | the sender address, verified in Brevo, e.g. `gooddeeds.ly@gmail.com` |
+   | `EMAIL_FROM_NAME` | optional: the sender's name (default `الأعمال الصالحة - Good Deeds`) |
    | `CORS_ORIGINS` | the admin panel's address, after step 5, e.g. `https://good-deeds-admin.vercel.app` |
    | `ADMIN_PHONES` | the first admin's phone, e.g. `0912345678` (see step 5) |
    | `VERCEL_EXPERIMENTAL_BACKENDS` | `1`: Vercel's Hono build mode that bundles the server (its imports have no `.js` endings, which the default mode needs) |
@@ -88,13 +91,33 @@ attendance waits for it. To send that sooner, a free outside scheduler (e.g.
 - URL: `https://good-deeds-api.vercel.app/api/internal/tick` (GET)
 - Header: `Authorization: Bearer <CRON_SECRET>`
 
-## 4. Sign-in: phone number and password
+## 4. Sign-in: phone number or email, and password
 
-SMS costs too much for now, so the app and the admin panel sign in with a phone
-number and a password; nothing is sent to the phone. Nobody checks that a
-number is the person's, so:
+SMS costs too much for now, so nothing is sent to the phone. Every account has
+a phone number, an email address and a password, and signs in with either the
+phone or the email. The email is confirmed with a 6-digit code before the
+account is made, and changed (in **بياناتك**) the same way.
 
-- **Forgotten password:** an admin opens **الأعضاء** in the panel, finds the
+**Email through Brevo** (free: 300 emails a day):
+
+1. Make an account at brevo.com.
+2. **Senders, domains & dedicated IPs → Senders → Add a sender**: the address
+   the emails come from (a Gmail address works). Brevo emails it a link to
+   confirm it. With a domain of your own, authenticate the domain there too
+   (its DNS records), so fewer emails land in spam.
+3. **SMTP & API → API keys → Generate a new API key**. Put it in `BREVO_API_KEY`,
+   the sender in `EMAIL_FROM`, and redeploy.
+
+Without `BREVO_API_KEY` and `EMAIL_FROM`, the server logs an error and refuses
+sign-ups and email resets (signing in still works). Locally, emails are printed
+in the server log (`EMAIL_DELIVERY=console`, the development default).
+
+Nobody checks that a number is the person's, so:
+
+- **Forgotten password:** in the app, **نسيت كلمة المرور؟** sends a code to the
+  account's email; with it the person chooses a new password. A code works once,
+  for 15 minutes.
+- **No access to that email:** an admin opens **الأعضاء** in the panel, finds the
   person and presses **رمز استعادة**. The panel shows a 6-digit code once. The
   admin gives it to the person after checking it is them (a call to that
   number, or in person). In the app, the person taps **نسيت كلمة المرور؟** and

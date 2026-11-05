@@ -63,10 +63,10 @@ export function EventCard({ event, floating }: { event: EventSummary; floating?:
         </Row>
       )}
       <View style={styles.block}>
-        <Txt variant="bodyStrong" color={colors.accentInk}>
+        <Txt variant="bodyStrong" color={colors.primary}>
           {dayTimeRange(event.starts_at, event.ends_at, s, now)}
         </Txt>
-        <Txt variant="caption" color={full ? colors.danger : colors.accentInk} tabular>
+        <Txt variant="caption" color={full ? colors.danger : colors.inkMuted} tabular>
           {full ? s.event.full : fmt(s.event.seats, { joined: event.joined_count, capacity: event.capacity })}
         </Txt>
       </View>
@@ -100,7 +100,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   meta: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
   block: {
-    backgroundColor: colors.accent,
+    backgroundColor: colors.primarySoft,
     borderRadius: radius.card - space.xs,
     padding: space.md,
     gap: space.xs,

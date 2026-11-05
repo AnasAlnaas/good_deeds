@@ -57,7 +57,7 @@ export default function EventsScreen() {
         : s.events.emptyOrganize;
 
   return (
-    <Screen back title={s.tabs.events}>
+    <Screen back title={s.tabs.events} island>
       <Field
         label={s.events.search}
         value={text}

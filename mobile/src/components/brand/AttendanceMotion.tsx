@@ -143,7 +143,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    boxShadow: '0 8px 20px rgba(16, 48, 72, 0.10)',
+    boxShadow: '0 8px 20px rgba(43, 36, 20, 0.10)',
   },
   track: { flex: 1, borderRadius: 999, backgroundColor: colors.border, overflow: 'hidden', alignItems: 'flex-start' },
   trackFill: { height: '100%', borderRadius: 999, backgroundColor: colors.primary },

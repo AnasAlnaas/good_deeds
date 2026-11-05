@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { ActivityIndicator, Alert, Platform, StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/components/Avatar';
+import { LogoMark } from '@/components/brand';
 import { Button } from '@/components/Button';
 import { ProgressBar } from '@/components/ProgressBar';
 import { Screen } from '@/components/Screen';
@@ -94,6 +95,10 @@ export default function ProfileScreen() {
       </Txt>
 
       <View style={styles.level}>
+        {/* The logo's tree, faint in the corner: the level card is the app's highlight. */}
+        <View style={styles.levelTree} pointerEvents="none">
+          <LogoMark size={150} variant="mono" color={colors.accentInk} ring={false} />
+        </View>
         <View style={styles.levelRow}>
           <Txt variant="sectionTitle" color={colors.accentInk}>
             {fmt(s.profile.level, { n: level.level })}
@@ -146,6 +151,7 @@ const styles = StyleSheet.create({
   photoActions: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginTop: -space.sm },
   flex: { flex: 1, gap: space.xs },
   badges: { flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' },
-  level: { backgroundColor: colors.accent, borderRadius: radius.card, padding: space.md + space.xs, gap: space.sm },
+  level: { backgroundColor: colors.accent, borderRadius: radius.card, padding: space.md + space.xs, gap: space.sm, overflow: 'hidden' },
+  levelTree: { position: 'absolute', end: -28, bottom: -30, opacity: 0.1 },
   levelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
 });

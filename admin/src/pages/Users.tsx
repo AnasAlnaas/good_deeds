@@ -65,6 +65,7 @@ export function Users() {
                 <th>{t.users.photo}</th>
                 <th>{t.users.name}</th>
                 <th>{t.users.phone}</th>
+                <th>{t.users.email}</th>
                 <th>{t.users.city}</th>
                 <th>{t.users.role}</th>
                 <th className="num">{t.users.level}</th>
@@ -99,6 +100,9 @@ export function Users() {
                           {t.users.resetCode}
                         </Button>
                       </div>
+                    </td>
+                    <td>
+                      <span className="ltr">{u.email ?? '—'}</span>
                     </td>
                     <td>{u.city}</td>
                     <td>

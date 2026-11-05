@@ -8,8 +8,9 @@ import { t, type ErrorCode } from '../strings';
 import { Button, ErrorNote, Field, Notice } from '../ui';
 import { latinDigits, libyanMobile, PASSWORD_MAX, passwordProblem } from '../../../shared/rules';
 
-// The same account as in the app: phone number and password (no SMS). An admin
-// who forgot the password gets a reset code from another admin.
+// The same account as in the app: phone number or email, and password. An admin
+// who forgot the password resets it in the app (a code to their email), or gets
+// a reset code from another admin.
 export function Login() {
   const { session, signIn } = useAuth();
   const navigate = useNavigate();
@@ -52,13 +53,15 @@ export function Login() {
   };
 
   const submit = () => {
+    // Sign-in takes the phone or the email; a reset (an admin's code) takes the phone.
+    if (step === 'signIn' && phoneInput.includes('@')) return attempt(() => api.signIn({ login: phoneInput, password }));
     const phone = libyanMobile(phoneInput);
     if (!phone) {
       setError(null);
       setRefusal(t.login.phoneInvalid);
       return;
     }
-    if (step === 'signIn') return attempt(() => api.signIn({ phone, password }));
+    if (step === 'signIn') return attempt(() => api.signIn({ login: phone, password }));
     const problem = passwordProblem(password, phone);
     if (problem) {
       setRefusal(null);
@@ -85,13 +88,13 @@ export function Login() {
         </div>
         <h1>{step === 'signIn' ? t.login.title : t.login.resetTitle}</h1>
         <p className="muted">{step === 'signIn' ? t.login.body : notSet ? t.login.notSetBody : t.login.resetBody}</p>
-        <Field label={t.login.phone}>
+        <Field label={step === 'signIn' ? t.login.phoneOrEmail : t.login.phone}>
           <input
             className="ltr"
             dir="ltr"
-            type="tel"
-            autoComplete="tel"
-            placeholder="091 234 5678"
+            type={step === 'signIn' ? 'text' : 'tel'}
+            autoComplete={step === 'signIn' ? 'username' : 'tel'}
+            placeholder={step === 'signIn' ? '091 234 5678 / name@example.com' : '091 234 5678'}
             value={phoneInput}
             maxLength={20}
             onChange={(e) => setPhoneInput(e.target.value)}

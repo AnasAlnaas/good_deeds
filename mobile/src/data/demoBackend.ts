@@ -451,6 +451,10 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
         return { user: me };
       }),
 
+    // The demo sends no email (edit-profile.tsx hides the change there).
+    requestEmailChange: () => Promise.reject(new BackendError('delivery_not_configured')),
+    changeEmail: () => Promise.reject(new BackendError('delivery_not_configured')),
+
     setPhoto: (jpegBase64) =>
       async(() => {
         const { me } = change((d) => server.setPhoto(d, meId, `data:image/jpeg;base64,${jpegBase64}`));

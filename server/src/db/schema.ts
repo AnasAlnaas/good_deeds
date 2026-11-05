@@ -72,8 +72,13 @@ export const users = pgTable(
     created_at: at('created_at').notNull().defaultNow(),
     deleted_at: at('deleted_at'),
   },
-  // A deleted account frees its phone number for a new sign-up.
-  (t) => [uniqueIndex('users_phone_active').on(t.phone).where(sql`${t.deleted_at} is null`)],
+  // A deleted account frees its phone number and email address for a new sign-up.
+  // Emails are stored in lowercase (rules.cleanEmail). Accounts from before
+  // email addresses (and the demo people) have none.
+  (t) => [
+    uniqueIndex('users_phone_active').on(t.phone).where(sql`${t.deleted_at} is null`),
+    uniqueIndex('users_email_active').on(t.email).where(sql`${t.deleted_at} is null`),
+  ],
 );
 
 export const branches = pgTable('branches', {
@@ -307,6 +312,29 @@ export const login_codes = pgTable(
     issued_by: text('issued_by').references(() => users.id),
   },
   (t) => [index('login_codes_phone').on(t.phone, t.created_at)],
+);
+
+// A one-time code sent to an email address (routes/auth.ts, routes/me.ts):
+// to confirm the address before an account is made with it (sign_up) or before
+// it replaces the account's address (change_email), or to choose a new
+// password (reset_password). Only a hash of the code is kept.
+export const emailCodePurpose = pgEnum('email_code_purpose', ['sign_up', 'reset_password', 'change_email']);
+
+export const email_codes = pgTable(
+  'email_codes',
+  {
+    id: text('id').primaryKey(),
+    email: text('email').notNull(),
+    purpose: emailCodePurpose('purpose').notNull(),
+    /** The account it is for: the one whose password is reset, or whose address changes. Empty for a sign-up. */
+    user_id: text('user_id').references(() => users.id),
+    code_hash: text('code_hash').notNull(),
+    expires_at: at('expires_at').notNull(),
+    attempts: integer('attempts').notNull().default(0),
+    created_at: at('created_at').notNull(),
+    consumed_at: at('consumed_at'),
+  },
+  (t) => [index('email_codes_email').on(t.email, t.created_at)],
 );
 
 // A person's password, apart from `users` so it never travels with a user row.

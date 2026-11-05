@@ -9,7 +9,7 @@ import { getConnInfo } from '@hono/node-server/conninfo';
 import { createApp } from './create-app';
 import { openDatabase } from './db/client';
 import { isEmpty, seedDemo } from './db/seed';
-import { env, jwtSecret } from './env';
+import { emailSender, env, jwtSecret } from './env';
 import type { AppDeps } from './http';
 import { closeDueAndNotify } from './notify';
 import { consolePush, expoPush } from './push';
@@ -31,6 +31,7 @@ const deps: AppDeps = {
     env.loginCodeDelivery === 'console'
       ? async (phone, code) => console.log(`[sign-in code] ${phone}: ${code}`)
       : null,
+  sendEmail: emailSender(),
   sendPush: env.pushDelivery === 'expo' ? expoPush(env.expoAccessToken) : env.pushDelivery === 'console' ? consolePush : null,
   timeZone: env.timeZone,
   runLater: (task) => void task().catch((err) => console.error('background task failed', err)),

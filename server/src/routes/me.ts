@@ -1,9 +1,9 @@
-// The signed-in person: profile (name and city) and photo, points and level, their attendance
+// The signed-in person: profile (name and city), email address and photo, points and level, their attendance
 // records, confirming or disputing recorded hours, their reports and warnings,
 // and deleting the account.
 // Also other people's photos, for those allowed to see them.
 
-import { and, count, desc, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
@@ -16,6 +16,7 @@ import type {
   MyWarning,
   PhotoResponse,
   ProfileResponse,
+  RequestCodeResponse,
 } from '../../../shared/api';
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
@@ -25,6 +26,7 @@ import type { Database } from '../db/client';
 import { allLevels, attendanceById, creditPoints, findEvent, findUser, ledgerOf, publicUser, shownTo } from '../db/queries';
 import { iso } from '../db/rows';
 import * as s from '../db/schema';
+import { EMAIL_CODE_MINUTES, sendEmailCode, takeEmailCode } from '../email-codes';
 import { type AppEnv, HttpError, readBody } from '../http';
 import { photoUrl, readPhoto } from '../photo';
 import { asMyReports, asMyWarnings } from './reports';
@@ -34,6 +36,21 @@ const pushTokenBody = z.object({ token: pushToken, lang: z.enum(['ar', 'en']) })
 const photoBody = z.object({ jpeg_base64: z.string().min(1) });
 // Anything else (gender, phone, role) is refused, not quietly dropped; the lengths are the rule's (rules.cleanProfileEdit).
 const profileBody = z.object({ full_name: z.string().optional(), city: z.string().optional() }).strict();
+const email = z
+  .string()
+  .max(rules.EMAIL_MAX + 20)
+  .transform((v, ctx) => rules.cleanEmail(v) ?? (ctx.addIssue({ code: 'custom', message: 'invalid' }), z.NEVER));
+const emailCodeBody = z.object({ email, lang: z.enum(['ar', 'en']).default('ar') });
+const emailBody = z.object({ email, code: z.string().regex(/^\d{6}$/) });
+
+/** Another active account already has this address. */
+async function emailTakenByOther(db: Database, address: string, userId: string) {
+  const [other] = await db
+    .select({ id: s.users.id })
+    .from(s.users)
+    .where(and(eq(s.users.email, address), isNull(s.users.deleted_at), ne(s.users.id, userId)));
+  return !!other;
+}
 
 /** The admin log keeps decisions, not people: a deleted account's name becomes rules.DELETED_NAME there too. */
 async function eraseNameFromAdminLog(tx: Database, userId: string) {
@@ -138,6 +155,36 @@ export const meRoutes = new Hono<AppEnv>()
     return c.json<ProfileResponse>({ user: iso(row) });
   })
 
+  // A new email address: a code is sent to it first, and the address is kept
+  // only once that code comes back (PUT /email), so a mistyped or someone
+  // else's address never becomes the one a password reset goes to.
+  .post('/email-code', async (c) => {
+    const me = c.var.user;
+    const body = await readBody(c, emailCodeBody);
+    if (await emailTakenByOther(c.var.deps.db, body.email, me.id)) throw new HttpError(409, 'email_taken');
+    await sendEmailCode(c, c.var.deps, { email: body.email, purpose: 'change_email', userId: me.id, lang: body.lang });
+    return c.json<RequestCodeResponse>({ expires_in_seconds: EMAIL_CODE_MINUTES * 60 });
+  })
+
+  .put('/email', async (c) => {
+    const { db, now, jwtSecret } = c.var.deps;
+    const me = c.var.user;
+    const body = await readBody(c, emailBody);
+    type Outcome = { error: 'email_taken' | 'code_expired' | 'code_invalid' | 'too_many_attempts' | 'try_later' } | { user: User };
+    const result = await db.transaction(async (tx): Promise<Outcome> => {
+      if (await emailTakenByOther(tx, body.email, me.id)) return { error: 'email_taken' as const };
+      const code = await takeEmailCode(tx, jwtSecret, { email: body.email, purpose: 'change_email', code: body.code, userId: me.id }, now());
+      if ('error' in code) return code;
+      const [row] = await tx.update(s.users).set({ email: body.email }).where(eq(s.users.id, me.id)).returning();
+      return { user: iso(row) as User };
+    });
+    if ('error' in result) {
+      const status = result.error === 'email_taken' ? 409 : result.error === 'try_later' || result.error === 'too_many_attempts' ? 429 : 401;
+      throw new HttpError(status, result.error);
+    }
+    return c.json<ProfileResponse>({ user: result.user });
+  })
+
   // A new profile photo replaces the old one. Its metadata is removed (src/photo.ts).
   .put('/photo', async (c) => {
     const { db, now } = c.var.deps;
@@ -181,6 +228,7 @@ export const meRoutes = new Hono<AppEnv>()
       await tx.delete(s.push_tokens).where(eq(s.push_tokens.user_id, userId));
       await tx.delete(s.user_photos).where(eq(s.user_photos.user_id, userId));
       await tx.delete(s.login_codes).where(eq(s.login_codes.phone, phone));
+      await tx.delete(s.email_codes).where(or(eq(s.email_codes.user_id, userId), ...(c.var.user.email ? [eq(s.email_codes.email, c.var.user.email)] : [])));
       await tx.delete(s.user_passwords).where(eq(s.user_passwords.user_id, userId));
       await eraseNameFromAdminLog(tx, userId);
     });

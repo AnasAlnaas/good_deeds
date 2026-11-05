@@ -30,6 +30,8 @@ app collects and why.
 
 - Your **phone number** and a **password** you choose, to sign in. We keep
   only a scrambled form of the password (a hash), from which it cannot be read.
+- Your **email address**, to sign in and to send you a code if you forget your
+  password. We email it a code to confirm it is yours. We send nothing else to it.
 - Your **full name**.
 - Your **gender** (man or woman). Some events are for men only or women only,
   and photos are shown by gender (see below).
@@ -69,7 +71,8 @@ app collects and why.
 
 ## Why we use it
 
-- To create your account and let you sign in (phone number).
+- To create your account and let you sign in (phone number, email address).
+- To email you a code that confirms your address or resets your password.
 - To show you the events you may join, including men-only and women-only
   events (gender).
 - To let supervisors record who came and for how long (name, photo,
@@ -110,6 +113,8 @@ These services handle some data for us, only to provide their service:
   passes it to Google or Apple.
 - **Google Firebase Cloud Messaging** (Android) and **Apple Push
   Notification service** (iPhone): deliver notifications to your phone.
+- **Brevo** (Sendinblue SAS, France): receives your email address and the
+  one-time code, and delivers the email.
 - **Server hosting** ⚠️ [provider name]: the computer where our database runs.
 - **OpenStreetMap** ⚠️ [or the map tile provider chosen before launch] and
   **unpkg.com**: when you open a map, your phone downloads the map images and
@@ -141,7 +146,8 @@ We do not give your data to anyone else, unless the law requires it.
 - **After you delete your account**: see "Deleting your account" below.
 - **Sign-in codes** expire after 10 minutes. Their records (phone number and
   scrambled code) are deleted a day after that, or at once when you delete
-  your account.
+  your account. **Email codes** expire after 15 minutes; their records (email
+  address and scrambled code) are deleted the same way.
 - **The admin log** (who made which decision, and when) is kept ⚠️ [period].
 
 ## Deleting your account
@@ -153,10 +159,10 @@ undone. At once:
 - your photo is deleted;
 - you leave every event you joined;
 - your phone stops receiving notifications;
-- your name, phone number and city are erased. Wherever a record of you
+- your name, phone number, email address and city are erased. Wherever a record of you
   remains, it shows "deleted account" (حساب محذوف) instead of your name,
   including in the association's admin log;
-- your sign-in code records are deleted.
+- your sign-in and email code records are deleted.
 
 What stays, without your name or phone number: your attendance, hours and
 points (so the association's totals of volunteer hours stay right), whether
@@ -164,8 +170,8 @@ the account was a man's or a woman's, and reports and warnings, as they were
 written. If a note in a report or warning mentions your name, that text is
 not changed.
 
-Your phone number is free again, so you can sign up with it as a new
-account.
+Your phone number and email address are free again, so you can sign up with
+them as a new account.
 
 You can also ask us by email at ⚠️ [email], from the phone number on the
 account. We answer within ⚠️ [e.g. 30] days.

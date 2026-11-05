@@ -43,11 +43,11 @@ export interface AdminMeta {
 
 // ---------- users ----------
 
-/** GET /api/admin/users?q= (name or phone) */
+/** GET /api/admin/users?q= (name, phone or email) */
 export interface AdminUserRow
   extends Pick<
     User,
-    'id' | 'full_name' | 'phone' | 'gender' | 'city' | 'avatar_url' | 'role' | 'level' | 'total_points' | 'is_association_member' | 'created_at'
+    'id' | 'full_name' | 'phone' | 'email' | 'gender' | 'city' | 'avatar_url' | 'role' | 'level' | 'total_points' | 'is_association_member' | 'created_at'
   > {
   confirmed_hours: number;
   /** Warnings that stand (not withdrawn). */

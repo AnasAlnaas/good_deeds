@@ -195,6 +195,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surface,
-    boxShadow: '0 4px 14px rgba(16, 48, 72, 0.16)',
+    boxShadow: '0 4px 14px rgba(43, 36, 20, 0.16)',
   },
 });

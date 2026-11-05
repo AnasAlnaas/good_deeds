@@ -8,7 +8,7 @@ import { errorCode } from '@/data/backend';
 import { useOnline } from '@/data/network';
 import { useApp } from '@/state/app';
 import { classIcon, className, EVENT_CLASSES, type EventClassId } from '@/theme/classes';
-import { colors, fonts, radius, shadow, space, touch } from '@/theme/tokens';
+import { cardShadow, colors, fonts, radius, shadow, space, touch } from '@/theme/tokens';
 import { Button } from './Button';
 import { Txt } from './Txt';
 
@@ -50,7 +50,7 @@ export function Chip({
   icon?: keyof typeof Ionicons.glyphMap;
   floating?: boolean;
 }) {
-  const fg = selected ? colors.accentInk : colors.ink;
+  const fg = selected ? colors.surface : colors.ink;
   return (
     <Pressable
       accessibilityRole="button"
@@ -336,8 +336,11 @@ export const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
     padding: space.md + space.xs,
     gap: space.sm,
+    ...cardShadow,
   },
   chip: {
     minHeight: 40,
@@ -346,10 +349,12 @@ export const styles = StyleSheet.create({
     gap: space.xs,
     paddingHorizontal: space.md,
     borderRadius: radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
     backgroundColor: colors.surface,
   },
   chipFloating: { backgroundColor: colors.glass },
-  chipSelected: { backgroundColor: colors.accent },
+  chipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { lineHeight: 20 },
   filter: { gap: space.sm },
   filterFloating: { paddingHorizontal: space.md },
@@ -388,7 +393,7 @@ export const styles = StyleSheet.create({
     minHeight: touch,
     borderRadius: radius.input,
     borderWidth: 1,
-    borderColor: colors.surface,
+    borderColor: colors.border,
     paddingHorizontal: space.md,
     fontFamily: fonts.plex400,
     fontSize: 16,

@@ -2,12 +2,13 @@ import { StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 
 import { colors } from '@/theme/tokens';
-import { PIVOT } from './geometry';
-import { LogoMark } from './LogoMark';
+import Svg, { Circle, Path } from 'react-native-svg';
+
+import { PIN as PIN_PATH, PIN_BOX, PIN_TIP } from './geometry';
 import { ease, lerp, seg, useTimeline, type MotionProps } from './motion';
 
 // Success — "You joined the event" (terms screen, after the last term).
-// A calendar page settles in, the logo's pin drops onto one day and a ripple
+// A calendar page settles in, an event pin drops onto one day and a ripple
 // spreads from it; afterwards the ripple repeats slowly. Calm on purpose: the
 // app's one big reward is ConfirmedMotion. The chosen day is the middle column,
 // so the picture reads the same in RTL.
@@ -21,7 +22,7 @@ const CAL = { x: 28, y: 26, w: 104, h: 104, head: 26 };
 const PITCH = 17;
 const ROW0 = CAL.y + CAL.head + 18;
 const DAY = { x: W / 2, y: ROW0 + 2 * PITCH };
-const PIN = 44; // mark box; the tip sits on the day
+const PIN = 44; // pin box (64 grid); the tip sits on the day
 
 export function JoinedMotion({ size = 150, play = true, onDone }: MotionProps) {
   const u = size / W;
@@ -142,12 +143,15 @@ export function JoinedMotion({ size = 150, play = true, onDone }: MotionProps) {
           styles.abs,
           {
             left: DAY.x * u - (PIN * u) / 2,
-            top: DAY.y * u - PIN * u * PIVOT.pinTip.y,
-            transformOrigin: `50% ${PIVOT.pinTip.y * 100}%`,
+            top: DAY.y * u - PIN * u * PIN_TIP.y,
+            transformOrigin: `50% ${PIN_TIP.y * 100}%`,
           },
           pin,
         ]}>
-        <LogoMark size={PIN * u} />
+        <Svg width={PIN * u} height={PIN * u} viewBox="0 0 64 64">
+          <Path d={PIN_PATH} fill={colors.primary} />
+          <Circle {...PIN_BOX.dot} fill={colors.accent} />
+        </Svg>
       </Animated.View>
     </View>
   );
@@ -162,6 +166,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     overflow: 'hidden',
-    boxShadow: '0 8px 20px rgba(16, 48, 72, 0.10)',
+    boxShadow: '0 8px 20px rgba(43, 36, 20, 0.10)',
   },
 });

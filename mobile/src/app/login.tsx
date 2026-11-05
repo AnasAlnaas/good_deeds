@@ -11,7 +11,7 @@ import { Txt } from '@/components/Txt';
 import { Badge, Card, Chip, Field, PasswordField, Row } from '@/components/ui';
 import type { LoginResponse } from '@/data/api';
 import { DEMO_AVAILABLE } from '@/data/config';
-import { resetPassword, signIn, signUp } from '@/data/apiBackend';
+import { requestEmailCode, resetPassword, signIn, signUp } from '@/data/apiBackend';
 import { errorCode } from '@/data/backend';
 import type { Gender } from '@/data/types';
 import { DEMO_ACCOUNTS } from '@/demo/seed';
@@ -32,7 +32,7 @@ export default function Login() {
         </View>
       </View>
       <View style={styles.brand}>
-        <AnimatedLogo size={96} />
+        <AnimatedLogo size={120} />
         <Txt variant="screenTitle" align="center">
           {s.appName}
         </Txt>
@@ -95,27 +95,33 @@ function DemoAccounts() {
   );
 }
 
-const { latinDigits, libyanMobile, cleanName, cleanCity, passwordProblem } = rules;
+const { latinDigits, libyanMobile, cleanEmail, cleanName, cleanCity, passwordProblem } = rules;
 
 // Typed numbers only: a full local number (091 234 5678) has 10.
 const digitCount = (text: string) => latinDigits(text).replace(/\D/g, '').length;
+const onlyDigits = (text: string) => latinDigits(text).replace(/\D/g, '');
 
-type Step = 'signIn' | 'signUp' | 'reset';
+type Step = 'signIn' | 'signUp' | 'forgot' | 'reset';
 
 /**
- * The server account: phone number and password, with no SMS (they cost too
- * much for now). A new person makes an account; one who forgot the password,
- * or whose account is older than passwords, gets a one-time code from the
- * association's admins and chooses a new one.
+ * The server account: phone number, email address and password, with no SMS
+ * (they cost too much for now). A new person fills in the form, then types the
+ * code we email them, which makes the account. One who forgot the password gets
+ * a code by email; one who can't reach their email, or whose account is older
+ * than passwords, gets a one-time code from the association's admins.
  */
 function PasswordSignIn({ baseUrl }: { baseUrl: string }) {
-  const { s, signInApi } = useApp();
+  const { s, lang, signInApi } = useApp();
   const [step, setStep] = useState<Step>('signIn');
   // Shown on the reset step when the account has no password yet.
   const [notSet, setNotSet] = useState(false);
+  const [loginInput, setLoginInput] = useState('');
   const [phoneInput, setPhoneInput] = useState('');
+  const [emailInput, setEmailInput] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
+  // The address the latest code went to (sign-up or forgot): the code step is shown while it is set.
+  const [sentTo, setSentTo] = useState<string | null>(null);
   const [fullName, setFullName] = useState('');
   const [gender, setGender] = useState<Gender | null>(null);
   // Chosen from the list, never typed: empty until the person picks one.
@@ -125,9 +131,12 @@ function PasswordSignIn({ baseUrl }: { baseUrl: string }) {
   const [checked, setChecked] = useState(false);
 
   const phone = libyanMobile(phoneInput);
+  const email = cleanEmail(emailInput);
   const phoneWrong = !phone && (checked || digitCount(phoneInput) >= 10);
+  const emailWrong = !email && checked && emailInput.trim().length > 0;
   const choosing = step !== 'signIn';
-  const problem = phone && choosing ? passwordProblem(password, phone) : null;
+  // By email the number is not known here; the server checks the password against it.
+  const problem = choosing ? passwordProblem(password, step === 'forgot' ? '' : (phone ?? '')) : null;
   const passwordWrong = checked && choosing && password.length > 0 && problem ? s.errors[problem] : null;
 
   const go = (next: Step) => {
@@ -135,6 +144,7 @@ function PasswordSignIn({ baseUrl }: { baseUrl: string }) {
     setNotSet(false);
     setPassword('');
     setCode('');
+    setSentTo(null);
     setChecked(false);
   };
 
@@ -151,6 +161,20 @@ function PasswordSignIn({ baseUrl }: { baseUrl: string }) {
         go('reset');
         setNotSet(true);
       } else dialog.notify(s.errorTitle, s.errors[c]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Emails a code to `to`; on the way, the code step is shown. */
+  const sendCode = async (to: string, purpose: 'sign_up' | 'reset_password') => {
+    setBusy(true);
+    try {
+      await requestEmailCode(baseUrl, { email: to, purpose, lang, ...(purpose === 'sign_up' && phone ? { phone } : {}) });
+      setSentTo(to);
+      setCode('');
+    } catch (e) {
+      dialog.notify(s.errorTitle, s.errors[errorCode(e)]);
     } finally {
       setBusy(false);
     }
@@ -174,6 +198,26 @@ function PasswordSignIn({ baseUrl }: { baseUrl: string }) {
       error={phoneWrong ? s.login.phoneInvalid : null}
     />
   );
+  const emailField = (
+    <Field
+      label={s.login.email}
+      ltr
+      value={emailInput}
+      onChangeText={(t) => {
+        setEmailInput(t);
+        setChecked(false);
+      }}
+      onBlur={() => emailInput.trim() && setChecked(true)}
+      placeholder={s.login.emailPlaceholder}
+      keyboardType="email-address"
+      autoCapitalize="none"
+      autoCorrect={false}
+      autoComplete="email"
+      textContentType="emailAddress"
+      maxLength={rules.EMAIL_MAX}
+      error={emailWrong ? s.login.emailInvalid : null}
+    />
+  );
   const passwordField = (
     <PasswordField
       label={choosing ? s.login.newPassword : s.login.password}
@@ -184,11 +228,28 @@ function PasswordSignIn({ baseUrl }: { baseUrl: string }) {
       error={passwordWrong}
     />
   );
+  const codeField = (label: string) => (
+    <Field
+      label={label}
+      ltr
+      value={code}
+      onChangeText={(t) => setCode(onlyDigits(t))}
+      placeholder="000000"
+      keyboardType="number-pad"
+      maxLength={6}
+      autoComplete="one-time-code"
+      textContentType="oneTimeCode"
+    />
+  );
+  const sentNote = (text: string) => <Txt color={colors.inkMuted}>{text.replace('{email}', `⁦${sentTo}⁩`)}</Txt>;
 
   if (step === 'signIn') {
+    const byEmail = loginInput.includes('@');
+    const valid = byEmail ? !!cleanEmail(loginInput) : !!libyanMobile(loginInput);
+    const loginWrong = checked && loginInput.trim().length > 0 && !valid;
     const submit = () => {
       setChecked(true);
-      if (phone && password) attempt(() => signIn(baseUrl, { phone, password }));
+      if (valid && password) attempt(() => signIn(baseUrl, { login: loginInput.trim(), password }));
     };
     return (
       <>
@@ -196,11 +257,71 @@ function PasswordSignIn({ baseUrl }: { baseUrl: string }) {
           {s.login.signInTitle}
         </Txt>
         <Txt color={colors.inkMuted}>{s.login.signInBody}</Txt>
-        {phoneField}
+        <Field
+          label={s.login.login}
+          ltr
+          value={loginInput}
+          onChangeText={(t) => {
+            setLoginInput(t);
+            setChecked(false);
+          }}
+          onBlur={() => loginInput.trim() && setChecked(true)}
+          placeholder={s.login.loginPlaceholder}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="username"
+          textContentType="username"
+          maxLength={rules.EMAIL_MAX}
+          error={loginWrong ? s.login.loginInvalid : null}
+        />
         {passwordField}
-        <Button icon="log-in-outline" label={s.login.signIn} disabled={busy || digitCount(phoneInput) < 9 || !password} onPress={submit} />
-        <Button variant="quiet" label={s.login.forgot} onPress={() => go('reset')} />
+        <Button icon="log-in-outline" label={s.login.signIn} disabled={busy || !loginInput.trim() || !password} onPress={submit} />
+        <Button variant="quiet" label={s.login.forgot} onPress={() => go('forgot')} />
         <Button variant="secondary" icon="person-add-outline" label={s.login.toSignUp} onPress={() => go('signUp')} />
+      </>
+    );
+  }
+
+  if (step === 'forgot') {
+    const submit = () => {
+      setChecked(true);
+      if (sentTo && !problem && code.length === 6) attempt(() => resetPassword(baseUrl, { email: sentTo, code, password }));
+    };
+    return (
+      <>
+        <Txt variant="sectionTitle" style={styles.gap}>
+          {s.login.forgotTitle}
+        </Txt>
+        {sentTo ? (
+          <>
+            {sentNote(s.login.forgotSentTo)}
+            {codeField(s.login.emailCode)}
+            {passwordField}
+            <Txt variant="caption" color={colors.inkMuted}>
+              {s.login.passwordHint}
+            </Txt>
+            <Button icon="key-outline" label={s.login.resetSubmit} disabled={busy || code.length !== 6 || !password} onPress={submit} />
+            <Button variant="quiet" label={s.login.resendCode} disabled={busy} onPress={() => sendCode(sentTo, 'reset_password')} />
+            <Button variant="quiet" label={s.login.changeEmail} onPress={() => setSentTo(null)} />
+          </>
+        ) : (
+          <>
+            <Txt color={colors.inkMuted}>{s.login.forgotBody}</Txt>
+            {emailField}
+            <Button
+              icon="mail-outline"
+              label={s.login.forgotSend}
+              disabled={busy || !emailInput.trim()}
+              onPress={() => {
+                setChecked(true);
+                if (email) sendCode(email, 'reset_password');
+              }}
+            />
+          </>
+        )}
+        <Button variant="quiet" label={s.login.noEmail} onPress={() => go('reset')} />
+        <Button variant="quiet" label={s.login.backToSignIn} onPress={() => go('signIn')} />
       </>
     );
   }
@@ -217,17 +338,7 @@ function PasswordSignIn({ baseUrl }: { baseUrl: string }) {
         </Txt>
         <Txt color={colors.inkMuted}>{notSet ? s.login.notSetBody : s.login.resetBody}</Txt>
         {phoneField}
-        <Field
-          label={s.login.resetCode}
-          ltr
-          value={code}
-          onChangeText={(t) => setCode(latinDigits(t).replace(/\D/g, ''))}
-          placeholder="000000"
-          keyboardType="number-pad"
-          maxLength={6}
-          autoComplete="one-time-code"
-          textContentType="oneTimeCode"
-        />
+        {codeField(s.login.resetCode)}
         {passwordField}
         <Txt variant="caption" color={colors.inkMuted}>
           {s.login.passwordHint}
@@ -240,11 +351,30 @@ function PasswordSignIn({ baseUrl }: { baseUrl: string }) {
 
   const name = cleanName(fullName);
   const cleanedCity = cleanCity(city);
-  const createAccount = () => {
+  const formReady = phone && email && !problem && name && cleanedCity && gender;
+
+  if (sentTo && formReady) {
+    const profile = { full_name: name, gender, city: cleanedCity };
+    const createAccount = () => {
+      if (code.length === 6) attempt(() => signUp(baseUrl, { phone, email: sentTo, email_code: code, password, profile }));
+    };
+    return (
+      <>
+        <Txt variant="sectionTitle" style={styles.gap}>
+          {s.login.signUpTitle}
+        </Txt>
+        {sentNote(s.login.codeSentTo)}
+        {codeField(s.login.emailCode)}
+        <Button icon="person-add-outline" label={s.login.createAccount} disabled={busy || code.length !== 6} onPress={createAccount} />
+        <Button variant="quiet" label={s.login.resendCode} disabled={busy} onPress={() => sendCode(sentTo, 'sign_up')} />
+        <Button variant="quiet" label={s.login.changeEmail} onPress={() => setSentTo(null)} />
+      </>
+    );
+  }
+
+  const confirmEmail = () => {
     setChecked(true);
-    if (phone && !problem && name && cleanedCity && gender) {
-      attempt(() => signUp(baseUrl, { phone, password, profile: { full_name: name, gender, city: cleanedCity } }));
-    }
+    if (formReady) sendCode(email, 'sign_up');
   };
   return (
     <>
@@ -253,6 +383,7 @@ function PasswordSignIn({ baseUrl }: { baseUrl: string }) {
       </Txt>
       <Txt color={colors.inkMuted}>{s.login.signUpBody}</Txt>
       {phoneField}
+      {emailField}
       {passwordField}
       <Txt variant="caption" color={colors.inkMuted}>
         {s.login.passwordHint}
@@ -279,10 +410,10 @@ function PasswordSignIn({ baseUrl }: { baseUrl: string }) {
       </Txt>
       <CityPicker label={s.login.city} value={city} onChange={setCity} error={checked && !cleanedCity ? s.login.cityInvalid : null} />
       <Button
-        icon="person-add-outline"
-        label={s.login.createAccount}
-        disabled={busy || !phoneInput || !password || !fullName.trim() || !gender || !city}
-        onPress={createAccount}
+        icon="mail-outline"
+        label={s.login.sendCode}
+        disabled={busy || !phoneInput || !emailInput.trim() || !password || !fullName.trim() || !gender || !city}
+        onPress={confirmEmail}
       />
       <Button variant="quiet" label={s.login.toSignIn} onPress={() => go('signIn')} />
     </>

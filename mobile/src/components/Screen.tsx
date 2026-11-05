@@ -6,6 +6,7 @@ import { goBack } from '@/lib/goBack';
 import { useApp } from '@/state/app';
 import { colors, space } from '@/theme/tokens';
 import { Txt } from './Txt';
+import { useNavIslandInset, useNavIslandScroll } from './NavIsland';
 import { IconButton, OfflineBanner } from './ui';
 
 interface Props {
@@ -16,6 +17,8 @@ interface Props {
   scrollEnabled?: boolean;
   background?: string;
   footer?: ReactNode;
+  /** A main screen with the nav island over its bottom: room is kept for it, and scrolling down tucks it away. */
+  island?: boolean;
   children: ReactNode;
 }
 
@@ -23,9 +26,11 @@ interface Props {
 // so the back arrow and title would sit on the wrong side in Arabic.
 // Every section opens over the map, so a screen with nothing behind it (opened
 // from a notification) goes back to the map.
-export function Screen({ title, back, scroll = true, scrollEnabled, background = colors.surfaceAlt, footer, children }: Props) {
+export function Screen({ title, back, scroll = true, scrollEnabled, background = colors.surfaceAlt, footer, island, children }: Props) {
   const insets = useSafeAreaInsets();
   const { isRTL, s } = useApp();
+  const islandInset = useNavIslandInset();
+  const onIslandScroll = useNavIslandScroll();
   const Body = scroll ? ScrollView : View;
   return (
     <View style={[styles.root, { backgroundColor: background, paddingTop: insets.top }]}>
@@ -50,7 +55,8 @@ export function Screen({ title, back, scroll = true, scrollEnabled, background =
         <Body
           style={styles.body}
           {...(scroll ? { scrollEnabled, keyboardShouldPersistTaps: 'handled' as const } : null)}
-          contentContainerStyle={scroll ? { padding: space.md, paddingBottom: space.xl, gap: space.md } : undefined}>
+          {...(scroll && island ? { onScroll: onIslandScroll, scrollEventThrottle: 16 } : null)}
+          contentContainerStyle={scroll ? { padding: space.md, paddingBottom: island ? islandInset : space.xl, gap: space.md } : undefined}>
           {children}
         </Body>
         {footer && <View style={[styles.footer, { backgroundColor: background, paddingBottom: insets.bottom + space.md }]}>{footer}</View>}

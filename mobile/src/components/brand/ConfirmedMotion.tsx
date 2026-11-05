@@ -7,7 +7,7 @@ import { ease, lerp, seg, useTimeline, type MotionProps } from './motion';
 import { Plus } from './shapes';
 
 // Success — the participant confirmed their hours: the app's one reward moment
-// (DESIGN.md). A seal pops, then points burst out of it in greens and navy.
+// (DESIGN.md). A seal pops, then points burst out of it in gold and forest greens.
 // Timed to land with the 600 ms level bar fill under it on the confirm screen.
 // Afterwards the seal sends out a slow glow.
 
@@ -42,7 +42,7 @@ export function ConfirmedMotion({ size = 150, play = true, onDone }: MotionProps
         style={[
           styles.abs,
           styles.round,
-          { width: d, height: d, left: C.x * u - d / 2, top: C.y * u - d / 2, backgroundColor: colors.success },
+          { width: d, height: d, left: C.x * u - d / 2, top: C.y * u - d / 2, backgroundColor: colors.accent },
           halo,
         ]}
       />
@@ -54,17 +54,17 @@ export function ConfirmedMotion({ size = 150, play = true, onDone }: MotionProps
           styles.abs,
           styles.round,
           styles.center,
-          { width: d, height: d, left: C.x * u - d / 2, top: C.y * u - d / 2, backgroundColor: colors.success },
+          { width: d, height: d, left: C.x * u - d / 2, top: C.y * u - d / 2, backgroundColor: colors.accent },
           seal,
         ]}>
-        <Ionicons name="checkmark" size={42 * u} color={colors.surface} />
+        <Ionicons name="checkmark" size={42 * u} color={colors.accentInk} />
       </Animated.View>
     </View>
   );
 }
 
 // The burst's colours, mixed around the circle.
-const PARTICLE_COLORS = [colors.accent, colors.brandGreen, colors.primary];
+const PARTICLE_COLORS = [colors.accent, colors.brandGreen, colors.brandSage];
 
 function Particle({ index, color, u, t }: { index: number; color: string; u: number; t: SharedValue<number> }) {
   // Fixed per index, so the burst looks scattered but plays the same every time.
