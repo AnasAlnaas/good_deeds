@@ -20,6 +20,13 @@ const started = Date.now();
 const env = { ...process.env, CI: '1' };
 const defaultSdk = process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'Android', 'Sdk');
 if (!env.ANDROID_HOME && !env.ANDROID_SDK_ROOT && defaultSdk && existsSync(defaultSdk)) env.ANDROID_HOME = defaultSdk;
+// Sentry's build step uploads the source maps that turn a crash into readable
+// lines of code. It needs SENTRY_AUTH_TOKEN, SENTRY_ORG and SENTRY_PROJECT in
+// the shell; without them it is skipped (reports still arrive, less readable).
+if (!env.SENTRY_AUTH_TOKEN) {
+  env.SENTRY_DISABLE_AUTO_UPLOAD = 'true';
+  console.log('\n> no SENTRY_AUTH_TOKEN: the source maps are not sent to Sentry\n');
+}
 
 function run(cmd, args, cwd = root) {
   const r = spawnSync([cmd, ...args].join(' '), { cwd, stdio: 'inherit', shell: true, env });

@@ -130,6 +130,8 @@ export default function ProfileScreen() {
       </Card>
       <Button variant="secondary" icon="create-outline" label={s.profile.edit} onPress={() => router.push('/edit-profile')} />
 
+      <Button variant="secondary" icon="school-outline" label={s.profile.lessons} onPress={() => router.push('/lessons')} />
+
       {summary.data.warnings > 0 && (
         <Button
           variant="secondary"

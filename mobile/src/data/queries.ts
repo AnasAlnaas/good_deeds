@@ -41,7 +41,8 @@ export const queryClient = new QueryClient({
 export const persistOptions: Omit<PersistQueryClientOptions, 'queryClient'> = {
   persister: createAsyncStoragePersister({ storage: AsyncStorage, key: 'gd.queries', throttleTime: 1000 }),
   maxAge: WEEK,
-  buster: '1',
+  // 2: event pages have lessons (the learning corner).
+  buster: '2',
   dehydrateOptions: {
     shouldDehydrateQuery: (q: Query) => q.state.status === 'success' && String(q.queryKey[0]).startsWith('api:'),
   },
@@ -66,6 +67,7 @@ const KEYS = {
   myAttendance: () => ['myAttendance'],
   myReports: () => ['myReports'],
   myWarnings: () => ['myWarnings'],
+  myLessons: () => ['myLessons'],
 };
 
 export const useEvents = () => useBackendQuery(KEYS.events(), (b) => b.listEvents());
@@ -77,6 +79,7 @@ export const useAttendance = (id: string) => useBackendQuery(['attendance', id],
 export const useReportForm = () => useBackendQuery(['reportForm'], (b) => b.reportForm());
 export const useMyReports = () => useBackendQuery(KEYS.myReports(), (b) => b.myReports());
 export const useMyWarnings = () => useBackendQuery(KEYS.myWarnings(), (b) => b.myWarnings());
+export const useMyLessons = () => useBackendQuery(KEYS.myLessons(), (b) => b.myLessons());
 export const useWarning = (id: string) => useBackendQuery(['warning', id], (b) => b.warning(id));
 
 /** Points, level and hours. Also keeps the stored profile current in server mode. */
@@ -147,6 +150,7 @@ export function useKeepOwnDataReady(events: EventSummary[] | undefined) {
     ahead(KEYS.myAttendance(), (b) => b.myAttendance());
     ahead(KEYS.myReports(), (b) => b.myReports());
     ahead(KEYS.myWarnings(), (b) => b.myWarnings());
+    ahead(KEYS.myLessons(), (b) => b.myLessons());
     const own = (events ?? [])
       .filter((e) => (e.my_registration_status === 'joined' || e.i_organize) && e.status !== 'finished' && e.status !== 'cancelled')
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at))

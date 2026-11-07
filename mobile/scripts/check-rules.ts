@@ -40,6 +40,7 @@ function expectEqual(name: string, actual: unknown, expected: unknown) {
 
 function joinFully(db: Db, userId: string, eventId: string, now: number) {
   let d = server.startJoin(db, userId, eventId, now);
+  for (const lesson of server.eventLessons(d, eventId)) d = server.learnLesson(d, userId, eventId, lesson.id, now);
   for (const term of server.eventTerms(d, eventId)) d = server.acceptTerm(d, userId, eventId, term.id, now);
   return server.completeJoin(d, userId, eventId, now);
 }
@@ -121,6 +122,22 @@ expectError('a supervisor records a start at a cancelled event', 'event_closed',
 expectError('or a finish', 'event_closed', () => server.recordEnd(cancelledEvent(db, 'e01'), 'u_khaled', { eventId: 'e01', userId: 'u_f1' }, NOW));
 expectError('hours recorded there earn nothing', 'event_closed', () => server.confirmAttendance(cancelledEvent(d, 'e01'), 'u_ahmad', a.id, NOW));
 
+console.log('\n— the learning corner');
+{
+  const [l1, l2] = server.eventLessons(db, 'e03');
+  const started = server.startJoin(db, 'u_ahmad', 'e03', NOW);
+  expectError('accept a term before learning', 'lessons_incomplete', () =>
+    server.acceptTerm(started, 'u_ahmad', 'e03', server.eventTerms(started, 'e03')[0].id, NOW),
+  );
+  expectError('join before learning', 'lessons_incomplete', () => server.completeJoin(started, 'u_ahmad', 'e03', NOW));
+  expectError('a lesson of another event', 'not_found', () => server.learnLesson(db, 'u_ahmad', 'e02', l1.id, NOW));
+  const one = server.learnLesson(db, 'u_mariam', 'e03', l2.id, NOW);
+  expectEqual('learned without joining, in any order', server.learnedAt(one, 'u_mariam').has(l2.id), true);
+  expectEqual('learning it again adds nothing', server.learnLesson(one, 'u_mariam', 'e03', l2.id, NOW) === one, true);
+  const joinedAfter = joinFully(db, 'u_ahmad', 'e03', NOW);
+  expectEqual('learns both, then joins', server.registrationOf(joinedAfter, 'e03', 'u_ahmad')?.status, 'joined');
+}
+
 console.log('\n— scheduled auto-close');
 const later = server.tick(db, new Date(running.ends_at).getTime() + 1000);
 const closed = server.attendanceOf(later, 'e01', 'u_f1')!;
@@ -140,6 +157,7 @@ const proposal = (over: Partial<EventProposal> = {}): EventProposal => ({
   capacity: 15,
   gender_category: 'mixed',
   terms: ['أحضر قفازيك.'],
+  lessons: [],
   ...over,
 });
 expectError('a member below level 5 proposes', 'cannot_create_events', () => server.proposeEvent(db, 'u_ahmad', proposal(), NOW));

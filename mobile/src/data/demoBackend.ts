@@ -12,6 +12,7 @@ import * as rules from '../../../shared/rules';
 import type {
   AttendanceItem,
   EventDetail,
+  EventLessonItem,
   EventNoticeItem,
   EventProposal,
   EventSummary,
@@ -125,6 +126,16 @@ function checkProposal(db: Db, body: EventProposal) {
   if (!(body.subtype in BASE_POINTS_BY_SUBTYPE) || rules.toMs(body.ends_at) <= rules.toMs(body.starts_at)) {
     throw new BackendError('invalid_request');
   }
+  // The same limits as the server's form (server/src/routes/event-input.ts).
+  const lessonOk = (l: { title: string; body: string }) =>
+    l.title.trim().length > 0 && l.title.length <= rules.LESSON_TITLE_MAX && l.body.trim().length > 0 && l.body.length <= rules.LESSON_BODY_MAX;
+  if (body.lessons.length > rules.MAX_LESSONS || !body.lessons.every(lessonOk)) throw new BackendError('invalid_request');
+}
+
+/** The event's lessons as this person sees them, as the server builds them. */
+function lessonItems(db: Db, meId: string, eventId: string): EventLessonItem[] {
+  const learned = server.learnedAt(db, meId);
+  return server.eventLessons(db, eventId).map(({ created_at, ...l }) => ({ ...l, learned_at: learned.get(l.id) ?? null }));
 }
 
 export function createDemoBackend(store: DemoStore, meId: string): Backend {
@@ -172,6 +183,7 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
           description: e.description,
           terms_locked_at: e.terms_locked_at,
           terms: server.eventTerms(db, id),
+          lessons: lessonItems(db, me.id, id),
           participants: server.joinedUsers(db, id).map((u) => publicUser(me, u)),
           my_registration: reg ?? null,
           my_accepted_term_ids: reg ? server.acceptedTermIds(db, reg.id) : [],
@@ -218,6 +230,29 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
     withdrawProposal: (id) =>
       async(() => {
         change((d) => server.withdrawProposal(d, meId, id));
+      }),
+
+    learnLesson: (eventId, lessonId) =>
+      async(() => {
+        const { db } = change((d, t) => server.learnLesson(d, meId, eventId, lessonId, t));
+        return { lesson: lessonItems(db, meId, eventId).find((l) => l.id === lessonId)! };
+      }),
+
+    myLessons: () =>
+      async(() => {
+        const { db, me } = read();
+        const lessons = new Map(db.event_lessons.map((l) => [l.id, l]));
+        return db.lesson_completions
+          .filter((c) => c.user_id === me.id && lessons.has(c.lesson_id))
+          .sort((a, b) => rules.toMs(b.learned_at) - rules.toMs(a.learned_at))
+          .map((c) => {
+            const { created_at, ...lesson } = lessons.get(c.lesson_id)!;
+            const e = db.events.find((x) => x.id === lesson.event_id)!;
+            return {
+              lesson: { ...lesson, learned_at: c.learned_at },
+              event: { id: e.id, title: e.title, starts_at: e.starts_at, subtype: e.subtype },
+            };
+          });
       }),
 
     startJoin: (eventId) =>

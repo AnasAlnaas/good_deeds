@@ -11,6 +11,7 @@ import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { NavIsland, NavIslandProvider } from '@/components/NavIsland';
+import { setCrashUser, wrapRoot } from '@/data/crashes';
 import { useOnline } from '@/data/network';
 import { openOutbox, sendQueued, useOutbox } from '@/data/outbox';
 import { persistOptions, queryClient } from '@/data/queries';
@@ -41,7 +42,11 @@ function useSendQueuedRecords() {
 }
 
 function Root() {
-  const { ready, isRTL } = useApp();
+  const { ready, isRTL, me } = useApp();
+  const meId = me?.id ?? null;
+  useEffect(() => {
+    setCrashUser(meId);
+  }, [meId]);
   // The saved copy of what the screens showed last time is read before the
   // splash goes, so the first screen opens with it instead of loading.
   const restoring = useIsRestoring();
@@ -83,7 +88,7 @@ function Root() {
   );
 }
 
-export default function RootLayout() {
+function RootLayout() {
   return (
     <SafeAreaProvider>
       <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
@@ -94,3 +99,6 @@ export default function RootLayout() {
     </SafeAreaProvider>
   );
 }
+
+// Crashes and errors anywhere under it are reported (data/crashes.ts).
+export default wrapRoot(RootLayout);

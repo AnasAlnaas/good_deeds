@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
@@ -57,9 +58,15 @@ export default function EventDetail() {
     if (!(await run((b) => b.reactToNotice(event.id, notice.id, reaction)))) put(notice);
   };
 
+  // An event from a server without the learning corner has no lessons.
+  const lessons = event.lessons ?? [];
+  const learnedCount = lessons.filter((l) => l.learned_at).length;
+  const learnedAll = learnedCount === lessons.length;
+  // The lessons come first, then the terms.
   const join = async () => {
-    if (await run((b) => b.startJoin(event.id))) router.push(`/event/${event.id}/terms`);
+    if (await run((b) => b.startJoin(event.id))) router.push(`/event/${event.id}/${learnedAll ? 'terms' : 'learn'}`);
   };
+  const openLesson = (lessonId: string) => router.push({ pathname: '/event/[id]/learn', params: { id: event.id, lesson: lessonId } });
   const cancel = () =>
     dialog.confirm({
       title: s.event.cancelJoinTitle,
@@ -148,7 +155,7 @@ export default function EventDetail() {
     footer = (
       <Button
         icon="hand-left-outline"
-        label={reg?.status === 'pending_terms' ? s.event.continueTerms : s.event.join}
+        label={reg?.status === 'pending_terms' ? (learnedAll ? s.event.continueTerms : s.event.continueLessons) : s.event.join}
         disabled={busy}
         onPress={join}
       />
@@ -179,6 +186,44 @@ export default function EventDetail() {
         />
         <Button variant="accent" icon="navigate" label={s.event.directions} onPress={() => openDirections(event)} />
       </Card>
+
+      {lessons.length > 0 && (
+        <>
+          <SectionTitle>{s.event.lessons}</SectionTitle>
+          <Card style={styles.corner}>
+            <View style={styles.cornerHead}>
+              <Ionicons name="school" size={22} color={colors.primary} />
+              <Txt variant="caption" style={styles.flex}>
+                {s.event.lessonsIntro}
+              </Txt>
+            </View>
+            <Txt variant="caption" color={colors.primary} tabular>
+              {fmt(s.event.lessonsProgress, { n: learnedCount, total: lessons.length })}
+            </Txt>
+          </Card>
+          {lessons.map((l, i) => (
+            <Card key={l.id} onPress={() => openLesson(l.id)} style={styles.lessonRow}>
+              <View style={[styles.lessonNum, !!l.learned_at && styles.lessonNumDone]}>
+                {l.learned_at ? (
+                  <Ionicons name="checkmark" size={16} color={colors.surface} />
+                ) : (
+                  <Txt variant="caption" color={colors.primary} tabular>
+                    {String(i + 1)}
+                  </Txt>
+                )}
+              </View>
+              <Txt variant="bodyStrong" style={styles.flex} numberOfLines={2}>
+                {l.title}
+              </Txt>
+              {l.learned_at && (
+                <Txt variant="caption" color={colors.success}>
+                  {s.event.lessonLearned}
+                </Txt>
+              )}
+            </Card>
+          ))}
+        </>
+      )}
 
       {event.notices && (
         <>
@@ -249,4 +294,18 @@ const styles = StyleSheet.create({
   person: { flexDirection: 'row', alignItems: 'center', gap: space.xs, paddingEnd: space.sm },
   notice: { borderStartWidth: 4, borderStartColor: colors.accent },
   question: { borderStartColor: colors.primary },
+  corner: { backgroundColor: colors.primarySoft, borderColor: colors.primarySoft, gap: space.xs },
+  cornerHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  flex: { flex: 1 },
+  lessonRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  lessonNum: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lessonNumDone: { backgroundColor: colors.success, borderColor: colors.success },
 });

@@ -118,8 +118,8 @@ All **No**. The image picker plugin has `microphonePermission: false` (`mobile/a
 
 | Type | Collected | Why (code) |
 |---|---|---|
-| Crash logs | **No** | No crash reporter (no Sentry, Crashlytics, Bugsnag: `mobile/package.json`). |
-| Diagnostics | **No** | Same. |
+| Crash logs | **Yes** (Shared: No, Optional: No, Purposes: Analytics) | Sentry (`mobile/src/data/crashes.ts`), on when `EXPO_PUBLIC_SENTRY_DSN` is set. Sentry is a service provider, so not "sharing". Holds the error, stack trace, phone model, Android version, app and update version, and the account id; `sendDefaultPii: false`, no name, phone, email or location. Kept 90 days by Sentry. |
+| Diagnostics | **Yes** (same answers) | Breadcrumbs in the same reports (the app's last few actions and request addresses before the error, never their bodies). No performance tracing (`tracesSampleRate: 0`). |
 | Other app performance data | **No** | |
 
 ### Device or other IDs

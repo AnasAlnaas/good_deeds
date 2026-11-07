@@ -71,6 +71,7 @@ const inputFrom = (d: AdminEventDetail): EventInput => ({
   gender_category: d.event.gender_category,
   organizer_ids: d.organizers.map((o) => o.id),
   terms: d.terms.map((t) => t.text ?? ''),
+  lessons: d.lessons.map(({ title, body }) => ({ title, body })),
 });
 const detail = async (id: string): Promise<AdminEventDetail> => (await call('GET', `/admin/events/${id}`, admin)).body;
 const totalOf = async (token: string): Promise<number> => (await call('GET', '/me', token)).body.total_points;
@@ -78,6 +79,7 @@ const totalOf = async (token: string): Promise<number> => (await call('GET', '/m
 async function joinFully(token: string, eventId: string) {
   await call('POST', `/events/${eventId}/join`, token);
   const d: EventDetail = (await call('GET', `/events/${eventId}`, token)).body;
+  for (const lesson of d.lessons) await call('POST', `/events/${eventId}/lessons/${lesson.id}/learn`, token);
   for (const term of d.terms) await call('POST', `/events/${eventId}/terms/${term.id}/accept`, token);
   return call('POST', `/events/${eventId}/join/complete`, token);
 }
@@ -119,6 +121,7 @@ const base: CreateEventBody = {
   gender_category: 'mixed',
   organizer_ids: [],
   terms: ['البند الأول', 'البند الثاني'],
+  lessons: [{ title: 'الدرس الأول', body: 'ما يتعلّمه المشارك قبل الانضمام.' }],
   publish: false,
 };
 await expectError('ends before it starts', 'invalid_request', call('POST', '/admin/events', admin, { ...base, ends_at: iso(NOW) }));
@@ -141,6 +144,8 @@ await expectOk('a member joins (terms accepted)', joinFully(ahmad, id));
 await expectOk('a second member joins', joinFully(mariam, id));
 await call('POST', `/events/${id}/join`, khaled); // still reading the terms: not joined
 const joined = await detail(id);
+expectEqual('the admin sees who learned the lesson', (await detail(id)).lessons.map((l) => l.learned_count), [2]);
+await expectError('change the lessons after someone learned one', 'lessons_locked', call('PUT', `/admin/events/${id}`, admin, { ...inputFrom(joined), lessons: [] }));
 await expectError('change the terms after someone accepted them', 'terms_locked', call('PUT', `/admin/events/${id}`, admin, { ...inputFrom(joined), terms: ['بند جديد'] }));
 await expectError('make it women-only after men joined', 'category_locked', call('PUT', `/admin/events/${id}`, admin, { ...inputFrom(joined), gender_category: 'female' }));
 await expectError('fewer seats than people joined', 'capacity_below_joined', call('PUT', `/admin/events/${id}`, admin, { ...inputFrom(joined), capacity: 1 }));

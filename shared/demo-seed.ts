@@ -15,7 +15,8 @@ import { pointsForAttendance } from './rules';
 // 5: events have notices, and supervisors added in the app.
 // 6: notices have reactions.
 // 7: a notice is an announcement or a question, each with its own reactions.
-export const SEED_VERSION = 7;
+// 8: events have a learning corner (lessons read before joining).
+export const SEED_VERSION = 8;
 
 export const DEMO_ACCOUNTS = {
   participant: 'u_ahmad',
@@ -57,6 +58,46 @@ const TERMS: Record<string, string[]> = {
   traffic_awareness: ['لا تقف وسط الطريق، والتزم بالرصيف والسترة العاكسة طوال الوقت.', 'وزّع المنشورات على المشاة والسيارات المتوقفة فقط.'],
   water_coolers: ['لا تتعامل مع التوصيلات الكهربائية؛ يتولاها الفني المختص.', NO_PHOTOS],
   first_aid_course: ['احضر الجلسات كاملة؛ الشهادة تُمنح لمن أتمّ الدورة.', 'التدريب العملي على الدمى فقط، لا على المشاركين.'],
+};
+
+// The learning corner of some kinds of events: short, practical, written as a supervisor would.
+const LESSONS: Record<string, { title: string; body: string }[]> = {
+  street_cleanup: [
+    {
+      title: 'كيف نفرز ما نجمعه',
+      body: 'نضع البلاستيك والعلب في كيس، والورق والكرتون في كيس آخر، والزجاج المكسور في صندوق مغلق لا في كيس، حتى لا يجرح من يحمله بعدنا. ما لا نعرف مكانه نسأل عنه المشرف.',
+    },
+    {
+      title: 'سلامتك أولاً',
+      body: 'ابقَ على الرصيف وظهرك ليس للسيارات، واشرب الماء كل نصف ساعة ولو لم تعطش. الإبر والحقن لا تُلمس ولو بالقفاز: نبّه المشرف ليجمعها بالملقط.',
+    },
+  ],
+  tree_planting: [
+    {
+      title: 'كيف تُغرس الشتلة',
+      body: 'نحفر حفرة أعمق من وعاء الشتلة بقليل، ونخرجها بترابها دون أن نشدّ ساقها، ثم نردم ونضغط التراب حولها برفق ونسقيها فوراً. الشتلة التي تُغرس مائلة تبقى مائلة.',
+    },
+    {
+      title: 'ما بعد الغرس',
+      body: 'أول أسبوعين هما الأهم: تحتاج الشتلة سقياً منتظماً في الصباح الباكر أو بعد العصر. نسجّل في الحملة من يتابع كل صف من الأشجار.',
+    },
+  ],
+  elderly_visit: [
+    {
+      title: 'آداب الزيارة',
+      body: 'نسلّم ونعرّف بأنفسنا، ونجلس بمستوى من نحدّثه لا واقفين فوقه. نُصغي أكثر مما نتكلم، ولا نستعجل إنهاء الحديث. من تعب نتركه يرتاح دون أن نحرجه.',
+    },
+  ],
+  first_aid_course: [
+    {
+      title: 'قبل أن تقترب من مصاب',
+      body: 'انظر حولك أولاً: هل المكان آمن لك؟ لا تصبح مصاباً ثانياً. ثم كلّم المصاب، فإن لم يردّ فاطلب الإسعاف أو اطلب من شخص محدد أن يتصل.',
+    },
+    {
+      title: 'رقم الطوارئ',
+      body: 'احفظ رقم الإسعاف في مدينتك قبل الدورة، واكتبه في هاتفك باسم واضح. في الدورة سنتدرّب على ما تقوله في المكالمة: المكان أولاً، ثم ما حدث.',
+    },
+  ],
 };
 
 interface EventSpec {
@@ -224,6 +265,8 @@ export function buildSeed(nowMs: number): Db {
     event_notices: [],
     notice_reactions: [],
     event_terms: [],
+    event_lessons: [],
+    lesson_completions: [],
     registrations: [],
     term_acceptances: [],
     attendance: [],
@@ -262,7 +305,13 @@ export function buildSeed(nowMs: number): Db {
         text, image_url: null, audio_url: null, created_at: created,
       }),
     );
+    const lessons = LESSONS[s.subtype] ?? [];
+    lessons.forEach((l, i) =>
+      db.event_lessons.push({ id: `${s.id}_l${i + 1}`, event_id: s.id, order_index: i + 1, title: l.title, body: l.body, created_at: created }),
+    );
     for (const u of s.joined) {
+      // Whoever joined learned the lessons first.
+      lessons.forEach((_, i) => db.lesson_completions.push({ lesson_id: `${s.id}_l${i + 1}`, user_id: u, learned_at: created }));
       const regId = `reg_${s.id}_${u}`;
       db.registrations.push({
         id: regId, event_id: s.id, user_id: u, status: 'joined', joined_at: created, created_at: created,

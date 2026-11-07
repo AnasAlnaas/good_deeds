@@ -47,3 +47,6 @@ example
 
 # Firebase service account keys are secrets (google-services.json is fine to commit)
 *firebase-adminsdk*.json
+
+# OTA update bundles (scripts/publish-update.mjs)
+/dist-update

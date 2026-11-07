@@ -24,6 +24,7 @@ type Editable = Pick<AppEvent, 'starts_at' | 'ends_at' | 'subtype' | 'capacity' 
  * What may change in an existing event:
  * - nothing once it has finished or was cancelled;
  * - the terms never, once someone accepted one (terms_locked_at);
+ * - the lessons never, once someone learned one: what they learned stays what it said;
  * - the men / women / mixed category never, once someone joined;
  * - the seats never below the number already joined;
  * - the times and the type (which sets the points) never, once attendance was recorded;
@@ -31,8 +32,11 @@ type Editable = Pick<AppEvent, 'starts_at' | 'ends_at' | 'subtype' | 'capacity' 
  */
 export function assertEventEdit(args: {
   event: AppEvent;
-  next: Editable & { terms: string[]; organizerCount: number };
+  next: Editable & { terms: string[]; lessons: LessonText[]; organizerCount: number };
   currentTerms: string[];
+  currentLessons: LessonText[];
+  /** Someone learned one of the event's lessons. */
+  lessonsLearned: boolean;
   joinedCount: number;
   hasAttendance: boolean;
   now: number;
@@ -42,12 +46,19 @@ export function assertEventEdit(args: {
   if (status === 'finished' || status === 'cancelled' || status === 'rejected') throw new AdminError('event_not_editable');
   const termsChanged = next.terms.length !== args.currentTerms.length || next.terms.some((t, i) => t !== args.currentTerms[i]);
   if (event.terms_locked_at && termsChanged) throw new AdminError('terms_locked');
+  if (args.lessonsLearned && lessonsChanged(args.currentLessons, next.lessons)) throw new AdminError('lessons_locked');
   if (args.joinedCount > 0 && next.gender_category !== event.gender_category) throw new AdminError('category_locked');
   if (next.capacity < args.joinedCount) throw new AdminError('capacity_below_joined');
   const timesOrTypeChanged =
     toMs(next.starts_at) !== toMs(event.starts_at) || toMs(next.ends_at) !== toMs(event.ends_at) || next.subtype !== event.subtype;
   if (args.hasAttendance && timesOrTypeChanged) throw new AdminError('locked_after_attendance');
   if (event.status !== 'draft' && next.organizerCount === 0) throw new AdminError('needs_organizer');
+}
+
+type LessonText = { title: string; body: string };
+
+export function lessonsChanged(a: LessonText[], b: LessonText[]) {
+  return a.length !== b.length || a.some((x, i) => x.title !== b[i].title || x.body !== b[i].body);
 }
 
 // ---------- publishing and cancelling ----------

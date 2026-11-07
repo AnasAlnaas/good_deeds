@@ -165,6 +165,31 @@ signed with the Android debug key: fine for testers, not for Google Play.
 `--clean` rebuilds it from `app.json` each time, so changes such as the package
 name (`com.islahtarbawi.gooddeeds`) are always picked up.
 
+**Fixes without a new APK** (over-the-air updates, EAS Update). For a change to
+the app's own code, text or pictures:
+
+```bash
+cd mobile
+npm run update -- "What the update changes"
+```
+
+It bundles the app with the same `.env.local` as the APK, checks the server's
+address is inside, and sends it to the `preview` channel, which the APKs ask for
+updates. A phone downloads it while the app starts and runs it from the next
+start, so close and reopen the app twice to see it. An update cannot add
+anything native: a new library with native code, a change to `app.json`, the
+icon or splash, or a new Expo SDK. Those need a new APK, and then raise
+`version` in `app.json` too, so phones with the older APK are not sent code
+they cannot run (updates only go to APKs with the same version). See the sent
+updates at expo.dev → the project → **Updates**.
+
+**Crash and error reports** (Sentry, `mobile/src/data/crashes.ts`). On when
+`EXPO_PUBLIC_SENTRY_DSN` is set in `mobile/.env.local`, and never during
+development. Reports show at sentry.io with the phone, the app version and the
+update it ran. For readable lines of code in them, also set `SENTRY_AUTH_TOKEN`,
+`SENTRY_ORG` and `SENTRY_PROJECT` in the shell before `npm run apk`; without
+them the build skips that step.
+
 **Placeholders to replace** (`shared/placeholders.ts`): base points per event
 type, level thresholds and the end-time grace period — they belong to
 `Points_And_Levels.md`. Fields marked `DEMO-ONLY` in `shared/types.ts` are

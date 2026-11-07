@@ -82,6 +82,8 @@ export function createApiBackend(opts: { baseUrl: string; token: string; onUnaut
     proposeEvent: (body) => send('POST', '/events', body),
     editProposal: (id, body) => send('PUT', `/events/${enc(id)}`, body),
     withdrawProposal: (id) => send('DELETE', `/events/${enc(id)}`),
+    learnLesson: (eventId, lessonId) => send('POST', `/events/${enc(eventId)}/lessons/${enc(lessonId)}/learn`),
+    myLessons: () => get('/me/lessons'),
     startJoin: (eventId) => send('POST', `/events/${enc(eventId)}/join`),
     acceptTerm: (eventId, termId) => send('POST', `/events/${enc(eventId)}/terms/${enc(termId)}/accept`),
     completeJoin: (eventId) => send('POST', `/events/${enc(eventId)}/join/complete`),

@@ -17,6 +17,7 @@ import { useApp, useMe } from '@/state/app';
 import { useAction } from '@/state/useAction';
 import { classIcon, className, EVENT_CLASSES } from '@/theme/classes';
 import { colors, space, touch } from '@/theme/tokens';
+import { LESSON_BODY_MAX, LESSON_TITLE_MAX, MAX_LESSONS } from '../../../shared/rules';
 
 // The event form of the app: proposing an event (level 5, or a supervisor),
 // and the proposer editing it while it waits for an admin (`editing`). An
@@ -42,6 +43,7 @@ function blank(): Values {
     ends_at: new Date(start.getTime() + 3 * HOUR).toISOString(),
     gender_category: 'mixed',
     terms: [],
+    lessons: [],
   };
 }
 
@@ -57,6 +59,7 @@ function valuesOf(e: EventDetail): Values {
     ends_at: e.ends_at,
     gender_category: e.gender_category,
     terms: e.terms.map((x) => x.text ?? ''),
+    lessons: (e.lessons ?? []).map(({ title, body }) => ({ title, body })),
   };
 }
 
@@ -91,7 +94,8 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
     ends.getTime() > starts.getTime() &&
     Number.isInteger(seats) &&
     seats >= 1 &&
-    v.terms.every((x) => x.trim().length > 0);
+    v.terms.every((x) => x.trim().length > 0) &&
+    v.lessons.every((l) => l.title.trim().length > 0 && l.body.trim().length > 0);
 
   // A new start keeps the event's length.
   const setStart = (next: Date) =>
@@ -113,6 +117,7 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
       address_text: v.address_text.trim(),
       capacity: seats,
       terms: v.terms.map((x) => x.trim()),
+      lessons: v.lessons.map((l) => ({ title: l.title.trim(), body: l.body.trim() })),
     };
     if (editing) {
       if (await run((b) => b.editProposal(editing.id, body))) goBack(`/event/${editing.id}`);
@@ -228,6 +233,49 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
           <Chip key={c} label={s.category[c]} selected={v.gender_category === c} onPress={() => set('gender_category', c)} />
         ))}
       </Row>
+
+      <SectionTitle>{s.newEvent.lessons}</SectionTitle>
+      <Txt variant="caption" color={colors.inkMuted}>
+        {s.newEvent.lessonsHint}
+      </Txt>
+      {v.lessons.map((lesson, i) => {
+        const put = (patch: Partial<typeof lesson>) => set('lessons', v.lessons.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+        return (
+          <Card key={i}>
+            <View style={styles.term}>
+              <Txt variant="bodyStrong" color={colors.primary} style={styles.flex}>
+                {fmt(s.newEvent.lesson, { n: i + 1 })}
+              </Txt>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={fmt(s.newEvent.removeLesson, { n: i + 1 })}
+                onPress={() => set('lessons', v.lessons.filter((_, j) => j !== i))}
+                style={styles.remove}
+                hitSlop={4}>
+                <Ionicons name="trash-outline" size={22} color={colors.danger} />
+              </Pressable>
+            </View>
+            <Field
+              label={s.newEvent.lessonTitle}
+              placeholder={s.newEvent.lessonTitlePlaceholder}
+              value={lesson.title}
+              maxLength={LESSON_TITLE_MAX}
+              onChangeText={(title) => put({ title })}
+            />
+            <Field
+              label={s.newEvent.lessonBody}
+              placeholder={s.newEvent.lessonBodyPlaceholder}
+              value={lesson.body}
+              maxLength={LESSON_BODY_MAX}
+              multiline
+              onChangeText={(body) => put({ body })}
+            />
+          </Card>
+        );
+      })}
+      {v.lessons.length < MAX_LESSONS && (
+        <Button variant="secondary" icon="add" label={s.newEvent.addLesson} onPress={() => set('lessons', [...v.lessons, { title: '', body: '' }])} />
+      )}
 
       <SectionTitle>{s.newEvent.terms}</SectionTitle>
       <Txt variant="caption" color={colors.inkMuted}>
