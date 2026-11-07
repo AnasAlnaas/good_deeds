@@ -66,8 +66,13 @@ app collects and why.
 **What we do not collect**
 
 - Your device's location (GPS). The map only shows where events are.
-- Your email address, contacts, messages, or browsing history.
-- Crash reports or usage statistics.
+- Your contacts, messages, or browsing history.
+- Usage statistics: we do not track which screens you open or what you tap.
+
+**Crash reports.** When the app crashes or hits an error, it sends a report so
+we can fix it: what went wrong and where in the app's code, your phone's model
+and Android version, the app's version, and your account's id number. It never
+contains your name, phone number, email, location, or photos.
 
 ## Why we use it
 
@@ -115,6 +120,8 @@ These services handle some data for us, only to provide their service:
   Notification service** (iPhone): deliver notifications to your phone.
 - **Brevo** (Sendinblue SAS, France): receives your email address and the
   one-time code, and delivers the email.
+- **Sentry** (Functional Software, Inc., USA): receives the crash and error
+  reports described above, keeps them for 90 days, and shows them to us.
 - **Server hosting** ⚠️ [provider name]: the computer where our database runs.
 - **OpenStreetMap** ⚠️ [or the map tile provider chosen before launch] and
   **unpkg.com**: when you open a map, your phone downloads the map images and
