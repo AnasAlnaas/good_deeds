@@ -11,6 +11,8 @@ import type {
   ConfirmResponse,
   EventDetail,
   EventFormMeta,
+  LearnLessonResponse,
+  MyLesson,
   EventProposal,
   EventSummary,
   MeResponse,
@@ -60,6 +62,10 @@ export interface Backend {
   /** The proposer's own event, only while it waits for an admin: edited with the same form, or withdrawn (deleted). */
   editProposal(id: string, body: EventProposal): Promise<ProposeEventResponse>;
   withdrawProposal(id: string): Promise<void>;
+  /** One of the event's lessons (ركن التعلم), learned by anyone who can see the event, joined or not. */
+  learnLesson(eventId: string, lessonId: string): Promise<LearnLessonResponse>;
+  /** Every lesson the person learned, latest first. */
+  myLessons(): Promise<MyLesson[]>;
   startJoin(eventId: string): Promise<RegistrationResponse>;
   acceptTerm(eventId: string, termId: string): Promise<AcceptTermResponse>;
   completeJoin(eventId: string): Promise<RegistrationResponse>;

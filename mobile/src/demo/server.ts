@@ -4,7 +4,7 @@
 // The screens never compute hours or points themselves.
 
 import type { EventProposal, ProfileEdit, ReportBody } from '@/data/api';
-import type { AppEvent, Attendance, Db, EventNotice, EventStatus, EventTerm, NoticeKind, NoticeReactionKind, Registration, Report, User, Warning } from '@/data/types';
+import type { AppEvent, Attendance, Db, EventLesson, EventNotice, EventStatus, EventTerm, NoticeKind, NoticeReactionKind, Registration, Report, User, Warning } from '@/data/types';
 import { NOTICE_REACTIONS } from '@/data/types';
 import { BASE_POINTS_BY_SUBTYPE } from './placeholders';
 import { ApiError } from '../../../shared/errors';
@@ -42,6 +42,22 @@ export function effectiveStatus(e: AppEvent, now: number): EventStatus {
 
 export function eventTerms(db: Db, eventId: string): EventTerm[] {
   return rules.sortTerms(db.event_terms.filter((x) => x.event_id === eventId));
+}
+
+export function eventLessons(db: Db, eventId: string): EventLesson[] {
+  return rules.sortLessons(db.event_lessons.filter((x) => x.event_id === eventId));
+}
+
+/** The lessons of these this person learned (lesson id → when). */
+export function learnedAt(db: Db, userId: string): Map<string, string> {
+  return new Map(db.lesson_completions.filter((c) => c.user_id === userId).map((c) => [c.lesson_id, c.learned_at]));
+}
+
+function learnedIds(db: Db, userId: string, eventId: string) {
+  const learned = learnedAt(db, userId);
+  return eventLessons(db, eventId)
+    .map((l) => l.id)
+    .filter((id) => learned.has(id));
 }
 
 export function isOrganizer(db: Db, eventId: string, userId: string) {
@@ -153,7 +169,16 @@ export function proposeEvent(db: Db, userId: string, input: EventProposal, now: 
   next.events.push(event);
   next.event_organizers.push({ event_id: event.id, user_id: userId, added_by: null });
   writeTerms(next, event.id, input, at);
+  writeLessons(next, event.id, input, at);
   return { db: next, event };
+}
+
+/** Replaces an event's lessons (in `next`, already a copy). Only while nobody learned one: a draft's. */
+function writeLessons(next: Db, eventId: string, input: EventProposal, at: string) {
+  next.event_lessons = next.event_lessons.filter((x) => x.event_id !== eventId);
+  input.lessons.forEach((l, i) =>
+    next.event_lessons.push({ id: newId('lesson'), event_id: eventId, order_index: i + 1, title: l.title, body: l.body, created_at: at }),
+  );
 }
 
 /** Replaces an event's terms (in `next`, already a copy). */
@@ -194,6 +219,7 @@ export function editProposal(db: Db, userId: string, eventId: string, input: Eve
     base_points: BASE_POINTS_BY_SUBTYPE[input.subtype],
   });
   writeTerms(next, eventId, input, new Date(now).toISOString());
+  writeLessons(next, eventId, input, new Date(now).toISOString());
   return next;
 }
 
@@ -204,6 +230,7 @@ export function withdrawProposal(db: Db, userId: string, eventId: string): Db {
   next.events = next.events.filter((e) => e.id !== eventId);
   next.event_organizers = next.event_organizers.filter((x) => x.event_id !== eventId);
   next.event_terms = next.event_terms.filter((x) => x.event_id !== eventId);
+  next.event_lessons = next.event_lessons.filter((x) => x.event_id !== eventId);
   return next;
 }
 
@@ -224,6 +251,22 @@ export function updateProfile(db: Db, userId: string, edit: ProfileEdit): Db {
 export function setPhoto(db: Db, userId: string, dataUri: string | null): Db {
   const next = clone(db);
   next.users.find((u) => u.id === userId)!.avatar_url = dataUri;
+  return next;
+}
+
+// ---------- the learning corner ----------
+
+/** Anyone who can see the event learns one of its lessons, joined or not. */
+export function learnLesson(db: Db, userId: string, eventId: string, lessonId: string, now: number): Db {
+  const event = getEventFor(db, eventId, userId);
+  const action = rules.decideLearnLesson({
+    event,
+    lesson: eventLessons(db, eventId).find((l) => l.id === lessonId),
+    learnedLessonIds: learnedIds(db, userId, eventId),
+  });
+  if (action === 'nothing') return db;
+  const next = clone(db);
+  next.lesson_completions.push({ lesson_id: lessonId, user_id: userId, learned_at: new Date(now).toISOString() });
   return next;
 }
 
@@ -260,6 +303,8 @@ export function acceptTerm(db: Db, userId: string, eventId: string, termId: stri
     terms: eventTerms(db, eventId),
     acceptedTermIds: reg ? acceptedTermIds(db, reg.id) : [],
     termId,
+    lessons: eventLessons(db, eventId),
+    learnedLessonIds: learnedIds(db, userId, eventId),
   });
   if (action === 'nothing') return db;
   const next = clone(db);
@@ -285,6 +330,8 @@ export function completeJoin(db: Db, userId: string, eventId: string, now: numbe
     registration: reg,
     terms: eventTerms(db, eventId),
     acceptedTermIds: reg ? acceptedTermIds(db, reg.id) : [],
+    lessons: eventLessons(db, eventId),
+    learnedLessonIds: learnedIds(db, userId, eventId),
     joinedCount: joinedUsers(db, eventId).length,
     now,
   });

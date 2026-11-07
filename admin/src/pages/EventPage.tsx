@@ -105,6 +105,24 @@ export function EventPage() {
         </section>
 
         <section className="card">
+          <h2>{t.event.lessons}</h2>
+          <p className="small muted">{t.event.lessonsHint}</p>
+          {d.lessons.length ? (
+            <ol className="terms">
+              {d.lessons.map((l) => (
+                <li key={l.id}>
+                  <strong>{l.title}</strong>
+                  <p style={{ margin: '4px 0', whiteSpace: 'pre-wrap' }}>{l.body}</p>
+                  {l.learned_count > 0 && <span className="small muted tabular">{fill(t.event.learnedCount, { n: l.learned_count })}</span>}
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="muted">{t.event.noLessons}</p>
+          )}
+        </section>
+
+        <section className="card">
           <h2>{t.event.terms}</h2>
           {e.terms_locked_at && <p className="small muted">{t.event.termsLocked}</p>}
           {d.terms.length ? (

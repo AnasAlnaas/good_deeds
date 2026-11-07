@@ -6,6 +6,7 @@ import type { AdminEventDetail, AdminMeta, EventInput } from '../../../shared/ad
 import type { GenderCategory } from '../../../shared/types';
 import { api } from '../api';
 import { fill, fromLocalInput, toLocalInput } from '../format';
+import { LESSON_BODY_MAX, LESSON_TITLE_MAX, MAX_LESSONS } from '../../../shared/rules';
 import { t } from '../strings';
 import { Button, ErrorNote, Field, Notice, PageHeader, QueryState, useAction } from '../ui';
 
@@ -41,6 +42,7 @@ function initial(existing: AdminEventDetail | undefined): EventInput {
       gender_category: 'mixed',
       organizer_ids: [],
       terms: [],
+      lessons: [],
     };
   }
   const e = existing.event;
@@ -57,6 +59,7 @@ function initial(existing: AdminEventDetail | undefined): EventInput {
     gender_category: e.gender_category,
     organizer_ids: existing.organizers.map((o) => o.id),
     terms: existing.terms.map((x) => x.text ?? ''),
+    lessons: existing.lessons.map(({ title, body }) => ({ title, body })),
   };
 }
 
@@ -70,6 +73,7 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
 
   // What the server would refuse to change, shown as locked instead.
   const termsLocked = !!existing?.event.terms_locked_at;
+  const lessonsLocked = !!existing?.lessons.some((l) => l.learned_count > 0);
   const categoryLocked = (existing?.joined_count ?? 0) > 0;
   const timesLocked = !!existing?.participants.some((p) => p.attendance);
   const points = meta.subtypes.find((x) => x.id === v.subtype)?.base_points ?? 0;
@@ -82,7 +86,8 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
     !!v.ends_at &&
     Date.parse(v.ends_at) > Date.parse(v.starts_at) &&
     v.capacity >= 1 &&
-    v.terms.every((x) => x.trim().length > 0);
+    v.terms.every((x) => x.trim().length > 0) &&
+    v.lessons.every((l) => l.title.trim().length > 0 && l.body.trim().length > 0);
 
   const submit = async (publish: boolean) => {
     if (!valid) {
@@ -90,7 +95,11 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
       return;
     }
     setInvalid(false);
-    const body = { ...v, terms: v.terms.map((x) => x.trim()) };
+    const body = {
+      ...v,
+      terms: v.terms.map((x) => x.trim()),
+      lessons: v.lessons.map((l) => ({ title: l.title.trim(), body: l.body.trim() })),
+    };
     if (existing) {
       if (await run(() => api.updateEvent(existing.event.id, body))) navigate(`/events/${existing.event.id}`);
     } else {
@@ -105,6 +114,13 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
     [next[i], next[i + by]] = [next[i + by], next[i]];
     set('terms', next);
   };
+  const moveLesson = (i: number, by: number) => {
+    const next = [...v.lessons];
+    [next[i], next[i + by]] = [next[i + by], next[i]];
+    set('lessons', next);
+  };
+  const putLesson = (i: number, patch: Partial<EventInput['lessons'][number]>) =>
+    set('lessons', v.lessons.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const filterText = peopleFilter.trim();
   const people = meta.people.filter((p) => !filterText || p.full_name.includes(filterText) || p.phone.includes(filterText));
   const chosen = meta.people.filter((p) => v.organizer_ids.includes(p.id));
@@ -210,6 +226,45 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
             </label>
           ))}
         </div>
+      </section>
+
+      <section className="card">
+        <h2>{t.form.lessons}</h2>
+        <p className="small muted">{t.form.lessonsHint}</p>
+        {lessonsLocked && <Notice tone="warning">{t.form.lockedLessons}</Notice>}
+        {v.lessons.map((lesson, i) => (
+          <div key={i} className="term-row">
+            <div className="stack" style={{ gap: 8 }}>
+              <strong>{fill(t.form.lesson, { n: i + 1 })}</strong>
+              <Field label={t.form.lessonTitle}>
+                <input value={lesson.title} maxLength={LESSON_TITLE_MAX} disabled={lessonsLocked} onChange={(e) => putLesson(i, { title: e.target.value })} />
+              </Field>
+              <Field label={t.form.lessonBody}>
+                <textarea rows={4} value={lesson.body} maxLength={LESSON_BODY_MAX} disabled={lessonsLocked} onChange={(e) => putLesson(i, { body: e.target.value })} />
+              </Field>
+            </div>
+            {!lessonsLocked && (
+              <div className="term-tools">
+                <Button variant="quiet" className="btn-small" disabled={i === 0} onClick={() => moveLesson(i, -1)}>
+                  {t.form.moveUp}
+                </Button>
+                <Button variant="quiet" className="btn-small" disabled={i === v.lessons.length - 1} onClick={() => moveLesson(i, 1)}>
+                  {t.form.moveDown}
+                </Button>
+                <Button variant="quiet" className="btn-small" onClick={() => set('lessons', v.lessons.filter((_, j) => j !== i))}>
+                  {t.form.remove}
+                </Button>
+              </div>
+            )}
+          </div>
+        ))}
+        {!lessonsLocked && v.lessons.length < MAX_LESSONS && (
+          <div>
+            <Button variant="secondary" onClick={() => set('lessons', [...v.lessons, { title: '', body: '' }])}>
+              {t.form.addLesson}
+            </Button>
+          </div>
+        )}
       </section>
 
       <section className="card">

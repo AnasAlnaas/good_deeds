@@ -11,13 +11,14 @@ import * as rules from '../../../shared/rules';
 import {
   type AppEvent,
   type Attendance,
+  type EventLesson,
   type EventTerm,
   type Level,
   type Registration,
   type User,
   type Warning,
 } from '../../../shared/types';
-import type { EventNoticeItem, PublicUser } from '../../../shared/api';
+import type { EventLessonItem, EventNoticeItem, PublicUser } from '../../../shared/api';
 import type { Database } from './client';
 import { iso } from './rows';
 import * as s from './schema';
@@ -81,6 +82,28 @@ export async function attendanceById(q: Database, id: string, opts: Lock = {}) {
 export async function termsOf(q: Database, eventId: string): Promise<EventTerm[]> {
   const rows = await q.select().from(s.event_terms).where(eq(s.event_terms.event_id, eventId)).orderBy(asc(s.event_terms.order_index));
   return rows.map(iso);
+}
+
+export async function lessonsOf(q: Database, eventId: string): Promise<EventLesson[]> {
+  const rows = await q.select().from(s.event_lessons).where(eq(s.event_lessons.event_id, eventId)).orderBy(asc(s.event_lessons.order_index));
+  return rows.map(iso);
+}
+
+/** When this person learned each of these lessons (lesson id → ISO time). */
+export async function learnedAt(q: Database, userId: string, lessonIds: string[]): Promise<Map<string, string>> {
+  if (lessonIds.length === 0) return new Map();
+  const rows = await q
+    .select()
+    .from(s.lesson_completions)
+    .where(and(eq(s.lesson_completions.user_id, userId), inArray(s.lesson_completions.lesson_id, lessonIds)));
+  return new Map(rows.map((r) => [r.lesson_id, r.learned_at.toISOString()]));
+}
+
+/** The event's lessons as this person sees them: in order, each with when they learned it. */
+export async function lessonItems(q: Database, userId: string, eventId: string): Promise<EventLessonItem[]> {
+  const lessons = await lessonsOf(q, eventId);
+  const learned = await learnedAt(q, userId, lessons.map((l) => l.id));
+  return lessons.map(({ created_at, ...l }) => ({ ...l, learned_at: learned.get(l.id) ?? null }));
 }
 
 export async function acceptedTermIds(q: Database, registrationId: string | undefined): Promise<string[]> {

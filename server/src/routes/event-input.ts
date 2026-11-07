@@ -1,11 +1,12 @@
 // What an event form sends, checked once for both places that create events:
 // the admin panel (routes/admin.ts) and the app (routes/events.ts). Also the
-// writes both share: an event's branches, supervisors and terms.
+// writes both share: an event's supervisors, terms and lessons.
 
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { BASE_POINTS_BY_SUBTYPE } from '../../../shared/placeholders';
+import { LESSON_BODY_MAX, LESSON_TITLE_MAX, MAX_LESSONS } from '../../../shared/rules';
 import type { Database } from '../db/client';
 import { newId } from '../db/queries';
 import * as s from '../db/schema';
@@ -26,6 +27,11 @@ const proposalFields = z.object({
   capacity: z.number().int().min(1).max(10_000),
   gender_category: z.enum(['male', 'female', 'mixed']),
   terms: z.array(z.string().trim().min(1).max(1000)).max(30),
+  // Absent from a form sent by an app from before the learning corner: no lessons.
+  lessons: z
+    .array(z.object({ title: z.string().trim().min(1).max(LESSON_TITLE_MAX), body: z.string().trim().min(1).max(LESSON_BODY_MAX) }))
+    .max(MAX_LESSONS)
+    .default([]),
 });
 
 const endsAfterStart = (v: { starts_at: string; ends_at: string }) => Date.parse(v.ends_at) > Date.parse(v.starts_at);
@@ -57,6 +63,16 @@ export async function writeLinks(q: Database, eventId: string, organizerIds: str
     await q.delete(s.event_organizers).where(and(eq(s.event_organizers.event_id, eventId), inArray(s.event_organizers.user_id, gone)));
   }
   if (added.length) await q.insert(s.event_organizers).values(added.map((user_id) => ({ event_id: eventId, user_id, added_by: null })));
+}
+
+/** Replaces the event's lessons. Only while nobody has learned one (the callers check). */
+export async function writeLessons(q: Database, eventId: string, lessons: { title: string; body: string }[], at: Date) {
+  await q.delete(s.event_lessons).where(eq(s.event_lessons.event_id, eventId));
+  if (lessons.length) {
+    await q.insert(s.event_lessons).values(
+      lessons.map((l, i) => ({ id: newId(), event_id: eventId, order_index: i + 1, title: l.title, body: l.body, created_at: at })),
+    );
+  }
 }
 
 export async function writeTerms(q: Database, eventId: string, terms: string[], at: Date) {

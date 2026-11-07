@@ -16,6 +16,7 @@ import type {
   AppEvent,
   Attendance,
   EventStatus,
+  EventLesson,
   EventTerm,
   EventNotice,
   Level,
@@ -255,6 +256,41 @@ export function canSeePhoto(viewer: Pick<User, 'id' | 'gender' | 'role'>, owner:
 export const PHOTO_SIZE_PX = 512;
 export const PHOTO_MAX_BYTES = 300_000;
 
+// ---------- the event's learning corner (ركن التعلم) ----------
+//
+// Owner's decision (2026-11-07): an event has a few short lessons, written by
+// whoever proposes it (an admin, or someone who may create events) and approved
+// by an admin with the event. Anyone who can see the event may read them and
+// mark them learned, before deciding to join; joining needs every one learned,
+// before the terms. The profile gathers every lesson the person learned.
+
+export const MAX_LESSONS = 10;
+export const LESSON_TITLE_MAX = 120;
+export const LESSON_BODY_MAX = 4000;
+
+export function sortLessons<T extends Pick<EventLesson, 'order_index'>>(lessons: T[]): T[] {
+  return [...lessons].sort((a, b) => a.order_index - b.order_index);
+}
+
+export function learnedAll(lessons: Pick<EventLesson, 'id'>[], learnedLessonIds: string[]) {
+  return lessons.every((l) => learnedLessonIds.includes(l.id));
+}
+
+/**
+ * Marking one of an event's lessons learned, in any order. A draft's lessons
+ * are read by its creator only, as a preview: nothing is learned from an event
+ * that nobody else can see yet.
+ */
+export function decideLearnLesson(args: {
+  event: Pick<AppEvent, 'status'>;
+  lesson: Pick<EventLesson, 'id'> | undefined;
+  learnedLessonIds: string[];
+}): 'learn' | 'nothing' {
+  if (!args.lesson) throw new ApiError('not_found');
+  if (isHidden(args.event)) throw new ApiError('event_closed');
+  return args.learnedLessonIds.includes(args.lesson.id) ? 'nothing' : 'learn';
+}
+
 // ---------- joining ----------
 
 function assertJoinable(user: Pick<User, 'gender'>, e: JoinableEvent, now: number) {
@@ -291,10 +327,14 @@ export function decideAcceptTerm(args: {
   terms: EventTerm[];
   acceptedTermIds: string[];
   termId: string;
+  lessons: Pick<EventLesson, 'id'>[];
+  learnedLessonIds: string[];
 }): 'accept' | 'nothing' {
   const { registration, acceptedTermIds, termId } = args;
   if (!registration || registration.status === 'cancelled') throw new ApiError('not_joined');
   if (acceptedTermIds.includes(termId)) return 'nothing';
+  // The event's lessons come first: nobody agrees to the terms of work they have not learned.
+  if (!learnedAll(args.lessons, args.learnedLessonIds)) throw new ApiError('lessons_incomplete');
   const next = sortTerms(args.terms).find((x) => !acceptedTermIds.includes(x.id));
   if (!next || next.id !== termId) throw new ApiError('term_out_of_order');
   return 'accept';
@@ -307,6 +347,8 @@ export function assertCompleteJoin(args: {
   registration: Registration | undefined;
   terms: EventTerm[];
   acceptedTermIds: string[];
+  lessons: Pick<EventLesson, 'id'>[];
+  learnedLessonIds: string[];
   /** Users with a `joined` registration for this event, deleted accounts excluded. */
   joinedCount: number;
   now: number;
@@ -315,6 +357,7 @@ export function assertCompleteJoin(args: {
   const reg = args.registration;
   if (!reg || reg.status === 'cancelled') throw new ApiError('not_joined');
   if (reg.status === 'joined') throw new ApiError('already_joined');
+  if (!learnedAll(args.lessons, args.learnedLessonIds)) throw new ApiError('lessons_incomplete');
   if (args.terms.some((x) => !args.acceptedTermIds.includes(x.id))) throw new ApiError('terms_incomplete');
   if (args.joinedCount >= args.event.capacity) throw new ApiError('event_full');
 }

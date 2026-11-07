@@ -7,6 +7,7 @@ import type { EventClassId } from './classes';
 import type {
   AppEvent,
   Attendance,
+  EventLesson,
   EventStatus,
   EventTerm,
   Registration,
@@ -98,6 +99,8 @@ export interface StatusChangeBody {
 /** GET /api/admin/events/:id */
 export interface AdminEventDetail extends AdminEventRow {
   terms: EventTerm[];
+  /** The learning corner, in order, and how many people learned each lesson. */
+  lessons: (EventLesson & { learned_count: number })[];
   participants: { user: PublicUser & Pick<User, 'phone'>; registration: Registration; attendance: Attendance | null }[];
 }
 
