@@ -9,6 +9,7 @@ import type { AdminErrorCode, ApiErrorCode } from './errors';
 import type {
   AppEvent,
   Attendance,
+  EventLesson,
   EventStatus,
   EventTerm,
   Gender,
@@ -162,6 +163,13 @@ export interface EventProposal {
   gender_category: GenderCategory;
   /** In order; each one is accepted on its own screen. */
   terms: string[];
+  /** The event's learning corner (ركن التعلم), in order: read before joining, approved with the event. */
+  lessons: LessonInput[];
+}
+
+export interface LessonInput {
+  title: string;
+  body: string;
 }
 export interface ProposeEventResponse {
   id: string;
@@ -187,6 +195,8 @@ export interface EventDetail extends EventSummary {
   description: string;
   terms_locked_at: string | null;
   terms: EventTerm[];
+  /** In order (rules.sortLessons), each with whether the signed-in user learned it. */
+  lessons: EventLessonItem[];
   participants: PublicUser[];
   my_registration: Registration | null;
   my_accepted_term_ids: string[];
@@ -235,6 +245,24 @@ export interface PostNoticeBody {
 
 export interface NoticeResponse {
   notice: EventNoticeItem;
+}
+
+// ---------- the learning corner (ركن التعلم) ----------
+
+export interface EventLessonItem extends Omit<EventLesson, 'created_at'> {
+  /** When the signed-in user learned it; null = not yet. */
+  learned_at: string | null;
+}
+
+/** POST /api/events/:id/lessons/:lessonId/learn: anyone who can see the event, joined or not. */
+export interface LearnLessonResponse {
+  lesson: EventLessonItem;
+}
+
+/** GET /api/me/lessons: every lesson the person learned, latest first. */
+export interface MyLesson {
+  lesson: EventLessonItem;
+  event: Pick<AppEvent, 'id' | 'title' | 'starts_at' | 'subtype'>;
 }
 
 /** POST /api/events/:id/join, /join/complete, DELETE /join */

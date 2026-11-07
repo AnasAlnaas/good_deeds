@@ -125,6 +125,28 @@ export interface EventTerm {
   created_at: string;
 }
 
+/**
+ * Owner's decision (2026-11-07): each event has a short learning corner (ركن
+ * التعلم): lessons its proposer writes with the event, so they are approved
+ * with it. Anyone who can see the event may read them; whoever joins it learns
+ * every one first, before the terms.
+ */
+export interface EventLesson {
+  id: string;
+  event_id: string;
+  order_index: number;
+  title: string;
+  body: string;
+  created_at: string;
+}
+
+/** A person learned a lesson. Kept with the person, not the registration, so it stays theirs after cancelling. */
+export interface LessonCompletion {
+  lesson_id: string;
+  user_id: string;
+  learned_at: string;
+}
+
 export type RegistrationStatus = 'pending_terms' | 'joined' | 'cancelled';
 
 export interface Registration {
@@ -240,6 +262,8 @@ export interface Db {
   event_notices: EventNotice[];
   notice_reactions: NoticeReaction[];
   event_terms: EventTerm[];
+  event_lessons: EventLesson[];
+  lesson_completions: LessonCompletion[];
   registrations: Registration[];
   term_acceptances: TermAcceptance[];
   attendance: Attendance[];

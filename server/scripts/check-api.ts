@@ -33,6 +33,10 @@ async function joinFully(token: string, eventId: string) {
   const start = await call('POST', `/events/${eventId}/join`, token);
   if (start.status !== 200) return start;
   const detail: EventDetail = (await call('GET', `/events/${eventId}`, token)).body;
+  for (const lesson of detail.lessons) {
+    const r = await call('POST', `/events/${eventId}/lessons/${lesson.id}/learn`, token);
+    if (r.status !== 200) return r;
+  }
   for (const term of detail.terms) {
     const r = await call('POST', `/events/${eventId}/terms/${term.id}/accept`, token);
     if (r.status !== 200) return r;
@@ -328,6 +332,26 @@ const e10: EventDetail = (await call('GET', '/events/e10', ahmad)).body;
 expectEqual('terms locked after first acceptance', !!e10.terms_locked_at, true);
 expectEqual('now counted as joined', [e10.my_registration?.status, e10.joined_count], ['joined', 1]);
 
+console.log('\n— the learning corner');
+const e03: EventDetail = (await call('GET', '/events/e03', ahmad)).body;
+expectEqual('lessons in order, none learned yet', [e03.lessons.length, e03.lessons.map((l) => l.learned_at)], [2, [null, null]]);
+const [lesson1, lesson2] = e03.lessons;
+// The seed's people learned the lessons of the events they joined.
+const learnedBefore = async (token: string) => (await call('GET', '/me/lessons', token)).body.length;
+const [hersBefore, hisBefore] = [await learnedBefore(mariam), await learnedBefore(ahmad)];
+await call('POST', '/events/e03/join', ahmad);
+await expectError('accept a term before learning the lessons', 'lessons_incomplete', call('POST', `/events/e03/terms/${e03.terms[0].id}/accept`, ahmad));
+await expectError('join before learning the lessons', 'lessons_incomplete', call('POST', '/events/e03/join/complete', ahmad));
+await expectError('a lesson of another event', 'not_found', call('POST', `/events/e02/lessons/${lesson1.id}/learn`, ahmad));
+// Learning needs no registration: a woman reads the lessons of a men's event too.
+const learned = (await expectOk('learn the second lesson first, without joining', call('POST', `/events/e03/lessons/${lesson2.id}/learn`, mariam))).lesson;
+expectEqual('marked learned', !!learned.learned_at, true);
+await expectOk('learning it again changes nothing', call('POST', `/events/e03/lessons/${lesson2.id}/learn`, mariam));
+const mine = (await call('GET', '/me/lessons', mariam)).body;
+expectEqual('the profile gathers what she learned, latest first', [mine.length - hersBefore, mine[0].lesson.id, mine[0].event.id], [1, lesson2.id, 'e03']);
+expectEqual('his own learning is apart', await learnedBefore(ahmad), hisBefore);
+await expectOk('he learns both, then joins', joinFully(ahmad, 'e03'));
+
 // ---------------------------------------------------------------------------
 console.log('\n— recording attendance');
 const running = seed.events.find((e) => e.id === 'e01')!;
@@ -446,6 +470,7 @@ const proposal = (over: Partial<EventProposal> = {}): EventProposal => ({
   capacity: 15,
   gender_category: 'mixed',
   terms: ['أحضر قفازيك.'],
+  lessons: [],
   ...over,
 });
 const meOf = async (token: string): Promise<MeResponse> => (await call('GET', '/me', token)).body;

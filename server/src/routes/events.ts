@@ -17,6 +17,7 @@ import type {
   EventFormMeta,
   EventSummary,
   EventSupervisor,
+  LearnLessonResponse,
   NoticeResponse,
   ProposeEventResponse,
   RegistrationResponse,
@@ -39,6 +40,9 @@ import {
   isOrganizer,
   joinedCounts,
   joinedUsers,
+  learnedAt,
+  lessonItems,
+  lessonsOf,
   levelOf,
   newId,
   noticeItems,
@@ -54,7 +58,7 @@ import { iso } from '../db/rows';
 import * as s from '../db/schema';
 import { type AppEnv, readBody } from '../http';
 import { notifyEventNotice, notifyHoursToConfirm, notifySupervisorAdded, notifyWarningGiven } from '../notify';
-import { proposalInput, writeLinks, writeTerms } from './event-input';
+import { proposalInput, writeLessons, writeLinks, writeTerms } from './event-input';
 
 // `recorded_at`: the record was made on the phone without a connection, at that time (rules.decideRecordStart).
 const recordTimeBody = z.object({
@@ -180,6 +184,7 @@ export const eventRoutes = new Hono<AppEnv>()
       // Whoever proposes an event supervises it; an admin can add others from the panel.
       await writeLinks(tx, id, [me.id]);
       await writeTerms(tx, id, body.terms, new Date(t));
+      await writeLessons(tx, id, body.lessons, new Date(t));
     });
     return c.json<ProposeEventResponse>({ id, status }, 201);
   })
@@ -226,8 +231,9 @@ export const eventRoutes = new Hono<AppEnv>()
         })
         .where(eq(s.events.id, id));
       await writeLinks(tx, id, organizers.map((o) => o.user_id));
-      // Nobody can join a draft, so nobody has accepted its terms yet.
+      // Nobody can join a draft, so nobody has accepted its terms or learned its lessons yet.
       await writeTerms(tx, id, body.terms, new Date(t));
+      await writeLessons(tx, id, body.lessons, new Date(t));
     });
     return c.json<ProposeEventResponse>({ id, status: 'draft' });
   })
@@ -247,6 +253,7 @@ export const eventRoutes = new Hono<AppEnv>()
       const [row] = await tx.select().from(s.events).where(eq(s.events.id, id)).for('update');
       rules.assertCanChangeProposal(me, row);
       await tx.delete(s.event_terms).where(eq(s.event_terms.event_id, id));
+      await tx.delete(s.event_lessons).where(eq(s.event_lessons.event_id, id));
       await tx.delete(s.event_organizers).where(eq(s.event_organizers.event_id, id));
       await tx.delete(s.events).where(eq(s.events.id, id));
     });
@@ -267,6 +274,7 @@ export const eventRoutes = new Hono<AppEnv>()
       description: event.description,
       terms_locked_at: event.terms_locked_at,
       terms: await termsOf(db, id),
+      lessons: await lessonItems(db, me.id, id),
       participants: (await joinedUsers(db, id)).map((u) => shownTo(me, u)),
       my_registration: registration ?? null,
       my_accepted_term_ids: await acceptedTermIds(db, registration?.id),
@@ -399,6 +407,26 @@ export const eventRoutes = new Hono<AppEnv>()
     return c.json<NoticeResponse>({ notice: item });
   })
 
+  // ---------- the learning corner (ركن التعلم) ----------
+
+  // Anyone who can see the event learns its lessons, joined or not, in any order.
+  .post('/:id/lessons/:lessonId/learn', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const { id, lessonId } = c.req.param();
+    const t = now();
+    await db.transaction(async (tx) => {
+      const event = await findEventFor(tx, id, me);
+      const lesson = (await lessonsOf(tx, id)).find((l) => l.id === lessonId);
+      const learned = [...(await learnedAt(tx, me.id, lesson ? [lesson.id] : [])).keys()];
+      if (rules.decideLearnLesson({ event, lesson, learnedLessonIds: learned }) === 'learn') {
+        await tx.insert(s.lesson_completions).values({ lesson_id: lessonId, user_id: me.id, learned_at: new Date(t) }).onConflictDoNothing();
+      }
+    });
+    const lesson = (await lessonItems(db, me.id, id)).find((l) => l.id === lessonId)!;
+    return c.json<LearnLessonResponse>({ lesson });
+  })
+
   // ---------- joining ----------
 
   .post('/:id/join', async (c) => {
@@ -432,7 +460,15 @@ export const eventRoutes = new Hono<AppEnv>()
       await findEvent(tx, id);
       const registration = await registrationOf(tx, id, me.id, { lock: true });
       const accepted = await acceptedTermIds(tx, registration?.id);
-      const action = rules.decideAcceptTerm({ registration, terms: await termsOf(tx, id), acceptedTermIds: accepted, termId });
+      const lessons = await lessonsOf(tx, id);
+      const action = rules.decideAcceptTerm({
+        registration,
+        terms: await termsOf(tx, id),
+        acceptedTermIds: accepted,
+        termId,
+        lessons,
+        learnedLessonIds: [...(await learnedAt(tx, me.id, lessons.map((l) => l.id))).keys()],
+      });
       if (action === 'accept') {
         await tx.insert(s.term_acceptances).values({ id: newId(), registration_id: registration!.id, term_id: termId, accepted_at: new Date(t) });
         // Nobody may agree to a text that later changes: the terms lock at the first acceptance.
@@ -456,7 +492,10 @@ export const eventRoutes = new Hono<AppEnv>()
       // Locking the event makes joins to it wait in line, so the seat count is exact.
       const event = await findEvent(tx, id, { lock: true });
       const reg = await registrationOf(tx, id, me.id, { lock: true });
+      const lessons = await lessonsOf(tx, id);
       rules.assertCompleteJoin({
+        lessons,
+        learnedLessonIds: [...(await learnedAt(tx, me.id, lessons.map((l) => l.id))).keys()],
         user: me,
         event,
         registration: reg,

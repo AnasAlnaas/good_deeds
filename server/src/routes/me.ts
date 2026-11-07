@@ -12,6 +12,7 @@ import type {
   AttendanceResponse,
   ConfirmResponse,
   MeResponse,
+  MyLesson,
   MyReport,
   MyWarning,
   PhotoResponse,
@@ -130,6 +131,24 @@ export const meRoutes = new Hono<AppEnv>()
       .where(eq(s.attendance.user_id, c.var.user.id))
       .orderBy(desc(s.attendance.started_at));
     return c.json<AttendanceItem[]>(await toItems(db, c.var.user, rows.map((r) => iso(r) as Attendance)));
+  })
+
+  // Every lesson this person learned, from every event's learning corner, latest first.
+  .get('/lessons', async (c) => {
+    const { db } = c.var.deps;
+    const rows = await db
+      .select({ lesson: s.event_lessons, learned_at: s.lesson_completions.learned_at, event: { id: s.events.id, title: s.events.title, starts_at: s.events.starts_at, subtype: s.events.subtype } })
+      .from(s.lesson_completions)
+      .innerJoin(s.event_lessons, eq(s.event_lessons.id, s.lesson_completions.lesson_id))
+      .innerJoin(s.events, eq(s.events.id, s.event_lessons.event_id))
+      .where(eq(s.lesson_completions.user_id, c.var.user.id))
+      .orderBy(desc(s.lesson_completions.learned_at));
+    return c.json<MyLesson[]>(
+      rows.map((r) => {
+        const { created_at, ...lesson } = iso(r.lesson);
+        return { lesson: { ...lesson, learned_at: r.learned_at.toISOString() }, event: iso(r.event) };
+      }),
+    );
   })
 
   // The reports this person made, and whether an admin has looked at them.

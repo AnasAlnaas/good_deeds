@@ -42,7 +42,7 @@ import {
   notifyWarningDecided,
 } from '../notify';
 import { issueResetCode } from './auth';
-import { assertIdsExist, eventInput, isoTime, writeLinks, writeTerms } from './event-input';
+import { assertIdsExist, eventInput, isoTime, writeLessons, writeLinks, writeTerms } from './event-input';
 
 const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
   if (c.var.user.role !== 'admin') throw new AdminError('forbidden');
@@ -118,6 +118,18 @@ async function creatorsOf(q: Database, events: Pick<AppEvent, 'created_by'>[]) {
 async function hasAttendance(q: Database, eventId: string) {
   const [row] = await q.select({ n: count() }).from(s.attendance).where(eq(s.attendance.event_id, eventId));
   return row.n > 0;
+}
+
+async function lessonsWithCounts(q: Database, eventId: string) {
+  const rows = await q.select().from(s.event_lessons).where(eq(s.event_lessons.event_id, eventId)).orderBy(asc(s.event_lessons.order_index));
+  const counts = rows.length
+    ? await q
+        .select({ lesson_id: s.lesson_completions.lesson_id, n: count() })
+        .from(s.lesson_completions)
+        .where(inArray(s.lesson_completions.lesson_id, rows.map((r) => r.id)))
+        .groupBy(s.lesson_completions.lesson_id)
+    : [];
+  return rows.map((r) => ({ ...iso(r), learned_count: counts.find((x) => x.lesson_id === r.id)?.n ?? 0 }));
 }
 
 async function termTexts(q: Database, eventId: string) {
@@ -340,6 +352,7 @@ export const adminRoutes = new Hono<AppEnv>()
       organizers: (await organizersOf(db, [id])).get(id) ?? [],
       creator: (await creatorsOf(db, [event])).get(event.created_by) ?? null,
       terms: terms.map(iso),
+      lessons: await lessonsWithCounts(db, id),
       participants: registrations.map((r) => {
         const a = attendance.find((x) => x.user_id === r.id);
         return {
@@ -380,6 +393,7 @@ export const adminRoutes = new Hono<AppEnv>()
       });
       await writeLinks(tx, id, organizerIds);
       await writeTerms(tx, id, body.terms, t);
+      await writeLessons(tx, id, body.lessons, t);
       await audit(tx, { actorId: me.id, action: 'create_event', targetId: id, details: { title: body.title, published: body.publish }, at: t });
     });
     return c.json({ id }, 201);
@@ -396,10 +410,13 @@ export const adminRoutes = new Hono<AppEnv>()
       const event = await anyEvent(tx, id, true);
       const { organizerIds } = await assertIdsExist(tx, body);
       const currentTerms = await termTexts(tx, id);
+      const currentLessons = await lessonsWithCounts(tx, id);
       adminRules.assertEventEdit({
         event,
         next: { ...body, organizerCount: organizerIds.length },
         currentTerms,
+        currentLessons,
+        lessonsLearned: currentLessons.some((l) => l.learned_count > 0),
         joinedCount: (await joinedCounts(tx, [id])).get(id) ?? 0,
         hasAttendance: await hasAttendance(tx, id),
         now: t,
@@ -428,11 +445,13 @@ export const adminRoutes = new Hono<AppEnv>()
       await writeLinks(tx, id, organizerIds);
       const termsChanged = body.terms.length !== currentTerms.length || body.terms.some((x, i) => x !== currentTerms[i]);
       if (termsChanged) await writeTerms(tx, id, body.terms, new Date(t));
+      const lessonsChanged = adminRules.lessonsChanged(currentLessons, body.lessons);
+      if (lessonsChanged) await writeLessons(tx, id, body.lessons, new Date(t));
       await audit(tx, {
         actorId: me.id,
         action: 'update_event',
         targetId: id,
-        details: { title: body.title, changed: termsChanged ? [...changed, 'terms'] : changed },
+        details: { title: body.title, changed: [...changed, ...(termsChanged ? ['terms'] : []), ...(lessonsChanged ? ['lessons'] : [])] },
         at: new Date(t),
       });
       return { wasDraft: event.status === 'draft', changed };

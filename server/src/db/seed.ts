@@ -12,6 +12,7 @@ import * as s from './schema';
 
 const ALL_TABLES = [
   'reports', 'warnings', 'admin_actions', 'user_photos', 'push_tokens', 'login_codes', 'user_passwords', 'points_ledger', 'attendance', 'term_acceptances', 'registrations', 'event_terms',
+  'lesson_completions', 'event_lessons',
   'notice_reactions', 'event_notices', 'event_organizers', 'events', 'levels', 'branches', 'users',
 ];
 
@@ -60,6 +61,8 @@ export async function seedDemo(db: Database, nowMs: number) {
     if (d.event_notices.length) await tx.insert(s.event_notices).values(d.event_notices.map(dated));
     if (d.notice_reactions.length) await tx.insert(s.notice_reactions).values(d.notice_reactions.map(dated));
     await tx.insert(s.event_terms).values(d.event_terms.map(dated));
+    if (d.event_lessons.length) await tx.insert(s.event_lessons).values(d.event_lessons.map(dated));
+    if (d.lesson_completions.length) await tx.insert(s.lesson_completions).values(d.lesson_completions.map(dated));
     await tx.insert(s.registrations).values(d.registrations.map(dated));
     await tx.insert(s.term_acceptances).values(d.term_acceptances.map(dated));
     await tx.insert(s.attendance).values(d.attendance.map(dated));

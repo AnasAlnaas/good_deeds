@@ -173,6 +173,31 @@ export const event_terms = pgTable(
   (t) => [uniqueIndex('event_terms_order').on(t.event_id, t.order_index)],
 );
 
+// An event's learning corner (shared/types.ts EventLesson): read before joining, approved with the event.
+export const event_lessons = pgTable(
+  'event_lessons',
+  {
+    id: text('id').primaryKey(),
+    event_id: text('event_id').notNull().references(() => events.id),
+    order_index: integer('order_index').notNull(),
+    title: text('title').notNull(),
+    body: text('body').notNull(),
+    created_at: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('event_lessons_order').on(t.event_id, t.order_index)],
+);
+
+// Who learned which lesson (shared/types.ts LessonCompletion). Kept after a registration is cancelled.
+export const lesson_completions = pgTable(
+  'lesson_completions',
+  {
+    lesson_id: text('lesson_id').notNull().references(() => event_lessons.id),
+    user_id: text('user_id').notNull().references(() => users.id),
+    learned_at: at('learned_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.lesson_id, t.user_id] }), index('lesson_completions_user').on(t.user_id, t.learned_at)],
+);
+
 export const registrations = pgTable(
   'registrations',
   {
