@@ -8,20 +8,24 @@ import { Chip, ClassFilter, EmptyState, Field, QueryState, Row } from '@/compone
 import { useEvents, useMeSummary } from '@/data/queries';
 import { useApp } from '@/state/app';
 import type { EventClassId } from '@/theme/classes';
+import type { LocationType } from '@/data/types';
 
 const t = (iso: string) => new Date(iso).getTime();
 
 type Tab = 'upcoming' | 'mine' | 'organize';
+type Where = 'all' | LocationType;
 
 export default function EventsScreen() {
   const { s } = useApp();
-  // The map's search button opens this list with the search box ready.
-  const { search } = useLocalSearchParams<{ search?: string }>();
+  // The map's search button opens this list with the search box ready; its online bar, with online events only.
+  const params = useLocalSearchParams<{ search?: string; where?: string }>();
+  const { search } = params;
   const query = useEvents();
   const canCreate = useMeSummary().data?.can_create_events ?? false;
   const [tab, setTab] = useState<Tab>('upcoming');
   const [kind, setKind] = useState<EventClassId | null>(null);
   const [text, setText] = useState('');
+  const [where, setWhere] = useState<Where>(params.where === 'online' ? 'online' : 'all');
   const events = query.data ?? [];
 
   const upcoming = events
@@ -45,9 +49,10 @@ export default function EventsScreen() {
   const list = (tab === 'upcoming' ? upcoming : tab === 'mine' ? mine : organized).filter(
     (e) =>
       (!kind || e.event_class === kind) &&
-      (!words || e.title.toLowerCase().includes(words) || e.address_text.toLowerCase().includes(words)),
+      (where === 'all' || e.location_type === where) &&
+      (!words || e.title.toLowerCase().includes(words) || (e.address_text ?? '').toLowerCase().includes(words)),
   );
-  const filtered = !!kind || !!words;
+  const filtered = !!kind || !!words || where !== 'all';
   const empty = filtered
     ? s.events.noMatch
     : tab === 'upcoming'
@@ -72,6 +77,11 @@ export default function EventsScreen() {
         {showOrganize && <Chip label={s.events.organize} selected={tab === 'organize'} onPress={() => setTab('organize')} />}
       </Row>
       <ClassFilter value={kind} onChange={setKind} />
+      <Row>
+        <Chip label={s.events.whereAll} selected={where === 'all'} onPress={() => setWhere('all')} />
+        <Chip label={s.events.inPerson} icon="location-outline" selected={where === 'in_person'} onPress={() => setWhere('in_person')} />
+        <Chip label={s.events.online} icon="videocam-outline" selected={where === 'online'} onPress={() => setWhere('online')} />
+      </Row>
       {canCreate && tab === 'organize' && (
         <Button variant="secondary" icon="add-circle-outline" label={s.events.propose} onPress={() => router.push('/event/new')} />
       )}

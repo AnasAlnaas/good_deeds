@@ -46,7 +46,8 @@ let seen = 0;
 /** Notifications about events sent since the last look. */
 async function eventNews() {
   await h.settle();
-  const fresh = h.pushes.slice(seen).filter((p) => p.data.event_id);
+  // The demo's online event opens its link when the script starts; that is checked in check-online.ts.
+  const fresh = h.pushes.slice(seen).filter((p) => p.data.event_id && p.data.type !== 'meeting_link_open');
   seen = h.pushes.length;
   return fresh;
 }
@@ -62,9 +63,12 @@ const inputFrom = (d: AdminEventDetail): EventInput => ({
   title: d.event.title,
   description: d.event.description,
   subtype: d.event.subtype,
+  location_type: d.event.location_type,
   address_text: d.event.address_text,
   lat: d.event.lat,
   lng: d.event.lng,
+  meeting_platform: d.event.meeting_platform,
+  meeting_url: d.event.meeting_url,
   starts_at: d.event.starts_at,
   ends_at: d.event.ends_at,
   capacity: d.event.capacity,
@@ -112,9 +116,12 @@ const base: CreateEventBody = {
   title: 'حملة نظافة تجريبية',
   description: 'تنظيف الساحة.',
   subtype: 'street_cleanup',
+  location_type: 'in_person',
   address_text: 'طرابلس',
   lat: 32.88,
   lng: 13.19,
+  meeting_platform: null,
+  meeting_url: null,
   starts_at: iso(NOW + 48 * HOUR),
   ends_at: iso(NOW + 51 * HOUR),
   capacity: 10,
@@ -242,7 +249,7 @@ expectEqual('every decision, newest first', log.map((e) => e.action), [
 expectEqual('with who made it', log.every((e) => e.actor?.id === 'u_admin'), true);
 const role = log.find((e) => e.action === 'change_role')!.details;
 expectEqual('and what changed', [log.filter((e) => e.action === 'update_event').map((e) => e.details.changed), role.from, role.to], [
-  [['address_text', 'lat', 'lng'], ['starts_at', 'ends_at'], ['title'], []],
+  [['place'], ['starts_at', 'ends_at'], ['title'], []],
   'member',
   'supervisor',
 ]);

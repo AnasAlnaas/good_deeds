@@ -6,6 +6,7 @@ import type { EventSummary } from '@/data/api';
 import { usePrefetchEvent } from '@/data/queries';
 import { dayTimeRange, fmt } from '@/i18n/format';
 import { openDirections } from '@/lib/directions';
+import { placeLabel, withZone } from '@/lib/place';
 import { useApp } from '@/state/app';
 import { classIcon, className } from '@/theme/classes';
 import { colors, radius, shadow, space } from '@/theme/tokens';
@@ -20,6 +21,7 @@ export function EventCard({ event, floating }: { event: EventSummary; floating?:
   const { s, now, lang } = useApp();
   const prefetch = usePrefetchEvent();
   const full = event.joined_count >= event.capacity;
+  const online = event.location_type === 'online';
   const badges =
     event.status === 'running' ||
     event.status === 'draft' ||
@@ -48,9 +50,9 @@ export function EventCard({ event, floating }: { event: EventSummary; floating?:
         </View>
       </View>
       <View style={styles.meta}>
-        <Ionicons name="location" size={16} color={colors.inkMuted} />
+        <Ionicons name={online ? 'videocam' : 'location'} size={16} color={colors.inkMuted} />
         <Txt variant="caption" color={colors.inkMuted} style={styles.flex} numberOfLines={1}>
-          {event.address_text}
+          {placeLabel(event, s)}
         </Txt>
       </View>
       {badges && (
@@ -64,7 +66,7 @@ export function EventCard({ event, floating }: { event: EventSummary; floating?:
       )}
       <View style={styles.block}>
         <Txt variant="bodyStrong" color={colors.primary}>
-          {dayTimeRange(event.starts_at, event.ends_at, s, now)}
+          {withZone(dayTimeRange(event.starts_at, event.ends_at, s, now), event, s)}
         </Txt>
         <Txt variant="caption" color={full ? colors.danger : colors.inkMuted} tabular>
           {full ? s.event.full : fmt(s.event.seats, { joined: event.joined_count, capacity: event.capacity })}
@@ -72,7 +74,8 @@ export function EventCard({ event, floating }: { event: EventSummary; floating?:
       </View>
     </Card>
   );
-  if (!floating) return card;
+  // Only an event in a place has a pin on the map, and so directions.
+  if (!floating || online) return card;
   // The directions button sits on the card, not in it: a button inside a button is not allowed.
   return (
     <View>

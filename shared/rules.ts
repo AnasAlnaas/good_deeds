@@ -11,7 +11,7 @@
 import { cityOf } from './cities';
 import { ApiError } from './errors';
 import { END_GRACE_MINUTES } from './placeholders';
-import { NOTICE_KINDS, NOTICE_REACTIONS } from './types';
+import { MEETING_PLATFORMS, NOTICE_KINDS, NOTICE_REACTIONS } from './types';
 import type {
   AppEvent,
   Attendance,
@@ -671,6 +671,84 @@ export function assertCanRemoveSupervisor(args: {
   assertEventOpen(args.event, args.now);
   if (!args.link) throw new ApiError('not_supervisor');
   if (args.link.added_by === null || args.supervisorCount <= 1) throw new ApiError('cannot_remove_supervisor');
+}
+
+// ---------- online events ----------
+
+// Owner's decision (2026-11-07): an event is in a place or online. An online
+// event has a platform and a meeting link instead of an address and a map pin.
+// The link is for the people who joined, from a little before the start to the
+// end, so it is not passed around; supervisors and admins always see it.
+// Attendance is recorded by a supervisor, as at any event.
+
+/** The meeting link shows this long before the start (and a notification says so). */
+export const MEETING_LINK_OPENS_MINUTES = 30;
+export const MEETING_URL_MAX = 500;
+export const ADDRESS_MAX = 200;
+
+/** When those who joined an online event see its link. */
+export function meetingLinkOpensAt(e: Pick<AppEvent, 'starts_at'>) {
+  return toIso(toMs(e.starts_at) - MEETING_LINK_OPENS_MINUTES * 60_000);
+}
+
+export function canSeeMeetingLink(args: {
+  event: Pick<AppEvent, 'location_type' | 'meeting_url' | 'status' | 'starts_at' | 'ends_at'>;
+  /** A supervisor of the event, or an admin (canManageEvent). */
+  canManage: boolean;
+  registration: Pick<Registration, 'status'> | undefined;
+  now: number;
+}) {
+  const { event, now } = args;
+  if (event.location_type !== 'online' || !event.meeting_url) return false;
+  if (args.canManage) return true;
+  if (event.status === 'cancelled' || isHidden(event) || args.registration?.status !== 'joined') return false;
+  return now >= toMs(meetingLinkOpensAt(event)) && now < toMs(event.ends_at);
+}
+
+type PlaceFields = Pick<AppEvent, 'location_type' | 'address_text' | 'lat' | 'lng' | 'meeting_platform' | 'meeting_url'>;
+
+/** A meeting link: an https address, as the platforms give them. */
+export function isMeetingUrl(url: string) {
+  if (url.length > MEETING_URL_MAX || /\s/.test(url)) return false;
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && u.hostname.includes('.');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Where an event happens, as a form sent it: the fields its kind needs, cleaned,
+ * and those of the other kind emptied. null = something needed is missing or wrong.
+ */
+export function cleanPlace(input: {
+  location_type: string;
+  address_text?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  meeting_platform?: string | null;
+  meeting_url?: string | null;
+}): PlaceFields | null {
+  if (input.location_type === 'in_person') {
+    const address = input.address_text?.trim() ?? '';
+    const { lat, lng } = input;
+    if (!address || address.length > ADDRESS_MAX) return null;
+    if (typeof lat !== 'number' || typeof lng !== 'number' || !(Math.abs(lat) <= 90) || !(Math.abs(lng) <= 180)) return null;
+    return { location_type: 'in_person', address_text: address, lat, lng, meeting_platform: null, meeting_url: null };
+  }
+  if (input.location_type === 'online') {
+    const url = input.meeting_url?.trim() ?? '';
+    const platform = MEETING_PLATFORMS.find((p) => p === input.meeting_platform);
+    if (!platform || !isMeetingUrl(url)) return null;
+    return { location_type: 'online', address_text: null, lat: null, lng: null, meeting_platform: platform, meeting_url: url };
+  }
+  return null;
+}
+
+/** The place or the link changed: worth telling those who joined. */
+export function placeChanged(before: PlaceFields, after: PlaceFields) {
+  return (['location_type', 'address_text', 'lat', 'lng', 'meeting_platform', 'meeting_url'] as const).some((k) => before[k] !== after[k]);
 }
 
 // ---------- an event's notices ----------

@@ -29,6 +29,8 @@ export const startSource = pgEnum('start_source', ['live', 'backdated']);
 export const endSource = pgEnum('end_source', ['live', 'backdated', 'auto_closed']);
 export const participantStatus = pgEnum('participant_status', ['pending', 'confirmed', 'disputed']);
 export const lang = pgEnum('lang', ['ar', 'en']);
+export const locationType = pgEnum('location_type', ['in_person', 'online']);
+export const meetingPlatform = pgEnum('meeting_platform', ['zoom', 'meet', 'teams', 'telegram', 'other']);
 export const adminAction = pgEnum('admin_action', [
   'change_role',
   'create_event',
@@ -98,9 +100,13 @@ export const events = pgTable(
     description: text('description').notNull(),
     subtype: text('subtype').notNull(),
     image_url: text('image_url'),
-    lat: doublePrecision('lat').notNull(),
-    lng: doublePrecision('lng').notNull(),
-    address_text: text('address_text').notNull(),
+    // In a place: the address and the pin. Online: the platform and the link (shared/rules.ts cleanPlace).
+    location_type: locationType('location_type').notNull().default('in_person'),
+    lat: doublePrecision('lat'),
+    lng: doublePrecision('lng'),
+    address_text: text('address_text'),
+    meeting_platform: meetingPlatform('meeting_platform'),
+    meeting_url: text('meeting_url'),
     starts_at: at('starts_at').notNull(),
     ends_at: at('ends_at').notNull(),
     capacity: integer('capacity').notNull(),
@@ -114,8 +120,23 @@ export const events = pgTable(
   (t) => [
     check('events_ends_after_start', sql`${t.ends_at} > ${t.starts_at}`),
     check('events_capacity_positive', sql`${t.capacity} > 0`),
+    check(
+      'events_place_matches_type',
+      sql`(${t.location_type} = 'in_person' and ${t.lat} is not null and ${t.lng} is not null and ${t.address_text} is not null and ${t.meeting_url} is null)
+        or (${t.location_type} = 'online' and ${t.meeting_platform} is not null and ${t.meeting_url} is not null and ${t.lat} is null and ${t.lng} is null)`,
+    ),
   ],
 );
+
+/**
+ * The "the link is open" notification of an online event, sent once for each
+ * start time it had: moving the start sends it again for the new one.
+ */
+export const meeting_link_reminders = pgTable('meeting_link_reminders', {
+  event_id: text('event_id').primaryKey().references(() => events.id),
+  starts_at: at('starts_at').notNull(),
+  sent_at: at('sent_at').notNull(),
+});
 
 // DEMO-ONLY in Data_Model.md: who supervises which event.
 export const event_organizers = pgTable(

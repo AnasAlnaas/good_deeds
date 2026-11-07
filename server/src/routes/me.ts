@@ -89,7 +89,7 @@ async function toItems(db: Database, viewer: User, records: Attendance[]): Promi
     const e = eventById.get(a.event_id)!;
     return {
       attendance: a,
-      event: { id: e.id, title: e.title, address_text: e.address_text, starts_at: e.starts_at, ends_at: e.ends_at, base_points: e.base_points },
+      event: { id: e.id, title: e.title, location_type: e.location_type, address_text: e.address_text, meeting_platform: e.meeting_platform, starts_at: e.starts_at, ends_at: e.ends_at, base_points: e.base_points },
       recorded_by: recorderById.has(a.recorded_by) ? shownTo(viewer, recorderById.get(a.recorded_by)!) : null,
       points: rules.pointsForAttendance(e, a.hours),
     };

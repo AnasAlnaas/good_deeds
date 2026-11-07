@@ -85,6 +85,13 @@
       "when": 1794076524795,
       "tag": "0011_event_lessons",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794080160425,
+      "tag": "0012_online_events",
+      "breakpoints": true
     }
   ]
 }

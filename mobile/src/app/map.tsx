@@ -1,5 +1,6 @@
 import { Redirect, router } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,6 +12,7 @@ import { OsmMap, type MapPin } from '@/components/OsmMap';
 import { Txt } from '@/components/Txt';
 import { ClassFilter, IconButton, OfflineBanner, QueryState } from '@/components/ui';
 import { useEvents, useKeepOwnDataReady, usePrefetchEvent } from '@/data/queries';
+import { fmt } from '@/i18n/format';
 import { useApp } from '@/state/app';
 import { useNotificationTaps } from '@/state/useNotificationTaps';
 import type { EventClassId } from '@/theme/classes';
@@ -23,7 +25,7 @@ const TRIPOLI = { lat: 32.868, lng: 13.18, zoom: 12 };
 // (components/NavIsland.tsx, drawn over every main screen), everything else
 // from the icons and cards here.
 export default function MapScreen() {
-  const { s, me, lang } = useApp();
+  const { s, me, lang, isRTL } = useApp();
   useNotificationTaps();
   const insets = useSafeAreaInsets();
   const query = useEvents();
@@ -50,10 +52,15 @@ export default function MapScreen() {
       }),
     [query.data, filter],
   );
+  // Online events have no pin: the bar at the bottom counts them and opens them in the list.
   const pins: MapPin[] = useMemo(
-    () => events.map((e) => ({ id: e.id, lat: e.lat, lng: e.lng, dim: !e.can_join_category, selected: e.id === selected })),
+    () =>
+      events.flatMap((e) =>
+        e.lat === null || e.lng === null ? [] : [{ id: e.id, lat: e.lat, lng: e.lng, dim: !e.can_join_category, selected: e.id === selected }],
+      ),
     [events, selected],
   );
+  const onlineCount = events.length - pins.length;
 
   if (!me) return <Redirect href="/login" />;
   const selectedEvent = events.find((e) => e.id === selected);
@@ -106,6 +113,20 @@ export default function MapScreen() {
           <Animated.View entering={FadeIn.duration(200)} style={[styles.note, shadow]}>
             <QueryState query={query} />
           </Animated.View>
+        ) : onlineCount > 0 ? (
+          <Animated.View key={`online-${filter ?? 'all'}`} entering={FadeIn.duration(200)} exiting={FadeOut.duration(120)}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${fmt(s.map.onlineBar, { n: onlineCount })}. ${s.map.onlineBarHint}`}
+              onPress={() => router.push({ pathname: '/events', params: { where: 'online' } })}
+              style={({ pressed }) => [styles.online, shadow, pressed && styles.pressed]}>
+              <Ionicons name="videocam" size={20} color={colors.primary} />
+              <Txt variant="bodyStrong" style={styles.flex} numberOfLines={1}>
+                {fmt(s.map.onlineBar, { n: onlineCount })}
+              </Txt>
+              <Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={20} color={colors.inkMuted} />
+            </Pressable>
+          </Animated.View>
         ) : query.data && events.length === 0 ? (
           <Animated.View key={filter ?? 'all'} entering={FadeIn.duration(200)} exiting={FadeOut.duration(120)} style={[styles.note, shadow]}>
             <Txt align="center" color={colors.inkMuted}>
@@ -139,5 +160,17 @@ const styles = StyleSheet.create({
   side: { alignItems: 'flex-end', paddingHorizontal: space.md },
   bottom: { position: 'absolute', start: space.md, end: space.md, gap: space.sm },
   note: { backgroundColor: colors.surface, borderRadius: radius.card, padding: space.md },
+  online: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
+    paddingVertical: space.sm + 2,
+    paddingHorizontal: space.md,
+    minHeight: 48,
+  },
+  pressed: { opacity: 0.8 },
+  flex: { flex: 1 },
   navSpace: { height: NAV_HEIGHT },
 });

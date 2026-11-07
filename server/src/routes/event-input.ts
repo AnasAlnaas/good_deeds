@@ -6,6 +6,7 @@ import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { BASE_POINTS_BY_SUBTYPE } from '../../../shared/placeholders';
+import * as rules from '../../../shared/rules';
 import { LESSON_BODY_MAX, LESSON_TITLE_MAX, MAX_LESSONS } from '../../../shared/rules';
 import type { Database } from '../db/client';
 import { newId } from '../db/queries';
@@ -19,9 +20,13 @@ const proposalFields = z.object({
   title: z.string().trim().min(3).max(120),
   description: z.string().trim().min(1).max(4000),
   subtype: z.enum(subtypes),
-  address_text: z.string().trim().min(1).max(200),
-  lat: z.number().min(-90).max(90),
-  lng: z.number().min(-180).max(180),
+  // Checked together, as rules.cleanPlace decides: what one kind needs, and the other kind's fields empty.
+  location_type: z.enum(['in_person', 'online']).default('in_person'),
+  address_text: z.string().max(rules.ADDRESS_MAX).nullish(),
+  lat: z.number().nullish(),
+  lng: z.number().nullish(),
+  meeting_platform: z.string().nullish(),
+  meeting_url: z.string().max(rules.MEETING_URL_MAX).nullish(),
   starts_at: isoTime,
   ends_at: isoTime,
   capacity: z.number().int().min(1).max(10_000),
@@ -36,11 +41,25 @@ const proposalFields = z.object({
 
 const endsAfterStart = (v: { starts_at: string; ends_at: string }) => Date.parse(v.ends_at) > Date.parse(v.starts_at);
 
+/** The place fields replaced by their cleaned values; a place that does not hold together is an invalid request. */
+function withPlace<T extends Parameters<typeof rules.cleanPlace>[0]>(v: T, ctx: z.RefinementCtx) {
+  const place = rules.cleanPlace(v);
+  if (!place) {
+    ctx.addIssue({ code: 'custom', message: 'place' });
+    return z.NEVER;
+  }
+  return { ...v, ...place };
+}
+
 /** The app's form (shared/api.ts EventProposal). */
-export const proposalInput = proposalFields.refine(endsAfterStart);
+export const proposalInput = proposalFields.refine(endsAfterStart).transform(withPlace);
 
 /** The admin panel's form (shared/admin-api.ts EventInput): also names the supervisors. */
-export const eventInput = proposalFields.extend({ organizer_ids: z.array(z.string()).max(20) }).refine(endsAfterStart);
+const adminFields = proposalFields.extend({ organizer_ids: z.array(z.string()).max(20) });
+export const eventInput = adminFields.refine(endsAfterStart).transform(withPlace);
+
+/** A new event from the panel: published at once, or saved as a draft. */
+export const createEventInput = adminFields.extend({ publish: z.boolean() }).refine(endsAfterStart).transform(withPlace);
 export type EventInput = z.infer<typeof eventInput>;
 
 /** Every id must name an active person, or the request is invalid. */
@@ -82,4 +101,10 @@ export async function writeTerms(q: Database, eventId: string, terms: string[], 
       terms.map((text, i) => ({ id: newId(), event_id: eventId, order_index: i + 1, text, created_at: at })),
     );
   }
+}
+
+/** The columns that say where an event happens, from a checked form. */
+export function placeOf(body: Pick<EventInput, 'location_type' | 'address_text' | 'lat' | 'lng' | 'meeting_platform' | 'meeting_url'>) {
+  const { location_type, address_text, lat, lng, meeting_platform, meeting_url } = body;
+  return { location_type, address_text, lat, lng, meeting_platform, meeting_url };
 }

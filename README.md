@@ -86,6 +86,19 @@ The app follows the planning notes (`DESIGN.md`, `Screens.md`, `Data_Model.md`,
   ("اسحب اقتراحك"), which deletes it. Once it is approved or turned down, only
   admins change it, in the panel. An admin's own event made in the app is
   published at once.
+- **Online events** (owner's decision, 2026-11-07): an event happens in a place
+  (an address and a map pin) or online (a platform: Zoom, Google Meet, Teams,
+  Telegram or another, and an https meeting link). Both forms (the app's
+  proposal form and the admin panel) switch between the two; `rules.cleanPlace`
+  keeps only the chosen kind's fields. Online events have no pin: the map shows
+  a bar, "فعاليات عن بُعد: N", that opens the list filtered to them, and the
+  list filters by "في مكان / عن بُعد". Their times say "بتوقيت طرابلس".
+  The link never travels with the events list; the event's page gives it to
+  those who joined, from 30 minutes before the start until the end, and to its
+  supervisors and admins at any time (`rules.canSeeMeetingLink`). At that moment
+  everyone who joined is notified once, and again if the start moves.
+  Attendance, points, capacity and the men/women rule work as for any event:
+  a supervisor records who attended.
 - **Reports (بلاغ) and warnings (إنذار)**, kept apart as the master file decides:
   a member reports, a supervisor warns.
   - *Report*: from the event page ("أبلغ عن مشكلة") or Profile → "بلاغاتك".
@@ -106,7 +119,10 @@ The app follows the planning notes (`DESIGN.md`, `Screens.md`, `Data_Model.md`,
 Try the full loop: sign in as **خالد منصور** (supervisor), open **حملة نظافة السراج**
 (happening now) → roster → record start and finish for **أحمد سالم**. Then switch
 account to أحمد → My activity → confirm the hours. As خالد you can also propose
-an event (Events → اقترح فعالية); the demo has no admin, so it stays waiting.
+an event (Events → اقترح فعالية), in a place or online; the demo has no admin, so it stays waiting.
+The demo has two online events: **دروس تقوية في الرياضيات عن بُعد** starts
+20 minutes after the demo data is made, and أحمد, who joined it, sees its link;
+**حلقة تحفيظ للأخوات عن بُعد** is two days away, so مريم sees when its link opens.
 On the same roster, "سجّل إنذاراً" warns أحمد; as أحمد, Profile → إنذاراتك shows it
 and lets him appeal, and the event page's "أبلغ عن مشكلة" sends a report. With no
 admin in the demo, reports and appeals stay waiting.
@@ -226,7 +242,7 @@ API at the laptop's address, e.g. `http://192.168.1.20:3000`.
 
 | Command | What it does |
 |---|---|
-| `npm run check:api` | Sends the same cheats as `check:rules`, plus sign-in, notification and admin checks, to the API on a fresh in-memory database. Must report "All checks passed" twice. |
+| `npm run check:api` | Sends the same cheats as `check:rules`, plus sign-in, notification and admin checks, to the API on a fresh in-memory database. Must report "All checks passed" three times (the third suite, `check-online.ts`, covers online events). |
 | `npm run db:seed` | Empties the development (PGlite) database and reloads the demo data. Stop `npm run dev` first: only one process may open the PGlite folder, and a second one is refused. Refused for a `DATABASE_URL` database, whose demo data would include an admin whose phone is in the code; use `--reference` there. |
 | `npm run db:generate` | After changing `src/db/schema.ts`: writes the SQL migration into `drizzle/`. Commit it. |
 | `npm run typecheck` | Also fails if the database schema and `shared/types.ts` stop matching. |
@@ -252,7 +268,10 @@ How it fits together:
   Whoever proposed an event in the app is told when it is approved or turned
   down (with the admin's reason, if given). A member is told when a supervisor
   gives them a warning and when an admin decides on it, and whoever reported
-  something is told when an admin has looked at it.
+  something is told when an admin has looked at it. For an online event, those
+  who joined and its supervisors are told when its link opens, 30 minutes before
+  the start (once per start time; the same job as the auto-close sends it), and
+  a change says "now online", "new link" (without the link) or the new time.
 - Reports and warnings: `POST /api/reports` (with `GET /api/reports/form` for
   what the screen offers), `POST /api/events/:id/warnings/:userId` from the
   roster, `POST /api/warnings/:id/appeal`, and the member's own lists under

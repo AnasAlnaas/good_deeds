@@ -40,15 +40,28 @@ export interface Branch {
 // instead of publishing it. Like a draft, nobody but its creator sees it in the app.
 export type EventStatus = 'draft' | 'published' | 'running' | 'finished' | 'cancelled' | 'rejected';
 
+/** Owner's decision (2026-11-07): an event happens in a place or online. */
+export type LocationType = 'in_person' | 'online';
+export const MEETING_PLATFORMS = ['zoom', 'meet', 'teams', 'telegram', 'other'] as const;
+export type MeetingPlatform = (typeof MEETING_PLATFORMS)[number];
+
 export interface AppEvent {
   id: string;
   title: string;
   description: string;
   subtype: string;
   image_url: string | null;
-  lat: number;
-  lng: number;
-  address_text: string;
+  /** In a place (the address and the map pin are set) or online (the platform and the meeting link are). */
+  location_type: LocationType;
+  lat: number | null;
+  lng: number | null;
+  address_text: string | null;
+  meeting_platform: MeetingPlatform | null;
+  /**
+   * The online meeting's address. Never sent with the events list: the event's page
+   * gives it to those who may see it (rules.canSeeMeetingLink).
+   */
+  meeting_url: string | null;
   starts_at: string;
   ends_at: string;
   capacity: number;

@@ -10,14 +10,14 @@ import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
 import { Card, Chip, Field, Row, SectionTitle } from '@/components/ui';
 import type { EventDetail, EventFormMeta, EventProposal, ProposeEventResponse } from '@/data/api';
-import type { GenderCategory } from '@/data/types';
+import { type GenderCategory, MEETING_PLATFORMS, type MeetingPlatform } from '@/data/types';
 import { count, fmt } from '@/i18n/format';
 import { goBack } from '@/lib/goBack';
 import { useApp, useMe } from '@/state/app';
 import { useAction } from '@/state/useAction';
 import { classIcon, className, EVENT_CLASSES } from '@/theme/classes';
 import { colors, space, touch } from '@/theme/tokens';
-import { LESSON_BODY_MAX, LESSON_TITLE_MAX, MAX_LESSONS } from '../../../shared/rules';
+import { ADDRESS_MAX, cleanPlace, LESSON_BODY_MAX, LESSON_TITLE_MAX, MAX_LESSONS, MEETING_URL_MAX } from '../../../shared/rules';
 
 // The event form of the app: proposing an event (level 5, or a supervisor),
 // and the proposer editing it while it waits for an admin (`editing`). An
@@ -26,7 +26,14 @@ import { LESSON_BODY_MAX, LESSON_TITLE_MAX, MAX_LESSONS } from '../../../shared/
 const TRIPOLI: LatLng = { lat: 32.8872, lng: 13.1913 };
 const HOUR = 3_600_000;
 
-type Values = Omit<EventProposal, 'capacity'>;
+/** The form keeps both kinds of place while one is chosen; rules.cleanPlace sends only the chosen one's. */
+type Values = Omit<EventProposal, 'capacity' | 'address_text' | 'lat' | 'lng' | 'meeting_platform' | 'meeting_url'> & {
+  address_text: string;
+  lat: number;
+  lng: number;
+  meeting_platform: MeetingPlatform;
+  meeting_url: string;
+};
 
 function blank(): Values {
   const start = new Date();
@@ -36,9 +43,12 @@ function blank(): Values {
     title: '',
     description: '',
     subtype: 'street_cleanup',
+    location_type: 'in_person',
     address_text: '',
     lat: TRIPOLI.lat,
     lng: TRIPOLI.lng,
+    meeting_platform: 'zoom',
+    meeting_url: '',
     starts_at: start.toISOString(),
     ends_at: new Date(start.getTime() + 3 * HOUR).toISOString(),
     gender_category: 'mixed',
@@ -52,9 +62,13 @@ function valuesOf(e: EventDetail): Values {
     title: e.title,
     description: e.description,
     subtype: e.subtype,
-    address_text: e.address_text,
-    lat: e.lat,
-    lng: e.lng,
+    location_type: e.location_type,
+    address_text: e.address_text ?? '',
+    lat: e.lat ?? TRIPOLI.lat,
+    lng: e.lng ?? TRIPOLI.lng,
+    meeting_platform: e.meeting_platform ?? 'zoom',
+    // The proposer supervises their event, so its page gives them the link.
+    meeting_url: e.meeting_url ?? '',
     starts_at: e.starts_at,
     ends_at: e.ends_at,
     gender_category: e.gender_category,
@@ -73,6 +87,8 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
   const [mapTouched, setMapTouched] = useState(false);
   const [done, setDone] = useState<ProposeEventResponse | null>(null);
   const set = <K extends keyof typeof v>(key: K, value: (typeof v)[K]) => setV((prev) => ({ ...prev, [key]: value }));
+  // Where the map opens: the event's pin, or the city. Kept fixed so moving the map does not re-centre it.
+  const [startPin] = useState<LatLng>(() => ({ lat: v.lat, lng: v.lng }));
   const onPlace = useCallback((p: LatLng) => setV((prev) => ({ ...prev, lat: p.lat, lng: p.lng })), []);
 
   // Only a waiting proposal is edited, so an edit never publishes; and it is one of those waiting, not one more.
@@ -86,10 +102,11 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
   const today = new Date(now);
   today.setHours(0, 0, 0, 0);
 
+  const place = cleanPlace(v);
   const valid =
     v.title.trim().length >= 3 &&
     v.description.trim().length > 0 &&
-    v.address_text.trim().length > 0 &&
+    place !== null &&
     starts.getTime() > now &&
     ends.getTime() > starts.getTime() &&
     Number.isInteger(seats) &&
@@ -110,11 +127,12 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
       return;
     }
     setInvalid(false);
+    if (!place) return;
     const body: EventProposal = {
       ...v,
+      ...place,
       title: v.title.trim(),
       description: v.description.trim(),
-      address_text: v.address_text.trim(),
       capacity: seats,
       terms: v.terms.map((x) => x.trim()),
       lessons: v.lessons.map((l) => ({ title: l.title.trim(), body: l.body.trim() })),
@@ -213,11 +231,47 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
       </Txt>
 
       <SectionTitle>{s.newEvent.place}</SectionTitle>
-      <Field label={s.newEvent.address} placeholder={s.newEvent.addressPlaceholder} value={v.address_text} maxLength={200} onChangeText={(t) => set('address_text', t)} />
       <Txt variant="caption" color={colors.inkMuted}>
-        {s.newEvent.mapHint}
+        {s.newEvent.locationType}
       </Txt>
-      <LocationPicker value={editing ? { lat: editing.lat, lng: editing.lng } : TRIPOLI} onChange={onPlace} onTouching={setMapTouched} />
+      <Row>
+        <Chip label={s.newEvent.inPerson} icon="location-outline" selected={v.location_type === 'in_person'} onPress={() => set('location_type', 'in_person')} />
+        <Chip label={s.newEvent.online} icon="videocam-outline" selected={v.location_type === 'online'} onPress={() => set('location_type', 'online')} />
+      </Row>
+      {v.location_type === 'in_person' ? (
+        <>
+          <Field label={s.newEvent.address} placeholder={s.newEvent.addressPlaceholder} value={v.address_text} maxLength={ADDRESS_MAX} onChangeText={(t) => set('address_text', t)} />
+          <Txt variant="caption" color={colors.inkMuted}>
+            {s.newEvent.mapHint}
+          </Txt>
+          <LocationPicker value={startPin} onChange={onPlace} onTouching={setMapTouched} />
+        </>
+      ) : (
+        <>
+          <Txt variant="caption" color={colors.inkMuted}>
+            {s.newEvent.platform}
+          </Txt>
+          <Row>
+            {MEETING_PLATFORMS.map((p) => (
+              <Chip key={p} label={s.platforms[p]} selected={v.meeting_platform === p} onPress={() => set('meeting_platform', p)} />
+            ))}
+          </Row>
+          <Field
+            label={s.newEvent.meetingUrl}
+            placeholder={s.newEvent.meetingUrlPlaceholder}
+            value={v.meeting_url}
+            maxLength={MEETING_URL_MAX}
+            ltr
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+            onChangeText={(t) => set('meeting_url', t.trim())}
+          />
+          <Txt variant="caption" color={colors.inkMuted}>
+            {s.newEvent.meetingUrlHint}
+          </Txt>
+        </>
+      )}
 
       <SectionTitle>{s.newEvent.time}</SectionTitle>
       <DateTimeField label={s.newEvent.starts} value={starts} minimumDate={today} onChange={setStart} />

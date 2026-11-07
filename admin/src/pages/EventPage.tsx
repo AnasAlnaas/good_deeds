@@ -82,14 +82,26 @@ export function EventPage() {
           <p>{e.description}</p>
           <dl className="facts">
             <dt>{t.event.when}</dt>
-            <dd>{range(e.starts_at, e.ends_at)}</dd>
-            <dt>{t.event.where}</dt>
             <dd>
-              {e.address_text} ·{' '}
-              <a href={`https://www.openstreetmap.org/?mlat=${e.lat}&mlon=${e.lng}#map=17/${e.lat}/${e.lng}`} target="_blank" rel="noreferrer">
-                {t.event.openMap}
-              </a>
+              {range(e.starts_at, e.ends_at)}
+              {e.location_type === 'online' && ` (${t.tripoliTime})`}
             </dd>
+            <dt>{t.event.where}</dt>
+            {e.location_type === 'online' ? (
+              <dd>
+                {t.online} · {t.platforms[e.meeting_platform ?? 'other']} ·{' '}
+                <a href={e.meeting_url ?? undefined} target="_blank" rel="noreferrer noopener" dir="ltr">
+                  {e.meeting_url}
+                </a>
+              </dd>
+            ) : (
+              <dd>
+                {e.address_text} ·{' '}
+                <a href={`https://www.openstreetmap.org/?mlat=${e.lat}&mlon=${e.lng}#map=17/${e.lat}/${e.lng}`} target="_blank" rel="noreferrer">
+                  {t.event.openMap}
+                </a>
+              </dd>
+            )}
             <dt>{t.event.type}</dt>
             <dd>
               {EVENT_CLASSES.find((k) => k.id === classOf(e.subtype))?.name_ar} · {t.subtype[e.subtype] ?? e.subtype} ·{' '}

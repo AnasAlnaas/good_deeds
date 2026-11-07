@@ -3,7 +3,8 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 
 import type { AdminEventDetail, AdminMeta, EventInput } from '../../../shared/admin-api';
-import type { GenderCategory } from '../../../shared/types';
+import { ADDRESS_MAX, cleanPlace, MEETING_URL_MAX } from '../../../shared/rules';
+import { type GenderCategory, type LocationType, MEETING_PLATFORMS, type MeetingPlatform } from '../../../shared/types';
 import { api } from '../api';
 import { fill, fromLocalInput, toLocalInput } from '../format';
 import { LESSON_BODY_MAX, LESSON_TITLE_MAX, MAX_LESSONS } from '../../../shared/rules';
@@ -33,9 +34,12 @@ function initial(existing: AdminEventDetail | undefined): EventInput {
       title: '',
       description: '',
       subtype: 'street_cleanup',
-      address_text: '',
-      lat: TRIPOLI.lat,
-      lng: TRIPOLI.lng,
+      location_type: 'in_person',
+      address_text: null,
+      lat: null,
+      lng: null,
+      meeting_platform: null,
+      meeting_url: null,
       starts_at: start.toISOString(),
       ends_at: new Date(start.getTime() + 3 * 3_600_000).toISOString(),
       capacity: 20,
@@ -50,9 +54,12 @@ function initial(existing: AdminEventDetail | undefined): EventInput {
     title: e.title,
     description: e.description,
     subtype: e.subtype,
+    location_type: e.location_type,
     address_text: e.address_text,
     lat: e.lat,
     lng: e.lng,
+    meeting_platform: e.meeting_platform,
+    meeting_url: e.meeting_url,
     starts_at: e.starts_at,
     ends_at: e.ends_at,
     capacity: e.capacity,
@@ -63,10 +70,34 @@ function initial(existing: AdminEventDetail | undefined): EventInput {
   };
 }
 
+/** The form keeps both kinds of place while one is chosen; rules.cleanPlace sends only the chosen one's. */
+interface PlaceDraft {
+  location_type: LocationType;
+  address_text: string;
+  lat: number;
+  lng: number;
+  meeting_platform: MeetingPlatform;
+  meeting_url: string;
+}
+
+function placeDraft(v: EventInput): PlaceDraft {
+  return {
+    location_type: v.location_type,
+    address_text: v.address_text ?? '',
+    lat: v.lat ?? TRIPOLI.lat,
+    lng: v.lng ?? TRIPOLI.lng,
+    meeting_platform: v.meeting_platform ?? 'zoom',
+    meeting_url: v.meeting_url ?? '',
+  };
+}
+
 function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail }) {
   const navigate = useNavigate();
   const { run, busy, error } = useAction();
   const [v, setV] = useState<EventInput>(() => initial(existing));
+  const [place, setPlace] = useState<PlaceDraft>(() => placeDraft(initial(existing)));
+  const setPlaceField = <K extends keyof PlaceDraft>(key: K, value: PlaceDraft[K]) => setPlace((prev) => ({ ...prev, [key]: value }));
+  const cleaned = cleanPlace(place);
   const [peopleFilter, setPeopleFilter] = useState('');
   const [invalid, setInvalid] = useState(false);
   const set = <K extends keyof EventInput>(key: K, value: EventInput[K]) => setV((prev) => ({ ...prev, [key]: value }));
@@ -81,7 +112,7 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
   const valid =
     v.title.trim().length >= 3 &&
     v.description.trim().length > 0 &&
-    v.address_text.trim().length > 0 &&
+    cleaned !== null &&
     !!v.starts_at &&
     !!v.ends_at &&
     Date.parse(v.ends_at) > Date.parse(v.starts_at) &&
@@ -90,13 +121,14 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
     v.lessons.every((l) => l.title.trim().length > 0 && l.body.trim().length > 0);
 
   const submit = async (publish: boolean) => {
-    if (!valid) {
+    if (!valid || !cleaned) {
       setInvalid(true);
       return;
     }
     setInvalid(false);
     const body = {
       ...v,
+      ...cleaned,
       terms: v.terms.map((x) => x.trim()),
       lessons: v.lessons.map((l) => ({ title: l.title.trim(), body: l.body.trim() })),
     };
@@ -157,23 +189,58 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
 
       <section className="card">
         <h2>{t.form.place}</h2>
-        <Field label={t.form.address}>
-          <input value={v.address_text} maxLength={200} onChange={(e) => set('address_text', e.target.value)} />
-        </Field>
-        <div className="fields-2">
-          <Field label={t.form.lat}>
-            <input type="number" step="any" dir="ltr" value={v.lat} onChange={(e) => set('lat', Number(e.target.value))} />
-          </Field>
-          <Field label={t.form.lng}>
-            <input type="number" step="any" dir="ltr" value={v.lng} onChange={(e) => set('lng', Number(e.target.value))} />
-          </Field>
+        <div className="row" role="radiogroup" aria-label={t.form.locationType}>
+          {(['in_person', 'online'] as const).map((kind) => (
+            <label key={kind} className="check">
+              <input type="radio" name="location_type" checked={place.location_type === kind} onChange={() => setPlaceField('location_type', kind)} />
+              <span>{t.form.locationTypes[kind]}</span>
+            </label>
+          ))}
         </div>
-        <p className="small muted">
-          {t.form.placeHint}{' '}
-          <a href={`https://www.openstreetmap.org/?mlat=${v.lat}&mlon=${v.lng}#map=17/${v.lat}/${v.lng}`} target="_blank" rel="noreferrer">
-            {t.event.openMap}
-          </a>
-        </p>
+        {place.location_type === 'in_person' ? (
+          <>
+            <Field label={t.form.address}>
+              <input value={place.address_text} maxLength={ADDRESS_MAX} onChange={(e) => setPlaceField('address_text', e.target.value)} />
+            </Field>
+            <div className="fields-2">
+              <Field label={t.form.lat}>
+                <input type="number" step="any" dir="ltr" value={place.lat} onChange={(e) => setPlaceField('lat', Number(e.target.value))} />
+              </Field>
+              <Field label={t.form.lng}>
+                <input type="number" step="any" dir="ltr" value={place.lng} onChange={(e) => setPlaceField('lng', Number(e.target.value))} />
+              </Field>
+            </div>
+            <p className="small muted">
+              {t.form.placeHint}{' '}
+              <a href={`https://www.openstreetmap.org/?mlat=${place.lat}&mlon=${place.lng}#map=17/${place.lat}/${place.lng}`} target="_blank" rel="noreferrer">
+                {t.event.openMap}
+              </a>
+            </p>
+          </>
+        ) : (
+          <>
+            <Field label={t.form.platform}>
+              <select value={place.meeting_platform} onChange={(e) => setPlaceField('meeting_platform', e.target.value as MeetingPlatform)}>
+                {MEETING_PLATFORMS.map((p) => (
+                  <option key={p} value={p}>
+                    {t.platforms[p]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label={t.form.meetingUrl} hint={t.form.meetingUrlHint}>
+              <input
+                type="url"
+                dir="ltr"
+                inputMode="url"
+                placeholder="https://zoom.us/j/…"
+                value={place.meeting_url}
+                maxLength={MEETING_URL_MAX}
+                onChange={(e) => setPlaceField('meeting_url', e.target.value.trim())}
+              />
+            </Field>
+          </>
+        )}
       </section>
 
       <section className="card">

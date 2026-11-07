@@ -5,7 +5,7 @@
 // Build_Plan.md asks for 15 REAL past events of the association before phase 2;
 // these are realistic stand-ins until those are collected.
 
-import type { AppEvent, Attendance, Db, GenderCategory, User } from './types';
+import type { AppEvent, Attendance, Db, GenderCategory, MeetingPlatform, User } from './types';
 import { BASE_POINTS_BY_SUBTYPE, LEVELS } from './placeholders';
 import { pointsForAttendance } from './rules';
 
@@ -16,7 +16,8 @@ import { pointsForAttendance } from './rules';
 // 6: notices have reactions.
 // 7: a notice is an announcement or a question, each with its own reactions.
 // 8: events have a learning corner (lessons read before joining).
-export const SEED_VERSION = 8;
+// 9: online events (a platform and a meeting link instead of a place).
+export const SEED_VERSION = 9;
 
 export const DEMO_ACCOUNTS = {
   participant: 'u_ahmad',
@@ -105,9 +106,12 @@ interface EventSpec {
   title: string;
   description: string;
   subtype: string;
-  address: string;
-  lat: number;
-  lng: number;
+  /** In a place: its address and pin. */
+  address?: string;
+  lat?: number;
+  lng?: number;
+  /** Online: the platform and the meeting link instead. */
+  online?: { platform: MeetingPlatform; url: string };
   start: Date;
   end: Date;
   capacity: number;
@@ -237,6 +241,21 @@ export function buildSeed(nowMs: number): Db {
       start: day(-2, 9), end: day(-2, 12), capacity: 30, gender: 'mixed',
       organizers: ['u_khaled'], joined: ['u_ahmad', 'u_mariam'],
     },
+    // Online: the link opened (it starts within half an hour), and two weeks ahead.
+    {
+      id: 'e16', title: 'دروس تقوية في الرياضيات عن بُعد', subtype: 'tutoring',
+      description: 'حصة مراجعة لطلاب الشهادة الإعدادية عبر Zoom. يشرح المتطوع ويجيب عن أسئلة الطلاب.',
+      online: { platform: 'zoom', url: 'https://zoom.us/j/1234567890' },
+      start: minutes(20), end: minutes(110), capacity: 15, gender: 'mixed',
+      organizers: ['u_khaled'], joined: ['u_ahmad'],
+    },
+    {
+      id: 'e17', title: 'حلقة تحفيظ للأخوات عن بُعد', subtype: 'quran_circle',
+      description: 'حلقة أسبوعية لمراجعة الحفظ عبر Google Meet، تديرها مشرفة.',
+      online: { platform: 'meet', url: 'https://meet.google.com/abc-defg-hij' },
+      start: day(2, 20), end: day(2, 21, 30), capacity: 25, gender: 'female',
+      organizers: ['u_fatima'], joined: ['u_mariam'],
+    },
   ];
 
   const users: User[] = PEOPLE.map(([id, name, gender, role], i) => ({
@@ -283,9 +302,12 @@ export function buildSeed(nowMs: number): Db {
       description: s.description,
       subtype: s.subtype,
       image_url: null,
-      lat: s.lat,
-      lng: s.lng,
-      address_text: s.address,
+      location_type: s.online ? 'online' : 'in_person',
+      lat: s.lat ?? null,
+      lng: s.lng ?? null,
+      address_text: s.address ?? null,
+      meeting_platform: s.online?.platform ?? null,
+      meeting_url: s.online?.url ?? null,
       starts_at: iso(s.start),
       ends_at: iso(s.end),
       capacity: s.capacity,

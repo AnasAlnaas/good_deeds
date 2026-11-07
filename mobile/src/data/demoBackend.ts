@@ -55,7 +55,8 @@ function noticeItem(db: Db, me: User, n: EventNotice): EventNoticeItem {
 }
 
 function summary(db: Db, me: User, e: AppEvent, now: number): EventSummary {
-  const { description, status, terms_locked_at, created_by, created_at, ...shown } = e;
+  // The meeting link stays off the list, as on the server.
+  const { description, status, terms_locked_at, created_by, created_at, meeting_url, ...shown } = e;
   return {
     ...shown,
     status: server.effectiveStatus(e, now),
@@ -73,7 +74,7 @@ function item(db: Db, me: User, a: Attendance): AttendanceItem {
   const recorder = server.getUser(db, a.recorded_by);
   return {
     attendance: a,
-    event: { id: e.id, title: e.title, address_text: e.address_text, starts_at: e.starts_at, ends_at: e.ends_at, base_points: e.base_points },
+    event: { id: e.id, title: e.title, location_type: e.location_type, address_text: e.address_text, meeting_platform: e.meeting_platform, starts_at: e.starts_at, ends_at: e.ends_at, base_points: e.base_points },
     recorded_by: recorder ? publicUser(me, recorder) : null,
     points: server.pointsForAttendance(db, a),
   };
@@ -182,6 +183,10 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
           ...summary(db, me, e, now),
           description: e.description,
           terms_locked_at: e.terms_locked_at,
+          meeting_url: rules.canSeeMeetingLink({ event: e, canManage: rules.canManageEvent(me, server.isOrganizer(db, id, me.id)), registration: reg, now })
+            ? e.meeting_url
+            : null,
+          meeting_link_opens_at: e.location_type === 'online' ? rules.meetingLinkOpensAt(e) : null,
           terms: server.eventTerms(db, id),
           lessons: lessonItems(db, me.id, id),
           participants: server.joinedUsers(db, id).map((u) => publicUser(me, u)),

@@ -7,6 +7,7 @@ import { buildSeed } from '../../shared/demo-seed';
 import { createApp } from '../src/create-app';
 import { openDatabase } from '../src/db/client';
 import { DEV_ADMIN, seedDemo } from '../src/db/seed';
+import { closeDueAndNotify } from '../src/notify';
 import type { PushMessage } from '../src/push';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -26,7 +27,7 @@ export async function startHarness(start: number) {
   await seedDemo(conn.db, start);
   const seed = buildSeed(start);
   const people = [...seed.users, DEV_ADMIN];
-  const app = createApp({
+  const deps: Parameters<typeof createApp>[0] = {
     db: conn.db,
     now: () => clock,
     jwtSecret: 'check-secret',
@@ -46,7 +47,8 @@ export async function startHarness(start: number) {
     adminPhones: ['+218919990009'],
     // A request says where it comes from with this header; without it, the limits per address are off.
     clientIp: (c) => c.req.header('X-Check-Address'),
-  });
+  };
+  const app = createApp(deps);
 
   async function call(method: string, path: string, token?: string, body?: unknown, extra: Record<string, string> = {}): Promise<Res> {
     const headers: Record<string, string> = { ...extra };
@@ -118,6 +120,8 @@ export async function startHarness(start: number) {
     /** Waits for the work that runs after a response (notifications). */
     settle: () => Promise.all(background.splice(0)),
     clock: () => clock,
+    /** What the server's timer does every minute: closes attendance left open, and sends the meeting links that opened. */
+    tick: () => closeDueAndNotify(deps),
     setClock: (t: number) => void (clock = t),
     async done() {
       await conn.close();
