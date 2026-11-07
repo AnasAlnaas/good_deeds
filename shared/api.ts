@@ -14,6 +14,8 @@ import type {
   Gender,
   GenderCategory,
   Level,
+  LocationType,
+  MeetingPlatform,
   NoticeKind,
   NoticeReactionKind,
   Registration,
@@ -130,7 +132,7 @@ export interface LoginResponse {
 
 /** GET /api/events (one per event) */
 export interface EventSummary
-  extends Omit<AppEvent, 'description' | 'status' | 'terms_locked_at' | 'created_by' | 'created_at'> {
+  extends Omit<AppEvent, 'description' | 'status' | 'terms_locked_at' | 'created_by' | 'created_at' | 'meeting_url'> {
   /** Computed with the server's clock: published → running → finished. */
   status: EventStatus;
   joined_count: number;
@@ -153,9 +155,16 @@ export interface EventProposal {
   title: string;
   description: string;
   subtype: string;
-  address_text: string;
-  lat: number;
-  lng: number;
+  /**
+   * In a place: `address_text`, `lat` and `lng`. Online: `meeting_platform` and
+   * `meeting_url` (https). The other kind's fields are null (rules.cleanPlace).
+   */
+  location_type: LocationType;
+  address_text: string | null;
+  lat: number | null;
+  lng: number | null;
+  meeting_platform: MeetingPlatform | null;
+  meeting_url: string | null;
   starts_at: string; // ISO
   ends_at: string; // ISO
   capacity: number;
@@ -186,6 +195,10 @@ export interface EventFormMeta {
 export interface EventDetail extends EventSummary {
   description: string;
   terms_locked_at: string | null;
+  /** An online event's link, for those who may see it now (rules.canSeeMeetingLink); otherwise null. */
+  meeting_url: string | null;
+  /** An online event: when those who joined see its link (rules.meetingLinkOpensAt). null in a place. */
+  meeting_link_opens_at: string | null;
   terms: EventTerm[];
   participants: PublicUser[];
   my_registration: Registration | null;
@@ -278,7 +291,7 @@ export interface AttendanceResponse {
 /** GET /api/me/attendance (a list), GET /api/attendance/:id */
 export interface AttendanceItem {
   attendance: Attendance;
-  event: Pick<AppEvent, 'id' | 'title' | 'address_text' | 'starts_at' | 'ends_at' | 'base_points'>;
+  event: Pick<AppEvent, 'id' | 'title' | 'location_type' | 'address_text' | 'meeting_platform' | 'starts_at' | 'ends_at' | 'base_points'>;
   recorded_by: PublicUser | null;
   /** What these hours are worth by the points formula: earned once confirmed. */
   points: number;

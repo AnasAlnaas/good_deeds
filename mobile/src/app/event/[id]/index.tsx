@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import { useEffect } from 'react';
+import { Linking, StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/components/Avatar';
 import { Button } from '@/components/Button';
@@ -13,6 +14,7 @@ import { useEvent, useMeSummary, useUpdateEvent } from '@/data/queries';
 import { day, dayTimeRange, fmt, time } from '@/i18n/format';
 import * as dialog from '@/lib/dialog';
 import { openDirections } from '@/lib/directions';
+import { placeLabel, withZone } from '@/lib/place';
 import { goBack } from '@/lib/goBack';
 import { useApp } from '@/state/app';
 import { useAction } from '@/state/useAction';
@@ -27,6 +29,16 @@ export default function EventDetail() {
   const query = useEvent(id);
   const summary = useMeSummary();
   const updateEvent = useUpdateEvent(id);
+  // An open page asks again when the meeting link opens, so it appears without a pull.
+  const opensAt = query.data?.meeting_url ? null : query.data?.meeting_link_opens_at;
+  const { refetch } = query;
+  useEffect(() => {
+    if (!opensAt) return;
+    const wait = new Date(opensAt).getTime() - Date.now();
+    if (wait <= 0 || wait > 24 * 3_600_000) return;
+    const timer = setTimeout(() => void refetch(), wait + 1000);
+    return () => clearTimeout(timer);
+  }, [opensAt, refetch]);
   if (!query.data) {
     return (
       <Screen back>
@@ -44,6 +56,16 @@ export default function EventDetail() {
   const organizer = event.i_organize;
   const forMe = event.can_join_category;
   const open = status === 'published' || status === 'running';
+  const online = event.location_type === 'online';
+  // Why there is no link yet (rules.canSeeMeetingLink): the server sends it once this person may see it.
+  const linkNote =
+    status === 'finished'
+      ? s.event.linkOver
+      : reg?.status === 'joined' && event.meeting_link_opens_at
+        ? fmt(s.event.linkOpensAt, { when: `${day(event.meeting_link_opens_at, s, now)} ${time(event.meeting_link_opens_at, s)}` })
+        : s.event.linkForJoined;
+  const openMeeting = (url: string) =>
+    Linking.openURL(url).catch(() => dialog.notify(s.event.openMeeting, fmt(s.event.linkCantOpen, { url })));
   // Someone who was at the event may report a problem there (a report about anything else starts from the profile).
   const canReport =
     !!summary.data?.can_report && (organizer || reg?.status === 'joined') && status !== 'draft' && status !== 'rejected';
@@ -170,14 +192,27 @@ export default function EventDetail() {
       <Txt>{event.description}</Txt>
 
       <Card>
-        <InfoRow icon="time-outline" label={s.event.when} value={dayTimeRange(event.starts_at, event.ends_at, s, now)} />
-        <InfoRow icon="location-outline" label={s.event.where} value={event.address_text} />
+        <InfoRow icon="time-outline" label={s.event.when} value={withZone(dayTimeRange(event.starts_at, event.ends_at, s, now), event, s)} />
+        <InfoRow icon={online ? 'videocam-outline' : 'location-outline'} label={s.event.where} value={placeLabel(event, s)} />
         <InfoRow
           icon="people-outline"
           label={s.event.participants}
           value={full ? s.event.full : fmt(s.event.seats, { joined: event.joined_count, capacity: event.capacity })}
         />
-        <Button variant="accent" icon="navigate" label={s.event.directions} onPress={() => openDirections(event)} />
+        {!online ? (
+          <Button variant="accent" icon="navigate" label={s.event.directions} onPress={() => openDirections(event)} />
+        ) : event.meeting_url ? (
+          <>
+            <Button variant="accent" icon="videocam" label={s.event.openMeeting} onPress={() => openMeeting(event.meeting_url!)} />
+            <Txt variant="caption" color={colors.inkMuted} selectable numberOfLines={2}>
+              {event.meeting_url}
+            </Txt>
+          </>
+        ) : (
+          <Txt variant="caption" color={colors.inkMuted}>
+            {linkNote}
+          </Txt>
+        )}
       </Card>
 
       {event.notices && (

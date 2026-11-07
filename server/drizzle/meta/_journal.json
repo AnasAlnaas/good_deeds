@@ -78,6 +78,13 @@
       "when": 1793828571896,
       "tag": "0010_email",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794077438120,
+      "tag": "0011_online_events",
+      "breakpoints": true
     }
   ]
 }

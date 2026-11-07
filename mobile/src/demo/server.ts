@@ -137,9 +137,7 @@ export function proposeEvent(db: Db, userId: string, input: EventProposal, now: 
     description: input.description,
     subtype: input.subtype,
     image_url: null,
-    lat: input.lat,
-    lng: input.lng,
-    address_text: input.address_text,
+    ...placeOf(input),
     starts_at: input.starts_at,
     ends_at: input.ends_at,
     capacity: input.capacity,
@@ -154,6 +152,13 @@ export function proposeEvent(db: Db, userId: string, input: EventProposal, now: 
   next.event_organizers.push({ event_id: event.id, user_id: userId, added_by: null });
   writeTerms(next, event.id, input, at);
   return { db: next, event };
+}
+
+/** Where the event happens, as the server checks it (the form only sends a place that holds together). */
+function placeOf(input: EventProposal) {
+  const place = rules.cleanPlace(input);
+  if (!place) throw new Error('The event form sent a place that does not hold together.');
+  return place;
 }
 
 /** Replaces an event's terms (in `next`, already a copy). */
@@ -184,9 +189,7 @@ export function editProposal(db: Db, userId: string, eventId: string, input: Eve
     title: input.title,
     description: input.description,
     subtype: input.subtype,
-    lat: input.lat,
-    lng: input.lng,
-    address_text: input.address_text,
+    ...placeOf(input),
     starts_at: input.starts_at,
     ends_at: input.ends_at,
     capacity: input.capacity,

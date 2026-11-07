@@ -42,7 +42,7 @@ import {
   notifyWarningDecided,
 } from '../notify';
 import { issueResetCode } from './auth';
-import { assertIdsExist, eventInput, isoTime, writeLinks, writeTerms } from './event-input';
+import { assertIdsExist, createEventInput, eventInput, isoTime, placeOf, writeLinks, writeTerms } from './event-input';
 
 const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
   if (c.var.user.role !== 'admin') throw new AdminError('forbidden');
@@ -51,7 +51,6 @@ const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
 
 // ---------- request bodies ----------
 
-const createEventBody = eventInput.and(z.object({ publish: z.boolean() }));
 const roleBody = z.object({ role: z.enum(['member', 'supervisor', 'admin']) });
 const statusBody = z.object({ note: z.string().trim().max(500).optional() });
 const resolveBody = z.object({
@@ -354,7 +353,7 @@ export const adminRoutes = new Hono<AppEnv>()
   .post('/events', async (c) => {
     const { db, now } = c.var.deps;
     const me = c.var.user;
-    const body = await readBody(c, createEventBody);
+    const body = await readBody(c, createEventInput);
     const t = new Date(now());
     const id = newId();
     await db.transaction(async (tx) => {
@@ -366,9 +365,7 @@ export const adminRoutes = new Hono<AppEnv>()
         description: body.description,
         subtype: body.subtype,
         image_url: null,
-        lat: body.lat,
-        lng: body.lng,
-        address_text: body.address_text,
+        ...placeOf(body),
         starts_at: new Date(body.starts_at),
         ends_at: new Date(body.ends_at),
         capacity: body.capacity,
@@ -404,8 +401,10 @@ export const adminRoutes = new Hono<AppEnv>()
         hasAttendance: await hasAttendance(tx, id),
         now: t,
       });
-      const fields = ['title', 'description', 'subtype', 'address_text', 'lat', 'lng', 'capacity', 'gender_category'] as const;
+      const fields = ['title', 'description', 'subtype', 'capacity', 'gender_category'] as const;
       const changed: string[] = fields.filter((k) => body[k] !== event[k]);
+      const placeMoved = rules.placeChanged(event, body);
+      if (placeMoved) changed.push('place');
       if (rules.toMs(body.starts_at) !== rules.toMs(event.starts_at)) changed.push('starts_at');
       if (rules.toMs(body.ends_at) !== rules.toMs(event.ends_at)) changed.push('ends_at');
       await tx
@@ -416,9 +415,7 @@ export const adminRoutes = new Hono<AppEnv>()
           subtype: body.subtype,
           // An event keeps its points unless its type changes.
           base_points: body.subtype === event.subtype ? event.base_points : BASE_POINTS_BY_SUBTYPE[body.subtype],
-          address_text: body.address_text,
-          lat: body.lat,
-          lng: body.lng,
+          ...placeOf(body),
           starts_at: new Date(body.starts_at),
           ends_at: new Date(body.ends_at),
           capacity: body.capacity,
@@ -435,13 +432,14 @@ export const adminRoutes = new Hono<AppEnv>()
         details: { title: body.title, changed: termsChanged ? [...changed, 'terms'] : changed },
         at: new Date(t),
       });
-      return { wasDraft: event.status === 'draft', changed };
+      return { wasDraft: event.status === 'draft', changed, placeMoved, wasOnline: event.location_type === 'online' };
     });
     // A draft has nobody to tell yet.
     if (!edit.wasDraft) {
       notifyEventChanged(c.var.deps, id, me.id, {
         time: edit.changed.includes('starts_at') || edit.changed.includes('ends_at'),
-        place: ['address_text', 'lat', 'lng'].some((k) => edit.changed.includes(k)),
+        place: edit.placeMoved,
+        wasOnline: edit.wasOnline,
       });
     }
     return c.body(null, 204);

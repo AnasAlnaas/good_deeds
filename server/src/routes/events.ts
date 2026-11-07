@@ -54,7 +54,7 @@ import { iso } from '../db/rows';
 import * as s from '../db/schema';
 import { type AppEnv, readBody } from '../http';
 import { notifyEventNotice, notifyHoursToConfirm, notifySupervisorAdded, notifyWarningGiven } from '../notify';
-import { proposalInput, writeLinks, writeTerms } from './event-input';
+import { placeOf, proposalInput, writeLinks, writeTerms } from './event-input';
 
 // `recorded_at`: the record was made on the phone without a connection, at that time (rules.decideRecordStart).
 const recordTimeBody = z.object({
@@ -102,7 +102,8 @@ async function summarize(db: Database, me: User, events: AppEvent[], now: number
   const iOrganize = new Set(organized.map((r) => r.event_id));
 
   return events.map((e) => {
-    const { description, status, terms_locked_at, created_by, created_at, ...shown } = e;
+    // The meeting link stays off the list: the event's page gives it to those who may see it.
+    const { description, status, terms_locked_at, created_by, created_at, meeting_url, ...shown } = e;
     return {
       ...shown,
       status: rules.effectiveStatus(e, now),
@@ -165,9 +166,7 @@ export const eventRoutes = new Hono<AppEnv>()
         description: body.description,
         subtype: body.subtype,
         image_url: null,
-        lat: body.lat,
-        lng: body.lng,
-        address_text: body.address_text,
+        ...placeOf(body),
         starts_at: new Date(body.starts_at),
         ends_at: new Date(body.ends_at),
         capacity: body.capacity,
@@ -215,9 +214,7 @@ export const eventRoutes = new Hono<AppEnv>()
           title: body.title,
           description: body.description,
           subtype: body.subtype,
-          lat: body.lat,
-          lng: body.lng,
-          address_text: body.address_text,
+          ...placeOf(body),
           starts_at: new Date(body.starts_at),
           ends_at: new Date(body.ends_at),
           capacity: body.capacity,
@@ -262,10 +259,15 @@ export const eventRoutes = new Hono<AppEnv>()
     const registration = await registrationOf(db, id, me.id);
     const organizer = await isOrganizer(db, id, me.id);
     const notices = rules.canReadNotices(me, registration, organizer) ? await noticeItems(db, me, id) : null;
+    const canManage = rules.canManageEvent(me, organizer);
+    const online = event.location_type === 'online';
+    const showLink = rules.canSeeMeetingLink({ event, canManage, registration, now: now() });
     return c.json<EventDetail>({
       ...summary,
       description: event.description,
       terms_locked_at: event.terms_locked_at,
+      meeting_url: showLink ? event.meeting_url : null,
+      meeting_link_opens_at: online ? rules.meetingLinkOpensAt(event) : null,
       terms: await termsOf(db, id),
       participants: (await joinedUsers(db, id)).map((u) => shownTo(me, u)),
       my_registration: registration ?? null,
@@ -273,7 +275,7 @@ export const eventRoutes = new Hono<AppEnv>()
       my_attendance: (await attendanceOf(db, id, me.id)) ?? null,
       supervisors: await supervisorsFor(db, me, id),
       notices,
-      can_manage: rules.canManageEvent(me, organizer),
+      can_manage: canManage,
     });
   })
 

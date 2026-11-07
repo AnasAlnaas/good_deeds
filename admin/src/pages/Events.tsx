@@ -54,7 +54,9 @@ export function Events() {
                 <tr key={e.id} className="clickable" onClick={() => navigate(`/events/${e.id}`)}>
                   <td>
                     <Link to={`/events/${e.id}`}>{e.title}</Link>
-                    <div className="small muted">{e.address_text}</div>
+                    <div className="small muted">
+                      {e.location_type === 'online' ? `${t.online} · ${t.platforms[e.meeting_platform ?? 'other']}` : e.address_text}
+                    </div>
                     {creator && creator.role !== 'admin' && <div className="small">{fill(t.events.proposedBy, { name: creator.full_name })}</div>}
                   </td>
                   <td className="small">{range(e.starts_at, e.ends_at)}</td>

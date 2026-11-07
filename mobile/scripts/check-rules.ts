@@ -132,9 +132,12 @@ const proposal = (over: Partial<EventProposal> = {}): EventProposal => ({
   title: 'تنظيف حديقة الحي',
   description: 'جمع المخلفات من الحديقة.',
   subtype: 'street_cleanup',
+  location_type: 'in_person',
   address_text: 'حديقة الحي، طرابلس',
   lat: 32.88,
   lng: 13.19,
+  meeting_platform: null,
+  meeting_url: null,
   starts_at: new Date(NOW + 72 * HOUR).toISOString(),
   ends_at: new Date(NOW + 75 * HOUR).toISOString(),
   capacity: 15,
@@ -382,6 +385,62 @@ console.log('\n— attendance kept on the phone with no connection');
   expectEqual('a finish for someone the server has working', [of('u_f1').attendance?.ended_at, of('u_f1').queued], [new Date(NOW - 10 * MIN).toISOString(), true]);
   expectEqual("another event's records stay out", of('u_f4').queued, false);
   expectEqual('people with nothing kept on the phone are as the server says', of('u_mariam'), { ...roster.participants.find((p) => p.user.id === 'u_mariam'), queued: false });
+}
+
+console.log('\n— online events');
+{
+  const MIN = 60_000;
+  const start = NOW + 2 * HOUR;
+  const event = {
+    location_type: 'online' as const,
+    meeting_url: 'https://zoom.us/j/1',
+    status: 'published' as const,
+    starts_at: new Date(start).toISOString(),
+    ends_at: new Date(start + HOUR).toISOString(),
+  };
+  type SeeArgs = Parameters<typeof rules.canSeeMeetingLink>[0];
+  const sees = (over: Partial<SeeArgs>) =>
+    rules.canSeeMeetingLink({ event, canManage: false, registration: { status: 'joined' }, now: start - 30 * MIN, ...over });
+  expectEqual('joined, half an hour before: the link shows', sees({}), true);
+  expectEqual('a minute earlier: not yet', sees({ now: start - 31 * MIN }), false);
+  expectEqual('not joined', sees({ registration: undefined }), false);
+  expectEqual('still accepting the terms', sees({ registration: { status: 'pending_terms' } }), false);
+  expectEqual('cancelled their place', sees({ registration: { status: 'cancelled' } }), false);
+  expectEqual('once it ends', sees({ now: start + HOUR }), false);
+  expectEqual('a cancelled event', sees({ event: { ...event, status: 'cancelled' } }), false);
+  expectEqual('its supervisor, any time', sees({ canManage: true, registration: undefined, now: NOW }), true);
+  expectEqual('an event in a place has none', sees({ event: { ...event, location_type: 'in_person' }, canManage: true }), false);
+
+  const clean = rules.cleanPlace;
+  expectEqual(
+    'online keeps only its link',
+    clean({ location_type: 'online', meeting_platform: 'meet', meeting_url: ' https://meet.google.com/a ', lat: 1, lng: 2, address_text: 'x' }),
+    { location_type: 'online', address_text: null, lat: null, lng: null, meeting_platform: 'meet', meeting_url: 'https://meet.google.com/a' },
+  );
+  expectEqual(
+    'in a place keeps only its address',
+    clean({ location_type: 'in_person', address_text: ' الحي ', lat: 32.9, lng: 13.2, meeting_platform: 'zoom', meeting_url: 'https://zoom.us/j/1' }),
+    { location_type: 'in_person', address_text: 'الحي', lat: 32.9, lng: 13.2, meeting_platform: null, meeting_url: null },
+  );
+  expectEqual(
+    'refused: no link, http, spaces, javascript:, a made-up platform, no address',
+    [
+      clean({ location_type: 'online', meeting_platform: 'zoom', meeting_url: '' }),
+      clean({ location_type: 'online', meeting_platform: 'zoom', meeting_url: 'http://zoom.us/j/1' }),
+      clean({ location_type: 'online', meeting_platform: 'zoom', meeting_url: 'https://zoom.us/j/1 2' }),
+      clean({ location_type: 'online', meeting_platform: 'zoom', meeting_url: 'javascript:alert(1)' }),
+      clean({ location_type: 'online', meeting_platform: 'skype', meeting_url: 'https://skype.com/x' }),
+      clean({ location_type: 'in_person', address_text: '  ', lat: 32.9, lng: 13.2 }),
+    ],
+    [null, null, null, null, null, null],
+  );
+  const e16 = db.events.find((e) => e.id === 'e16')!;
+  expectEqual('the demo has an online event', [e16.location_type, e16.lat, e16.meeting_platform], ['online', null, 'zoom']);
+  expectEqual(
+    'an online proposal in the demo',
+    server.proposeEvent(db, 'u_khaled', proposal({ location_type: 'online', address_text: null, lat: null, lng: null, meeting_platform: 'teams', meeting_url: 'https://teams.microsoft.com/l/x' }), NOW).event.meeting_url,
+    'https://teams.microsoft.com/l/x',
+  );
 }
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');

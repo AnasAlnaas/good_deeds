@@ -2,8 +2,10 @@
 // - "your hours wait for your confirmation", when a supervisor records a
 //   finish and when the scheduled job closes attendance left open;
 // - "your dispute was settled", when an admin decides on disputed hours;
-// - "an event was cancelled" / "its time or place changed", to the members
-//   who joined it and its supervisors;
+// - "an event was cancelled" / "its time or place changed" (for an online event:
+//   "it is now online" or "its link changed"), to the members who joined it and
+//   its supervisors;
+// - "the meeting link is open", to the same people, 30 minutes before an online event;
 // - "your event was approved" / "was not approved", to whoever proposed it in the app;
 // - "your photo was removed", when an admin removes an unsuitable profile photo;
 // - "a supervisor gave you a warning", and "your appeal was decided" / "the warning was withdrawn";
@@ -11,7 +13,9 @@
 // - a supervisor's notice to an event, to the members who joined it and its other supervisors;
 // - "you are now a supervisor of this event", to whoever was made one in the app.
 
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, lte, ne } from 'drizzle-orm';
+
+import { MEETING_LINK_OPENS_MINUTES } from '../../shared/rules';
 
 import { closeDueAttendance } from './db/queries';
 import * as s from './db/schema';
@@ -87,11 +91,71 @@ export function notifyHoursToConfirm(deps: AppDeps, attendanceIds: string[], rea
   );
 }
 
-/** The scheduled job, then a notification for each record it closed. */
+/** The scheduled job, then a notification for each record it closed; and the meeting links that just opened. */
 export async function closeDueAndNotify(deps: AppDeps) {
   const closed = await closeDueAttendance(deps.db, deps.now());
   notifyHoursToConfirm(deps, closed, 'auto_closed');
+  await remindMeetingLinks(deps);
   return closed.length;
+}
+
+// ---------- an online event's link is open ----------
+
+const LINK_OPEN = {
+  ar: {
+    title: 'رابط الفعالية متاح الآن',
+    body: 'تبدأ «{event}» بعد قليل ({time} بتوقيت طرابلس). افتح الفعالية في التطبيق لتجد رابط الدخول.',
+  },
+  en: {
+    title: 'The meeting link is open',
+    body: '"{event}" starts soon ({time} Tripoli time). Open the event in the app for the link.',
+  },
+};
+
+/**
+ * Online events whose link opened (rules.MEETING_LINK_OPENS_MINUTES before the
+ * start) and that start later: their people are told once for each start time.
+ * Claiming the reminder row first means two runs at once never both send it.
+ */
+export async function remindMeetingLinks(deps: AppDeps) {
+  const now = deps.now();
+  const due = await deps.db
+    .select({ id: s.events.id, title: s.events.title, starts_at: s.events.starts_at })
+    .from(s.events)
+    .where(
+      and(
+        eq(s.events.location_type, 'online'),
+        eq(s.events.status, 'published'),
+        gt(s.events.starts_at, new Date(now)),
+        lte(s.events.starts_at, new Date(now + MEETING_LINK_OPENS_MINUTES * 60_000)),
+      ),
+    );
+  for (const event of due) {
+    const [claimed] = await deps.db
+      .insert(s.meeting_link_reminders)
+      .values({ event_id: event.id, starts_at: event.starts_at, sent_at: new Date(now) })
+      .onConflictDoUpdate({
+        target: s.meeting_link_reminders.event_id,
+        set: { starts_at: event.starts_at, sent_at: new Date(now) },
+        setWhere: ne(s.meeting_link_reminders.starts_at, event.starts_at),
+      })
+      .returning({ event_id: s.meeting_link_reminders.event_id });
+    if (!claimed) continue;
+    send(deps, async () =>
+      (await peopleOfEvent(deps, event.id, '')).map((userId) => ({
+        userId,
+        text: (lang) => ({
+          title: LINK_OPEN[lang].title,
+          body: LINK_OPEN[lang].body.replace('{event}', event.title).replace('{time}', clockOf(event.starts_at, lang, deps.timeZone)),
+        }),
+        data: { type: 'meeting_link_open', event_id: event.id },
+      })),
+    );
+  }
+}
+
+function clockOf(at: Date, lang: Lang, timeZone: string) {
+  return new Intl.DateTimeFormat(lang === 'ar' ? 'ar-LY-u-nu-latn' : 'en-GB', { timeZone, hour: 'numeric', minute: '2-digit' }).format(at);
 }
 
 // ---------- a dispute settled ----------
@@ -134,6 +198,9 @@ const EVENT_NEWS = {
     time: 'تغيّر موعد «{event}». الموعد الجديد: {when}.',
     place: 'تغيّر مكان «{event}». المكان الجديد: {place}.',
     both: 'تغيّر موعد «{event}» ومكانها. الموعد الجديد: {when}، في {place}.',
+    link: 'تغيّر رابط «{event}» ({place}). تجد الرابط الجديد في صفحة الفعالية.',
+    timeAndLink: 'تغيّر موعد «{event}» ورابطها. الموعد الجديد: {when}، والرابط في صفحة الفعالية.',
+    online: 'أصبحت «{event}» فعالية عن بُعد ({place}). تجد الرابط في صفحة الفعالية قبل بدئها بنصف ساعة.',
   },
   en: {
     cancelledTitle: 'Event cancelled',
@@ -142,7 +209,18 @@ const EVENT_NEWS = {
     time: '"{event}" has a new time: {when}.',
     place: '"{event}" has a new place: {place}.',
     both: '"{event}" has a new time and place: {when}, at {place}.',
+    link: '"{event}" has a new meeting link ({place}). Find it on the event’s page.',
+    timeAndLink: '"{event}" has a new time and meeting link: {when}. The link is on the event’s page.',
+    online: '"{event}" is now held online ({place}). The link shows on the event’s page half an hour before it starts.',
   },
+};
+
+// Owner's decision (2026-11-07): online events say their times are Tripoli's.
+const TRIPOLI_TIME = { ar: ' بتوقيت طرابلس', en: ' Tripoli time' };
+
+const PLATFORM_NAMES = {
+  ar: { zoom: 'Zoom', meet: 'Google Meet', teams: 'Microsoft Teams', telegram: 'تيليجرام', other: 'عن بُعد' },
+  en: { zoom: 'Zoom', meet: 'Google Meet', teams: 'Microsoft Teams', telegram: 'Telegram', other: 'online' },
 };
 
 /** "الخميس 29 أكتوبر، 9:00 ص – 12:00 م" in the association's time zone, with Western digits. */
@@ -180,20 +258,37 @@ export function notifyEventCancelled(deps: AppDeps, eventId: string, actorId: st
 }
 
 /** Only a new time or place is worth a notification; a corrected title or description is not. */
-export function notifyEventChanged(deps: AppDeps, eventId: string, actorId: string, changed: { time: boolean; place: boolean }) {
+/** `wasOnline`: where the event was before the change (a move to online says so). */
+export function notifyEventChanged(
+  deps: AppDeps,
+  eventId: string,
+  actorId: string,
+  changed: { time: boolean; place: boolean; wasOnline: boolean },
+) {
   if (!changed.time && !changed.place) return;
-  const which = changed.time && changed.place ? 'both' : changed.time ? 'time' : 'place';
   send(deps, async () => {
     const [event] = await deps.db.select().from(s.events).where(eq(s.events.id, eventId));
     if (!event) return [];
+    const online = event.location_type === 'online';
+    const which: keyof typeof EVENT_NEWS.en = !changed.place
+      ? 'time'
+      : online && !changed.wasOnline
+        ? 'online'
+        : online
+          ? changed.time
+            ? 'timeAndLink'
+            : 'link'
+          : changed.time
+            ? 'both'
+            : 'place';
     return (await peopleOfEvent(deps, eventId, actorId)).map((userId) => ({
       userId,
       text: (lang) => ({
         title: EVENT_NEWS[lang].changedTitle,
         body: EVENT_NEWS[lang][which]
           .replace('{event}', event.title)
-          .replace('{when}', when(event.starts_at, event.ends_at, lang, deps.timeZone))
-          .replace('{place}', event.address_text),
+          .replace('{when}', when(event.starts_at, event.ends_at, lang, deps.timeZone) + (online ? TRIPOLI_TIME[lang] : ''))
+          .replace('{place}', online ? PLATFORM_NAMES[lang][event.meeting_platform ?? 'other'] : (event.address_text ?? '')),
       }),
       data: { type: 'event_changed', event_id: eventId },
     }));

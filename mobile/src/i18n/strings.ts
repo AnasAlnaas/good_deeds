@@ -141,6 +141,8 @@ const ar = {
     propose: 'اقترح فعالية',
     profile: 'حسابك',
     nav: 'أقسام التطبيق',
+    onlineBar: 'فعاليات عن بُعد: {n}',
+    onlineBarHint: 'لا تظهر على الخريطة. اعرضها في القائمة.',
   },
 
   events: {
@@ -153,6 +155,10 @@ const ar = {
     propose: 'اقترح فعالية',
     search: 'ابحث بالاسم أو المكان',
     noMatch: 'لا فعالية تطابق بحثك.',
+    where: 'أين تقام',
+    whereAll: 'الكل',
+    inPerson: 'في مكان',
+    online: 'عن بُعد',
   },
 
   newEvent: {
@@ -172,6 +178,13 @@ const ar = {
     address: 'العنوان',
     addressPlaceholder: 'مثلاً: حديقة الحي، الأندلس',
     mapHint: 'حرّك الخريطة حتى تقع العلامة على مكان الفعالية.',
+    locationType: 'أين تقام الفعالية؟',
+    inPerson: 'في مكان',
+    online: 'عن بُعد',
+    platform: 'المنصة',
+    meetingUrl: 'رابط الجلسة',
+    meetingUrlPlaceholder: 'https://zoom.us/j/…',
+    meetingUrlHint: 'يراه من انضم قبل بدء الفعالية بنصف ساعة، ويراه المشرفون دائماً. يبدأ بـ https://',
     time: 'الموعد',
     starts: 'تبدأ',
     ends: 'تنتهي',
@@ -183,7 +196,7 @@ const ar = {
     term: 'البند {n}',
     addTerm: 'أضف بنداً',
     removeTerm: 'احذف البند {n}',
-    invalid: 'أكمل ما يلزم: اسم الفعالية (3 أحرف فأكثر)، الوصف، العنوان، موعد قادم ينتهي بعد أن يبدأ، وعدد المقاعد.',
+    invalid: 'أكمل ما يلزم: اسم الفعالية (3 أحرف فأكثر)، الوصف، العنوان أو رابط الجلسة (يبدأ بـ https://)، موعد قادم ينتهي بعد أن يبدأ، وعدد المقاعد.',
     submit: 'قدّم الفعالية للاعتماد',
     submitAdmin: 'انشر الفعالية',
     doneTitle: 'قُدّمت فعاليتك للاعتماد',
@@ -196,6 +209,8 @@ const ar = {
     save: 'احفظ تعديلاتك',
   },
 
+  platforms: { zoom: 'Zoom', meet: 'Google Meet', teams: 'Microsoft Teams', telegram: 'تيليجرام', other: 'منصة أخرى' },
+
   event: {
     when: 'الموعد',
     where: 'المكان',
@@ -203,6 +218,14 @@ const ar = {
     seats: '{joined} من {capacity} مشاركاً',
     full: 'اكتمل العدد',
     directions: 'الاتجاهات إلى المكان',
+    online: 'عن بُعد',
+    onlineVia: 'عن بُعد عبر {platform}',
+    tripoliTime: 'بتوقيت طرابلس',
+    openMeeting: 'ادخل إلى الجلسة',
+    linkOpensAt: 'يظهر رابط الجلسة هنا {when}، قبل البدء بنصف ساعة.',
+    linkForJoined: 'يظهر رابط الجلسة لمن انضم، قبل البدء بنصف ساعة.',
+    linkOver: 'انتهت الجلسة.',
+    linkCantOpen: 'تعذّر فتح الرابط. انسخه وافتحه في المتصفح: {url}',
     participants: 'المشاركون',
     noParticipants: 'لم ينضم أحد بعد.',
     join: 'انضم إلى الفعالية',
@@ -723,6 +746,8 @@ const en: Strings = {
     propose: 'Propose an event',
     profile: 'Your profile',
     nav: 'App sections',
+    onlineBar: 'Online events: {n}',
+    onlineBarHint: "They aren't on the map. Show them in the list.",
   },
 
   events: {
@@ -735,6 +760,10 @@ const en: Strings = {
     propose: 'Propose an event',
     search: 'Search by name or place',
     noMatch: 'No event matches your search.',
+    where: 'Where it happens',
+    whereAll: 'All',
+    inPerson: 'In person',
+    online: 'Online',
   },
 
   newEvent: {
@@ -754,6 +783,13 @@ const en: Strings = {
     address: 'Address',
     addressPlaceholder: 'For example: Neighbourhood park, Al-Andalus',
     mapHint: 'Move the map until the pin sits on the place of the event.',
+    locationType: 'Where does it happen?',
+    inPerson: 'In person',
+    online: 'Online',
+    platform: 'Platform',
+    meetingUrl: 'Meeting link',
+    meetingUrlPlaceholder: 'https://zoom.us/j/…',
+    meetingUrlHint: 'Those who joined see it half an hour before the start; supervisors always do. It starts with https://',
     time: 'Time',
     starts: 'Starts',
     ends: 'Ends',
@@ -765,7 +801,7 @@ const en: Strings = {
     term: 'Item {n}',
     addTerm: 'Add an item',
     removeTerm: 'Remove item {n}',
-    invalid: 'Fill in what is needed: a name (3 letters or more), a description, an address, a future time that ends after it starts, and the number of seats.',
+    invalid: 'Fill in what is needed: a name (3 letters or more), a description, an address or a meeting link (starting with https://), a future time that ends after it starts, and the number of seats.',
     submit: 'Send the event for approval',
     submitAdmin: 'Publish the event',
     doneTitle: 'Your event was sent for approval',
@@ -778,6 +814,8 @@ const en: Strings = {
     save: 'Save your changes',
   },
 
+  platforms: { zoom: 'Zoom', meet: 'Google Meet', teams: 'Microsoft Teams', telegram: 'Telegram', other: 'Another platform' },
+
   event: {
     when: 'When',
     where: 'Where',
@@ -785,6 +823,14 @@ const en: Strings = {
     seats: '{joined} of {capacity} participants',
     full: 'Full',
     directions: 'Directions to the place',
+    online: 'Online',
+    onlineVia: 'Online on {platform}',
+    tripoliTime: 'Tripoli time',
+    openMeeting: 'Join the session',
+    linkOpensAt: 'The meeting link shows here {when}, half an hour before the start.',
+    linkForJoined: 'Those who join see the meeting link half an hour before the start.',
+    linkOver: 'The session is over.',
+    linkCantOpen: "The link didn't open. Copy it into your browser: {url}",
     participants: 'Participants',
     noParticipants: 'Nobody has joined yet.',
     join: 'Join the event',

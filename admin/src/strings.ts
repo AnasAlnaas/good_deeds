@@ -7,6 +7,7 @@ import type { AdminErrorCode, ApiErrorCode } from '../../shared/errors';
 import type {
   EventStatus,
   GenderCategory,
+  MeetingPlatform,
   ParticipantStatus,
   RegistrationStatus,
   ReportCategory,
@@ -133,6 +134,10 @@ export const t = {
     openMap: 'اعرض على الخريطة',
   },
 
+  platforms: { zoom: 'Zoom', meet: 'Google Meet', teams: 'Microsoft Teams', telegram: 'تيليجرام', other: 'منصة أخرى' } satisfies Record<MeetingPlatform, string>,
+  online: 'عن بُعد',
+  tripoliTime: 'بتوقيت طرابلس',
+
   form: {
     newTitle: 'فعالية جديدة',
     editTitle: 'تعديل الفعالية',
@@ -146,6 +151,11 @@ export const t = {
     lat: 'خط العرض',
     lng: 'خط الطول',
     placeHint: 'انسخ الإحداثيات من خرائط OpenStreetMap أو Google، ثم تحقق منها بالرابط.',
+    locationType: 'أين تقام الفعالية',
+    locationTypes: { in_person: 'في مكان', online: 'عن بُعد' },
+    platform: 'المنصة',
+    meetingUrl: 'رابط الجلسة',
+    meetingUrlHint: 'يبدأ بـ https://. يراه من انضم قبل البدء بنصف ساعة، ويصلهم إشعار بذلك. والمشرفون يرونه دائماً.',
     time: 'الموعد والمقاعد',
     starts: 'يبدأ',
     ends: 'ينتهي',
@@ -170,7 +180,7 @@ export const t = {
     saveChanges: 'احفظ التعديلات',
     saved: 'حُفظت التعديلات.',
     notifies: 'الفعالية منشورة: إن غيّرت موعدها أو مكانها أُبلغ المنضمون والمشرفون بالجديد.',
-    invalid: 'أكمل الحقول المطلوبة: العنوان (3 أحرف فأكثر)، الوصف، المكان، موعد ينتهي بعد أن يبدأ، وشعبة واحدة على الأقل.',
+    invalid: 'أكمل الحقول المطلوبة: العنوان (3 أحرف فأكثر)، الوصف، المكان أو رابط الجلسة (يبدأ بـ https://)، وموعد ينتهي بعد أن يبدأ.',
   },
 
   disputes: {
@@ -306,6 +316,7 @@ export const t = {
       title: 'العنوان',
       description: 'الوصف',
       subtype: 'النوع',
+      place: 'المكان أو الرابط',
       address_text: 'المكان',
       lat: 'الموقع',
       lng: 'الموقع',
