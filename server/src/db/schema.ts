@@ -138,6 +138,20 @@ export const meeting_link_reminders = pgTable('meeting_link_reminders', {
   sent_at: at('sent_at').notNull(),
 });
 
+// Reminders sent before an event (shared/rules.ts dueReminder): one row for
+// each kind, with the start time it was sent for, so a moved event is
+// reminded of again and two runs at once never both send one.
+export const event_reminders = pgTable(
+  'event_reminders',
+  {
+    event_id: text('event_id').notNull().references(() => events.id),
+    kind: text('kind', { enum: ['day_before', 'soon'] }).notNull(),
+    starts_at: at('starts_at').notNull(),
+    sent_at: at('sent_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.event_id, t.kind] })],
+);
+
 // DEMO-ONLY in Data_Model.md: who supervises which event.
 export const event_organizers = pgTable(
   'event_organizers',
@@ -223,6 +237,19 @@ export const event_lessons = pgTable(
     created_at: at('created_at').notNull().defaultNow(),
   },
   (t) => [uniqueIndex('event_lessons_order').on(t.event_id, t.order_index)],
+);
+
+// A full event's waiting list (shared/types.ts WaitlistEntry).
+export const waitlist = pgTable(
+  'waitlist',
+  {
+    event_id: text('event_id').notNull().references(() => events.id),
+    user_id: text('user_id').notNull().references(() => users.id),
+    created_at: at('created_at').notNull(),
+    offered_at: at('offered_at'),
+    offer_expires_at: at('offer_expires_at'),
+  },
+  (t) => [primaryKey({ columns: [t.event_id, t.user_id] }), index('waitlist_event').on(t.event_id, t.created_at)],
 );
 
 // Who learned which lesson (shared/types.ts LessonCompletion). Kept after a registration is cancelled.

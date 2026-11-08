@@ -51,7 +51,11 @@ export default function EventDetail() {
   const event = query.data;
   const status = event.status;
   const participants = event.participants;
-  const full = event.joined_count >= event.capacity;
+  // An app from before the waiting list may meet a server without it.
+  const waitlist = event.waitlist ?? { count: 0, held_for_others: 0, mine: null };
+  const placeHeld = waitlist.mine?.offer_expires_at ?? null;
+  // Places held for others on the list count as taken; one held for this person does not.
+  const full = !placeHeld && event.joined_count + waitlist.held_for_others >= event.capacity;
   const reg = event.my_registration;
   const attendance = event.my_attendance;
   const organizer = event.i_organize;
@@ -88,6 +92,8 @@ export default function EventDetail() {
   const join = async () => {
     if (await run((b) => b.startJoin(event.id))) router.push(`/event/${event.id}/${learnedAll ? 'terms' : 'learn'}`);
   };
+  const joinWaitlist = () => run((b) => b.joinWaitlist(event.id));
+  const leaveWaitlist = () => run((b) => b.leaveWaitlist(event.id));
   const openLesson = (lessonId: string) => router.push({ pathname: '/event/[id]/learn', params: { id: event.id, lesson: lessonId } });
   const cancel = () =>
     dialog.confirm({
@@ -172,15 +178,36 @@ export default function EventDetail() {
       </Txt>
     );
   } else if (full) {
-    footer = <Button disabled label={s.event.full} />;
+    footer = waitlist.mine ? (
+      <>
+        <Txt variant="caption" color={colors.inkMuted} align="center">
+          {fmt(s.event.waitlistPosition, { n: waitlist.mine.position ?? 1 })}
+        </Txt>
+        <Button variant="quiet" icon="exit-outline" label={s.event.leaveWaitlist} disabled={busy} onPress={leaveWaitlist} />
+      </>
+    ) : (
+      <>
+        <Txt variant="caption" color={colors.inkMuted} align="center">
+          {waitlist.count > 0 ? fmt(s.event.waitlistOthers, { n: waitlist.count }) : s.event.waitlistIntro}
+        </Txt>
+        <Button variant="secondary" icon="time-outline" label={s.event.joinWaitlist} disabled={busy} onPress={joinWaitlist} />
+      </>
+    );
   } else {
     footer = (
-      <Button
-        icon="hand-left-outline"
-        label={reg?.status === 'pending_terms' ? (learnedAll ? s.event.continueTerms : s.event.continueLessons) : s.event.join}
-        disabled={busy}
-        onPress={join}
-      />
+      <>
+        {placeHeld && (
+          <Txt variant="caption" color={colors.success} align="center">
+            {fmt(s.event.placeHeld, { when: `${day(placeHeld, s, now)} ${time(placeHeld, s)}` })}
+          </Txt>
+        )}
+        <Button
+          icon="hand-left-outline"
+          label={reg?.status === 'pending_terms' ? (learnedAll ? s.event.continueTerms : s.event.continueLessons) : s.event.join}
+          disabled={busy}
+          onPress={join}
+        />
+      </>
     );
   }
 

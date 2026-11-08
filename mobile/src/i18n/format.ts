@@ -43,6 +43,12 @@ export function day(iso: string | number, s: Strings, now = Date.now()) {
   return `${s.time.weekdays[d.getDay()]} ${d.getDate()} ${s.time.months[d.getMonth()]}`;
 }
 
+/** A date as written on a record: 8 November 2026. */
+export function date(iso: string | number, s: Strings) {
+  const d = new Date(iso);
+  return `${d.getDate()} ${s.time.months[d.getMonth()]} ${d.getFullYear()}`;
+}
+
 export function dayTimeRange(startIso: string, endIso: string, s: Strings, now = Date.now()) {
   return `${day(startIso, s, now)} · ${time(startIso, s)} – ${time(endIso, s)}`;
 }

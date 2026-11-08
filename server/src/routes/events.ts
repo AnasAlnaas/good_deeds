@@ -57,7 +57,8 @@ import {
 import { iso } from '../db/rows';
 import * as s from '../db/schema';
 import { type AppEnv, readBody } from '../http';
-import { notifyEventNotice, notifyHoursToConfirm, notifySupervisorAdded, notifyWarningGiven } from '../notify';
+import { notifyEventNotice, notifyHoursToConfirm, notifyPlaceOffered, notifySupervisorAdded, notifyWarningGiven } from '../notify';
+import { fillOpenPlaces, waitlistOf } from '../waitlist';
 import { placeOf, proposalInput, removeLessons, writeLessons, writeLinks, writeTerms } from './event-input';
 
 // `recorded_at`: the record was made on the phone without a connection, at that time (rules.decideRecordStart).
@@ -269,6 +270,7 @@ export const eventRoutes = new Hono<AppEnv>()
     const canManage = rules.canManageEvent(me, organizer);
     const online = event.location_type === 'online';
     const showLink = rules.canSeeMeetingLink({ event, canManage, registration, now: now() });
+    const waitlist = await waitlistOf(db, id);
     return c.json<EventDetail>({
       ...summary,
       description: event.description,
@@ -284,6 +286,11 @@ export const eventRoutes = new Hono<AppEnv>()
       supervisors: await supervisorsFor(db, me, id),
       notices,
       can_manage: canManage,
+      waitlist: {
+        count: waitlist.length,
+        held_for_others: rules.seatsHeld(waitlist, now(), me.id),
+        mine: rules.waitlistStanding(waitlist, me.id, now()),
+      },
     });
   })
 
@@ -504,6 +511,7 @@ export const eventRoutes = new Hono<AppEnv>()
         terms: await termsOf(tx, id),
         acceptedTermIds: await acceptedTermIds(tx, reg?.id),
         joinedCount: (await joinedCounts(tx, [id])).get(id) ?? 0,
+        heldForOthers: rules.seatsHeld(await waitlistOf(tx, id), t, me.id),
         now: t,
       });
       const [row] = await tx
@@ -511,23 +519,68 @@ export const eventRoutes = new Hono<AppEnv>()
         .set({ status: 'joined', joined_at: new Date(t) })
         .where(eq(s.registrations.id, reg!.id))
         .returning();
+      // Joined: off the waiting list, and the place held for them is theirs now.
+      await tx.delete(s.waitlist).where(and(eq(s.waitlist.event_id, id), eq(s.waitlist.user_id, me.id)));
       return iso(row) as Registration;
     });
     return c.json<RegistrationResponse>({ registration });
   })
 
   .delete('/:id/join', async (c) => {
-    const { db } = c.var.deps;
+    const { db, now } = c.var.deps;
     const me = c.var.user;
     const id = c.req.param('id');
-    const registration = await db.transaction(async (tx) => {
-      await findEvent(tx, id);
+    const { registration, offers } = await db.transaction(async (tx) => {
+      await findEvent(tx, id, { lock: true });
       const reg = await registrationOf(tx, id, me.id, { lock: true });
       rules.assertCancelJoin({ registration: reg, hasAttendance: !!(await attendanceOf(tx, id, me.id)) });
       const [row] = await tx.update(s.registrations).set({ status: 'cancelled' }).where(eq(s.registrations.id, reg!.id)).returning();
-      return iso(row) as Registration;
+      // The place they leave goes to the next on the waiting list.
+      return { registration: iso(row) as Registration, offers: await fillOpenPlaces(tx, id, now()) };
     });
+    notifyPlaceOffered(c.var.deps, id, offers);
     return c.json<RegistrationResponse>({ registration });
+  })
+
+  // ---------- the waiting list of a full event ----------
+
+  .post('/:id/waitlist', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    const t = now();
+    await db.transaction(async (tx) => {
+      // Locking the event makes the count of places exact.
+      const event = await findEvent(tx, id, { lock: true });
+      const waitlist = await waitlistOf(tx, id);
+      const action = rules.decideJoinWaitlist({
+        user: me,
+        event,
+        registration: await registrationOf(tx, id, me.id),
+        onList: waitlist.some((w) => w.user_id === me.id),
+        joinedCount: (await joinedCounts(tx, [id])).get(id) ?? 0,
+        heldCount: rules.seatsHeld(waitlist, t),
+        now: t,
+      });
+      if (action === 'add') {
+        await tx.insert(s.waitlist).values({ event_id: id, user_id: me.id, created_at: new Date(t) }).onConflictDoNothing();
+      }
+    });
+    return c.body(null, 204);
+  })
+
+  // Leaving the list; a place held for them goes to the next in line.
+  .delete('/:id/waitlist', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    const offers = await db.transaction(async (tx) => {
+      await findEvent(tx, id, { lock: true });
+      await tx.delete(s.waitlist).where(and(eq(s.waitlist.event_id, id), eq(s.waitlist.user_id, me.id)));
+      return fillOpenPlaces(tx, id, now());
+    });
+    notifyPlaceOffered(c.var.deps, id, offers);
+    return c.body(null, 204);
   })
 
   // ---------- the supervisor's roster ----------

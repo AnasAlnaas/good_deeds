@@ -202,6 +202,42 @@ export function EventPage() {
           {d.participants.length === 0 && <p className="empty">{t.event.noParticipants}</p>}
         </div>
       </section>
+      {d.waitlist.length > 0 && (
+        <section className="stack">
+          <h2>{t.event.waitlist}</h2>
+          <p className="small muted">{t.event.waitlistHint}</p>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th className="num">#</th>
+                  <th>{t.event.person}</th>
+                  <th>{t.event.phone}</th>
+                  <th>{t.event.waitlistSince}</th>
+                  <th>{t.event.waitlistState}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {d.waitlist.map((w, i) => (
+                  <tr key={w.user.id}>
+                    <td className="num tabular">{num(i + 1)}</td>
+                    <td>{w.user.full_name}</td>
+                    <td className="ltr tabular">{w.user.phone}</td>
+                    <td className="small">{time(w.created_at)}</td>
+                    <td>
+                      {w.offer_expires_at ? (
+                        <Badge tone="success">{fill(t.event.placeHeldUntil, { time: time(w.offer_expires_at) })}</Badge>
+                      ) : (
+                        t.event.waiting
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
       <p className="small muted">{ltr(e.id)}</p>
     </>
   );

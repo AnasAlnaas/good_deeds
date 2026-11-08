@@ -227,6 +227,29 @@ console.log('\n— pictures in lessons');
   expectEqual('withdrawing the event removes its picture', server.withdrawProposal(changed, 'u_khaled', event.id).lesson_images.length, 0);
 }
 
+console.log('\n— the waiting list');
+{
+  const HOURS = rules.WAITLIST_OFFER_HOURS * 3_600_000;
+  expectError('waiting for an event with places', 'seats_available', () => server.joinWaitlist(db, 'u_ahmad', 'e03', NOW));
+  let d = server.joinWaitlist(db, 'u_ahmad', 'e12', NOW);
+  d = server.joinWaitlist(d, 'u_mariam', 'e12', NOW + 1000);
+  expectEqual('in line, in order', [rules.waitlistStanding(server.waitlistOf(d, 'e12'), 'u_ahmad', NOW), rules.waitlistStanding(server.waitlistOf(d, 'e12'), 'u_mariam', NOW)], [
+    { position: 1, offer_expires_at: null },
+    { position: 2, offer_expires_at: null },
+  ]);
+  d = server.cancelJoin(d, 'u_f1', 'e12', NOW);
+  expectEqual('a place opens: held for the first', rules.waitlistStanding(server.waitlistOf(d, 'e12'), 'u_ahmad', NOW)?.offer_expires_at, new Date(NOW + HOURS).toISOString());
+  expectError('nobody else takes it', 'event_full', () => joinFully(d, 'u_mariam', 'e12', NOW));
+  const later = server.tick(d, NOW + HOURS + 1000);
+  expectEqual('not taken in time: it passes on', [
+    server.waitlistOf(later, 'e12').some((w) => w.user_id === 'u_ahmad'),
+    !!rules.waitlistStanding(server.waitlistOf(later, 'e12'), 'u_mariam', NOW + HOURS + 1000)?.offer_expires_at,
+  ], [false, true]);
+  const joined = joinFully(d, 'u_ahmad', 'e12', NOW);
+  expectEqual('taken in time: he joins, and leaves the list', [server.registrationOf(joined, 'e12', 'u_ahmad')?.status, server.waitlistOf(joined, 'e12').length], ['joined', 1]);
+  expectEqual('nothing to do leaves the data as it is', server.tick(joined, NOW) === joined, true);
+}
+
 console.log('\n— videos in lessons');
 {
   const id = 'dQw4w9WgXcQ';

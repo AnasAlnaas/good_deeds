@@ -36,12 +36,14 @@ import {
   notifyDisputeSettled,
   notifyEventCancelled,
   notifyEventChanged,
+  notifyPlaceOffered,
   notifyPhotoRemoved,
   notifyProposalDecided,
   notifyReportHandled,
   notifyWarningDecided,
 } from '../notify';
 import { issueResetCode } from './auth';
+import { fillOpenPlaces } from '../waitlist';
 import { assertIdsExist, createEventInput, eventInput, isoTime, placeOf, writeLessons, writeLinks, writeTerms } from './event-input';
 
 const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
@@ -349,6 +351,15 @@ export const adminRoutes = new Hono<AppEnv>()
       .where(eq(s.registrations.event_id, id))
       .orderBy(asc(s.registrations.created_at));
     const attendance = await db.select().from(s.attendance).where(eq(s.attendance.event_id, id));
+    const waiting = await db
+      .select({ entry: s.waitlist, ...publicUser, phone: s.users.phone })
+      .from(s.waitlist)
+      .innerJoin(s.users, eq(s.users.id, s.waitlist.user_id))
+      .where(eq(s.waitlist.event_id, id));
+    const t = now();
+    // Those offered a place first, then those waiting, each in order.
+    const offered = (w: (typeof waiting)[number]) => (w.entry.offer_expires_at && w.entry.offer_expires_at.getTime() > t ? 0 : 1);
+    waiting.sort((a, b) => offered(a) - offered(b) || a.entry.created_at.getTime() - b.entry.created_at.getTime());
     return c.json<AdminEventDetail>({
       event,
       effective_status: rules.effectiveStatus(event, now()),
@@ -365,6 +376,11 @@ export const adminRoutes = new Hono<AppEnv>()
           attendance: a ? (iso(a) as Attendance) : null,
         };
       }),
+      waitlist: waiting.map((w) => ({
+        user: { ...toPublic(w), phone: w.phone },
+        created_at: w.entry.created_at.toISOString(),
+        offer_expires_at: offered(w) === 0 ? w.entry.offer_expires_at!.toISOString() : null,
+      })),
     });
   })
 
@@ -456,8 +472,11 @@ export const adminRoutes = new Hono<AppEnv>()
         details: { title: body.title, changed: [...changed, ...(termsChanged ? ['terms'] : []), ...(lessonsChanged ? ['lessons'] : [])] },
         at: new Date(t),
       });
-      return { wasDraft: event.status === 'draft', changed, placeMoved, wasOnline: event.location_type === 'online' };
+      // More places: they go to the waiting list.
+      const offers = await fillOpenPlaces(tx, id, t);
+      return { wasDraft: event.status === 'draft', changed, placeMoved, wasOnline: event.location_type === 'online', offers };
     });
+    notifyPlaceOffered(c.var.deps, id, edit.offers);
     // A draft has nobody to tell yet.
     if (!edit.wasDraft) {
       notifyEventChanged(c.var.deps, id, me.id, {

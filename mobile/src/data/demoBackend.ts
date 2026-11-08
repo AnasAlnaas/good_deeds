@@ -211,6 +211,11 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
             ? server.noticesOf(db, id).map((n) => noticeItem(db, me, n))
             : null,
           can_manage: rules.canManageEvent(me, server.isOrganizer(db, id, me.id)),
+          waitlist: {
+            count: server.waitlistOf(db, id).length,
+            held_for_others: rules.seatsHeld(server.waitlistOf(db, id), now, me.id),
+            mine: rules.waitlistStanding(server.waitlistOf(db, id), me.id, now),
+          },
         };
       }),
 
@@ -303,9 +308,19 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
         return { registration: server.registrationOf(db, eventId, meId)! };
       }),
 
+    joinWaitlist: (eventId) =>
+      async(() => {
+        change((d, t) => server.joinWaitlist(d, meId, eventId, t));
+      }),
+
+    leaveWaitlist: (eventId) =>
+      async(() => {
+        change((d, t) => server.leaveWaitlist(d, meId, eventId, t));
+      }),
+
     cancelJoin: (eventId) =>
       async(() => {
-        const { db } = change((d) => server.cancelJoin(d, meId, eventId));
+        const { db } = change((d, t) => server.cancelJoin(d, meId, eventId, t));
         return { registration: server.registrationOf(db, eventId, meId)! };
       }),
 

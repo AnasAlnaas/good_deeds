@@ -26,6 +26,7 @@ import type {
   Registration,
   ReportCategory,
   User,
+  WaitlistEntry,
   Warning,
 } from './types';
 
@@ -256,6 +257,29 @@ export function canSeePhoto(viewer: Pick<User, 'id' | 'gender' | 'role'>, owner:
 export const PHOTO_SIZE_PX = 512;
 export const PHOTO_MAX_BYTES = 300_000;
 
+// ---------- reminders before an event ----------
+//
+// Owner's decision (2026-11-08): whoever joined an event, and its supervisors,
+// are reminded once the day before (from REMINDER_DAY_BEFORE_HOURS ahead), and
+// for an event in a place once more shortly before it (REMINDER_SOON_MINUTES).
+// An online event's "the link is open" notification is its last reminder.
+
+export const REMINDER_DAY_BEFORE_HOURS = 24;
+export const REMINDER_SOON_MINUTES = 60;
+
+/**
+ * The reminder an event is due now, if any: `soon` within REMINDER_SOON_MINUTES
+ * of an event in a place, `day_before` within REMINDER_DAY_BEFORE_HOURS (but
+ * not when `soon` already covers it). Each is sent once per start time.
+ */
+export function dueReminder(event: Pick<AppEvent, 'starts_at' | 'location_type'>, now: number): 'day_before' | 'soon' | null {
+  const ahead = toMs(event.starts_at) - now;
+  if (ahead <= 0) return null;
+  if (ahead <= REMINDER_SOON_MINUTES * 60_000) return event.location_type === 'in_person' ? 'soon' : null;
+  if (ahead <= REMINDER_DAY_BEFORE_HOURS * 3_600_000) return 'day_before';
+  return null;
+}
+
 // ---------- the event's learning corner (ركن التعلم) ----------
 //
 // Owner's decision (2026-11-07): an event has a few short lessons, written by
@@ -400,6 +424,8 @@ export function assertCompleteJoin(args: {
   learnedLessonIds: string[];
   /** Users with a `joined` registration for this event, deleted accounts excluded. */
   joinedCount: number;
+  /** Places held for others offered one from the waiting list (rules.seatsHeld). */
+  heldForOthers: number;
   now: number;
 }) {
   assertJoinable(args.user, args.event, args.now);
@@ -408,7 +434,72 @@ export function assertCompleteJoin(args: {
   if (reg.status === 'joined') throw new ApiError('already_joined');
   if (!learnedAll(args.lessons, args.learnedLessonIds)) throw new ApiError('lessons_incomplete');
   if (args.terms.some((x) => !args.acceptedTermIds.includes(x.id))) throw new ApiError('terms_incomplete');
-  if (args.joinedCount >= args.event.capacity) throw new ApiError('event_full');
+  if (args.joinedCount + args.heldForOthers >= args.event.capacity) throw new ApiError('event_full');
+}
+
+// ---------- the waiting list of a full event (shared/types.ts WaitlistEntry) ----------
+
+export const WAITLIST_OFFER_HOURS = 12;
+
+/** A place offered and still held for its person. */
+export const offerActive = (w: Pick<WaitlistEntry, 'offer_expires_at'>, now: number) => !!w.offer_expires_at && toMs(w.offer_expires_at) > now;
+
+/** Places held for people offered one, apart from `exceptUserId`'s own. */
+export function seatsHeld(waitlist: Pick<WaitlistEntry, 'user_id' | 'offer_expires_at'>[], now: number, exceptUserId?: string) {
+  return waitlist.filter((w) => w.user_id !== exceptUserId && offerActive(w, now)).length;
+}
+
+/** Waiting in order of joining the list; offered ones first only by when they were offered. */
+export function sortWaitlist<T extends Pick<WaitlistEntry, 'created_at'>>(waitlist: T[]): T[] {
+  return [...waitlist].sort((a, b) => toMs(a.created_at) - toMs(b.created_at));
+}
+
+/** Joining the waiting list: only someone who could join, of an event with no place left for them. */
+export function decideJoinWaitlist(args: {
+  user: Pick<User, 'gender'>;
+  event: JoinableEvent & Pick<AppEvent, 'capacity'>;
+  registration: Registration | undefined;
+  onList: boolean;
+  joinedCount: number;
+  /** Places held for others on the list. */
+  heldCount: number;
+  now: number;
+}): 'add' | 'nothing' {
+  assertJoinable(args.user, args.event, args.now);
+  if (args.registration?.status === 'joined') throw new ApiError('already_joined');
+  if (args.onList) return 'nothing';
+  if (args.joinedCount + args.heldCount < args.event.capacity) throw new ApiError('seats_available');
+  return 'add';
+}
+
+/**
+ * What the list does now: offers that ran out leave it (`expired`), and each
+ * free place goes to the next person still waiting (`offer`), held until
+ * WAITLIST_OFFER_HOURS from now or the start, whichever comes first. Nothing is
+ * offered once the event started, or when it is not published.
+ */
+export function planOffers(args: {
+  event: Pick<AppEvent, 'capacity' | 'starts_at' | 'status'>;
+  joinedCount: number;
+  waitlist: WaitlistEntry[];
+  now: number;
+}): { expired: string[]; offer: { user_id: string; offer_expires_at: string }[] } {
+  const { event, joinedCount, now } = args;
+  const expired = args.waitlist.filter((w) => w.offer_expires_at && !offerActive(w, now)).map((w) => w.user_id);
+  if (event.status !== 'published' || toMs(event.starts_at) <= now) return { expired, offer: [] };
+  const free = event.capacity - joinedCount - seatsHeld(args.waitlist, now);
+  const waiting = sortWaitlist(args.waitlist.filter((w) => !w.offered_at));
+  const until = new Date(Math.min(now + WAITLIST_OFFER_HOURS * 3_600_000, toMs(event.starts_at))).toISOString();
+  return { expired, offer: waiting.slice(0, Math.max(0, free)).map((w) => ({ user_id: w.user_id, offer_expires_at: until })) };
+}
+
+/** Where someone stands on the list: their place in line, or the place held for them. */
+export function waitlistStanding(waitlist: WaitlistEntry[], userId: string, now: number) {
+  const mine = waitlist.find((w) => w.user_id === userId);
+  if (!mine) return null;
+  if (offerActive(mine, now)) return { position: null, offer_expires_at: mine.offer_expires_at };
+  const waiting = sortWaitlist(waitlist.filter((w) => !w.offered_at));
+  return { position: waiting.findIndex((w) => w.user_id === userId) + 1, offer_expires_at: null };
 }
 
 export function assertCancelJoin(args: { registration: Registration | undefined; hasAttendance: boolean }) {

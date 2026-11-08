@@ -10,7 +10,7 @@
     "dev": "tsx watch src/node.ts",
     "start": "tsx src/node.ts",
     "typecheck": "tsc --noEmit",
-    "check:api": "tsx scripts/check-api.ts && tsx scripts/check-admin.ts && tsx scripts/check-online.ts",
+    "check:api": "tsx scripts/check-api.ts && tsx scripts/check-admin.ts && tsx scripts/check-online.ts && tsx scripts/check-reminders.ts && tsx scripts/check-waitlist.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",

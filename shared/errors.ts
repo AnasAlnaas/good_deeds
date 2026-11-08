@@ -6,6 +6,7 @@ export type ApiErrorCode =
   | 'event_closed'
   | 'event_not_started'
   | 'event_full'
+  | 'seats_available'
   | 'gender_not_allowed'
   | 'terms_incomplete'
   | 'lessons_incomplete'
