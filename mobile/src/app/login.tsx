@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -36,9 +37,18 @@ export default function Login() {
         <Txt variant="screenTitle" align="center">
           {s.appName}
         </Txt>
-        <Txt variant="caption" align="center" color={colors.inkMuted}>
-          {s.association}
-        </Txt>
+        {/* The association behind the app: its official logo, and whose app this is. */}
+        <View style={styles.association}>
+          <Image
+            source={require('../../assets/brand/islah-tarbawi.png')}
+            style={styles.associationLogo}
+            contentFit="contain"
+            accessibilityLabel={s.association}
+          />
+          <Txt variant="caption" align="center" color={colors.inkMuted}>
+            {s.fromAssociation}
+          </Txt>
+        </View>
       </View>
       {apiUrl && DEMO_AVAILABLE && (
         <Row>
@@ -424,6 +434,8 @@ const styles = StyleSheet.create({
   top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   lang: { minWidth: 120 },
   brand: { alignItems: 'center', gap: space.xs, paddingTop: space.sm },
+  association: { alignItems: 'center', gap: space.xs, marginTop: space.sm },
+  associationLogo: { width: 64, height: 64 },
   gap: { marginTop: space.md },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   icon: {

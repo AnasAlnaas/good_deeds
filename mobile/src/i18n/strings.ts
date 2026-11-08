@@ -10,6 +10,7 @@ import type { ErrorCode } from '@/data/backend';
 const ar = {
   appName: 'الأعمال الصالحة',
   association: 'جمعية الإصلاح التربوي',
+  fromAssociation: 'من الإصلاح التربوي',
   demoBadge: 'نسخة تجريبية',
   cancel: 'إلغاء',
   back: 'رجوع',
@@ -662,6 +663,7 @@ export type Strings = typeof ar;
 const en: Strings = {
   appName: 'Good Deeds',
   association: 'Educational Reform Association',
+  fromAssociation: 'From the Educational Reform Association',
   demoBadge: 'Demo',
   cancel: 'Cancel',
   back: 'Back',
