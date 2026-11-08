@@ -16,6 +16,7 @@ import { requestEmailCode, resetPassword, signIn, signUp } from '@/data/apiBacke
 import { errorCode } from '@/data/backend';
 import type { Gender } from '@/data/types';
 import { DEMO_ACCOUNTS } from '@/demo/seed';
+import { fmt } from '@/i18n/format';
 import * as dialog from '@/lib/dialog';
 import { useApp } from '@/state/app';
 import { colors, space } from '@/theme/tokens';
@@ -107,6 +108,12 @@ function DemoAccounts() {
 
 const { latinDigits, libyanMobile, cleanEmail, cleanName, cleanCity, passwordProblem } = rules;
 
+/** A number as people read it, 094 524 4671, kept left to right inside Arabic text. */
+const spokenNumber = (international: string) => {
+  const local = `0${international.replace(/^\+218/, '')}`;
+  return `\u2066${local.slice(0, 3)} ${local.slice(3, 6)} ${local.slice(6)}\u2069`;
+};
+
 // Typed numbers only: a full local number (091 234 5678) has 10.
 const digitCount = (text: string) => latinDigits(text).replace(/\D/g, '').length;
 const onlyDigits = (text: string) => latinDigits(text).replace(/\D/g, '');
@@ -127,6 +134,8 @@ function PasswordSignIn({ baseUrl }: { baseUrl: string }) {
   const [notSet, setNotSet] = useState(false);
   const [loginInput, setLoginInput] = useState('');
   const [phoneInput, setPhoneInput] = useState('');
+  // Sign-up asks for the number twice: a mistyped number makes an account nobody can find.
+  const [phoneAgain, setPhoneAgain] = useState('');
   const [emailInput, setEmailInput] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
@@ -141,6 +150,8 @@ function PasswordSignIn({ baseUrl }: { baseUrl: string }) {
   const [checked, setChecked] = useState(false);
 
   const phone = libyanMobile(phoneInput);
+  const phoneMatches = !!phone && libyanMobile(phoneAgain) === phone;
+  const phoneAgainWrong = !!phone && !phoneMatches && (checked || digitCount(phoneAgain) >= 10);
   const email = cleanEmail(emailInput);
   const phoneWrong = !phone && (checked || digitCount(phoneInput) >= 10);
   const emailWrong = !email && checked && emailInput.trim().length > 0;
@@ -206,6 +217,30 @@ function PasswordSignIn({ baseUrl }: { baseUrl: string }) {
       textContentType="telephoneNumber"
       maxLength={20}
       error={phoneWrong ? s.login.phoneInvalid : null}
+    />
+  );
+  // The number read back as it will be saved, so a swapped digit shows.
+  const phoneReadback = (number: string | null, template = s.login.phoneReadback) =>
+    number ? (
+      <Txt variant="caption" color={colors.primary}>
+        {fmt(template, { phone: spokenNumber(number) })}
+      </Txt>
+    ) : null;
+  const phoneAgainField = (
+    <Field
+      label={s.login.phoneAgain}
+      ltr
+      value={phoneAgain}
+      onChangeText={(t) => {
+        setPhoneAgain(t);
+        setChecked(false);
+      }}
+      onBlur={() => phoneAgain.trim() && setChecked(true)}
+      placeholder={s.login.phonePlaceholder}
+      keyboardType="phone-pad"
+      autoComplete="off"
+      maxLength={20}
+      error={phoneAgainWrong ? s.login.phoneMismatch : null}
     />
   );
   const emailField = (
@@ -285,6 +320,7 @@ function PasswordSignIn({ baseUrl }: { baseUrl: string }) {
           maxLength={rules.EMAIL_MAX}
           error={loginWrong ? s.login.loginInvalid : null}
         />
+        {!byEmail && phoneReadback(libyanMobile(loginInput), s.login.signInReadback)}
         {passwordField}
         <Button icon="log-in-outline" label={s.login.signIn} disabled={busy || !loginInput.trim() || !password} onPress={submit} />
         <Button variant="quiet" label={s.login.forgot} onPress={() => go('forgot')} />
@@ -361,7 +397,7 @@ function PasswordSignIn({ baseUrl }: { baseUrl: string }) {
 
   const name = cleanName(fullName);
   const cleanedCity = cleanCity(city);
-  const formReady = phone && email && !problem && name && cleanedCity && gender;
+  const formReady = phone && phoneMatches && email && !problem && name && cleanedCity && gender;
 
   if (sentTo && formReady) {
     const profile = { full_name: name, gender, city: cleanedCity };
@@ -374,6 +410,18 @@ function PasswordSignIn({ baseUrl }: { baseUrl: string }) {
           {s.login.signUpTitle}
         </Txt>
         {sentNote(s.login.codeSentTo)}
+        <Card style={styles.phoneCheck}>
+          <Txt variant="caption" color={colors.inkMuted}>
+            {s.login.phoneCheckTitle}
+          </Txt>
+          <Txt variant="sectionTitle" align="center" tabular>
+            {spokenNumber(phone)}
+          </Txt>
+          <Txt variant="caption" color={colors.inkMuted}>
+            {s.login.phoneCheckBody}
+          </Txt>
+          <Button variant="quiet" icon="create-outline" label={s.login.changePhone} onPress={() => setSentTo(null)} />
+        </Card>
         {codeField(s.login.emailCode)}
         <Button icon="person-add-outline" label={s.login.createAccount} disabled={busy || code.length !== 6} onPress={createAccount} />
         <Button variant="quiet" label={s.login.resendCode} disabled={busy} onPress={() => sendCode(sentTo, 'sign_up')} />
@@ -393,6 +441,8 @@ function PasswordSignIn({ baseUrl }: { baseUrl: string }) {
       </Txt>
       <Txt color={colors.inkMuted}>{s.login.signUpBody}</Txt>
       {phoneField}
+      {phoneReadback(phone)}
+      {phoneAgainField}
       {emailField}
       {passwordField}
       <Txt variant="caption" color={colors.inkMuted}>
@@ -422,7 +472,7 @@ function PasswordSignIn({ baseUrl }: { baseUrl: string }) {
       <Button
         icon="mail-outline"
         label={s.login.sendCode}
-        disabled={busy || !phoneInput || !emailInput.trim() || !password || !fullName.trim() || !gender || !city}
+        disabled={busy || !phoneInput || !phoneAgain || !emailInput.trim() || !password || !fullName.trim() || !gender || !city}
         onPress={confirmEmail}
       />
       <Button variant="quiet" label={s.login.toSignIn} onPress={() => go('signIn')} />
@@ -447,4 +497,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   flex: { flex: 1 },
+  phoneCheck: { backgroundColor: colors.primarySoft, borderColor: colors.primarySoft, gap: space.xs },
 });

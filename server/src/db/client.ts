@@ -84,3 +84,13 @@ function isRunning(pid: number) {
     return (e as NodeJS.ErrnoException).code === 'EPERM';
   }
 }
+
+/** Says which database a command reaches, so the local one is never mistaken for the live one. */
+export function describeDatabase(url: string | undefined, dataDir: string) {
+  if (!url) return `the LOCAL test database (${dataDir}): DATABASE_URL in server/.env is empty, so the live server is not reached`;
+  try {
+    return `the database at ${new URL(url).hostname}`;
+  } catch {
+    return 'the database in DATABASE_URL (its address could not be read)';
+  }
+}

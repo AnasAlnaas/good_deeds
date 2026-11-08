@@ -15,6 +15,8 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
     "make-admin": "tsx scripts/make-admin.ts",
+    "set-password": "tsx scripts/set-password.ts",
+    "change-phone": "tsx scripts/change-phone.ts",
     "db:reset": "tsx scripts/reset-database.ts"
   },
   "devDependencies": {

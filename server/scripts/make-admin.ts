@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 
 import { and, eq, isNull } from 'drizzle-orm';
 
-import { openDatabase } from '../src/db/client';
+import { describeDatabase, openDatabase } from '../src/db/client';
 import * as s from '../src/db/schema';
 import { libyanMobile } from '../../shared/rules';
 import { env } from '../src/env';
@@ -19,7 +19,9 @@ if (!/^\+[1-9]\d{7,14}$/.test(phone)) {
   process.exit(1);
 }
 
-const conn = openDatabase({ url: env.databaseUrl, dataDir: env.pgliteDir });
+const url = env.databaseUrl;
+console.log(`Using ${describeDatabase(url, env.pgliteDir)}.`);
+const conn = openDatabase({ url, dataDir: env.pgliteDir });
 await conn.migrate();
 const [user] = await conn.db
   .select()
