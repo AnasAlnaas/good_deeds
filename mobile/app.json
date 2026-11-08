@@ -2,7 +2,7 @@
   "expo": {
     "name": "Good Deeds",
     "slug": "good-deeds",
-    "version": "1.0.0",
+    "version": "0.2.0",
     "orientation": "portrait",
     "icon": "./assets/brand/icon.png",
     "scheme": "gooddeeds",
@@ -16,7 +16,7 @@
     "android": {
       "package": "com.islahtarbawi.gooddeeds",
       "googleServicesFile": "./google-services.json",
-      "versionCode": 2,
+      "versionCode": 3,
       "adaptiveIcon": {
         "backgroundColor": "#1E5E3B",
         "foregroundImage": "./assets/brand/android-icon-foreground.png",

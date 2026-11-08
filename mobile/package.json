@@ -1,7 +1,7 @@
 {
   "name": "good-deeds-mobile",
   "main": "expo-router/entry",
-  "version": "1.0.0",
+  "version": "0.2.0",
   "dependencies": {
     "@expo-google-fonts/ibm-plex-sans-arabic": "^0.4.2",
     "@expo-google-fonts/readex-pro": "^0.4.1",
