@@ -173,6 +173,21 @@ export interface LessonImage {
   created_at: string;
 }
 
+/**
+ * Owner's decision (2026-11-08): a full event has a waiting list. When a place
+ * opens, the first in line is offered it: it is held for them until
+ * `offer_expires_at` (rules.WAITLIST_OFFER_HOURS, never past the start), and
+ * they join it the usual way. An offer not taken in time goes to the next.
+ */
+export interface WaitlistEntry {
+  event_id: string;
+  user_id: string;
+  created_at: string;
+  /** When a place was offered to them; null = still waiting. */
+  offered_at: string | null;
+  offer_expires_at: string | null;
+}
+
 /** A person learned a lesson. Kept with the person, not the registration, so it stays theirs after cancelling. */
 export interface LessonCompletion {
   lesson_id: string;
@@ -298,6 +313,7 @@ export interface Db {
   event_lessons: EventLesson[];
   lesson_images: LessonImage[];
   lesson_completions: LessonCompletion[];
+  waitlist: WaitlistEntry[];
   registrations: Registration[];
   term_acceptances: TermAcceptance[];
   attendance: Attendance[];

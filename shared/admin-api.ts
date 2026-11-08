@@ -102,6 +102,8 @@ export interface AdminEventDetail extends AdminEventRow {
   /** The learning corner, in order, and how many people learned each lesson. */
   lessons: (EventLesson & { image: LessonImageRef | null; learned_count: number })[];
   participants: { user: PublicUser & Pick<User, 'phone'>; registration: Registration; attendance: Attendance | null }[];
+  /** The waiting list in order: those offered a place, then those waiting. */
+  waitlist: { user: PublicUser & Pick<User, 'phone'>; created_at: string; offer_expires_at: string | null }[];
 }
 
 // ---------- disputed hours ----------

@@ -76,6 +76,8 @@ export function screenFor(data: Record<string, unknown> | undefined): string | n
     case 'event_approved':
     case 'event_rejected':
     case 'event_notice':
+    case 'event_reminder':
+    case 'waitlist_offer':
     case 'supervisor_added':
       return str('event_id') ? `/event/${str('event_id')}` : null;
     case 'photo_removed':

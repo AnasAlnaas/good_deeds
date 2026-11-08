@@ -224,6 +224,17 @@ export interface EventDetail extends EventSummary {
   notices: EventNoticeItem[] | null;
   /** A supervisor of this event, or an admin: may post notices and add supervisors (rules.canManageEvent). */
   can_manage: boolean;
+  /** The event's waiting list (rules.planOffers), as this person sees it. */
+  waitlist: EventWaitlist;
+}
+
+export interface EventWaitlist {
+  /** People on it, offered a place or waiting. */
+  count: number;
+  /** Places held for others offered one: taken, as far as this person can tell. */
+  held_for_others: number;
+  /** This person on the list: their place in line (null once offered), or until when a place is held for them. */
+  mine: { position: number | null; offer_expires_at: string | null } | null;
 }
 
 export interface EventSupervisor extends PublicUser {

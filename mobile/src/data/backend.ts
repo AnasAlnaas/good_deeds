@@ -73,6 +73,9 @@ export interface Backend {
   acceptTerm(eventId: string, termId: string): Promise<AcceptTermResponse>;
   completeJoin(eventId: string): Promise<RegistrationResponse>;
   cancelJoin(eventId: string): Promise<RegistrationResponse>;
+  /** A full event's waiting list (shared/rules.ts planOffers). */
+  joinWaitlist(eventId: string): Promise<void>;
+  leaveWaitlist(eventId: string): Promise<void>;
   roster(eventId: string): Promise<RosterResponse>;
   /**
    * `at` absent = when it is recorded (the server's now). `recordedAt`: recorded

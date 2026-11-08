@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/Button';
 import { LessonPicture } from '@/components/LessonPicture';
@@ -20,7 +20,11 @@ import { isHidden } from '../../../../../shared/rules';
 // terms. `lesson` opens that one (from the event's page or "What I learned");
 // otherwise the first not yet learned. Learning one moves on to the next not
 // learned; once all are, someone on their way to joining goes on to the terms.
-const READ_DELAY_MS = 3000;
+//
+// Owner's decision (2026-11-08): marking a lesson learned is a pledge. The
+// person ticks that they read and understood it and take responsibility for
+// any shortcoming from not following it; only then can they confirm. The
+// lesson's completion (lesson_completions) is the record of that pledge.
 
 export default function LearnScreen() {
   const { id, lesson: lessonParam } = useLocalSearchParams<{ id: string; lesson?: string }>();
@@ -28,15 +32,11 @@ export default function LearnScreen() {
   const { run, busy } = useAction();
   const query = useEvent(id);
   const [chosen, setChosen] = useState<string | null>(lessonParam ?? null);
-  const [readId, setReadId] = useState<string | null>(null);
+  // The lesson whose pledge is ticked; moving to another lesson unticks it.
+  const [pledgedId, setPledgedId] = useState<string | null>(null);
 
   const lessons = query.data?.lessons ?? [];
   const current = lessons.find((l) => l.id === chosen) ?? lessons.find((l) => !l.learned_at);
-  const currentId = current?.id ?? null;
-  useEffect(() => {
-    const timer = setTimeout(() => setReadId(currentId), READ_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [currentId]);
 
   if (!query.data) {
     return (
@@ -71,11 +71,11 @@ export default function LearnScreen() {
       <Button label={s.back} onPress={() => (onTheWay && !preview ? setChosen(DONE) : router.back())} />
     );
   } else {
-    const canLearn = readId === current.id;
+    const canLearn = pledgedId === current.id;
     footer = (
       <Button
-        label={canLearn ? s.learn.learn : s.learn.reading}
-        icon={canLearn ? 'school-outline' : 'hourglass-outline'}
+        label={s.learn.learn}
+        icon="shield-checkmark-outline"
         disabled={!canLearn || busy}
         onPress={async () => {
           if (await run((b) => b.learnLesson(id, current.id))) setChosen(nextUnlearned?.id ?? DONE);
@@ -111,6 +111,20 @@ export default function LearnScreen() {
             {current.body.length > 0 && <Txt>{current.body}</Txt>}
             {current.learned_at && <Badge label={s.learn.learned} color={colors.success} icon="checkmark-circle" />}
           </View>
+          {!current.learned_at && !preview && (
+            <Pressable
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: pledgedId === current.id }}
+              onPress={() => setPledgedId(pledgedId === current.id ? null : current.id)}
+              style={[styles.pledge, pledgedId === current.id && styles.pledgeOn]}>
+              <Ionicons
+                name={pledgedId === current.id ? 'checkbox' : 'square-outline'}
+                size={26}
+                color={pledgedId === current.id ? colors.primary : colors.inkMuted}
+              />
+              <Txt style={styles.flex}>{s.learn.pledge}</Txt>
+            </Pressable>
+          )}
         </>
       ) : (
         <View style={styles.done}>
@@ -142,5 +156,17 @@ const styles = StyleSheet.create({
     gap: space.md,
     minHeight: 220,
   },
+  pledge: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: space.sm,
+    padding: space.md,
+    borderRadius: radius.card,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  pledgeOn: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+  flex: { flex: 1 },
   done: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.md, paddingVertical: space.xxl },
 });

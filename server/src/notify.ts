@@ -6,6 +6,9 @@
 //   "it is now online" or "its link changed"), to the members who joined it and
 //   its supervisors;
 // - "the meeting link is open", to the same people, 30 minutes before an online event;
+// - "a place opened for you", to whoever is next on a full event's waiting list;
+// - a reminder to the same people the day before an event, and for one in a
+//   place again an hour before (rules.dueReminder);
 // - "your event was approved" / "was not approved", to whoever proposed it in the app;
 // - "your photo was removed", when an admin removes an unsuitable profile photo;
 // - "a supervisor gave you a warning", and "your appeal was decided" / "the warning was withdrawn";
@@ -15,9 +18,10 @@
 
 import { and, eq, gt, inArray, isNull, lte, ne } from 'drizzle-orm';
 
-import { MEETING_LINK_OPENS_MINUTES } from '../../shared/rules';
+import { dueReminder, MEETING_LINK_OPENS_MINUTES, REMINDER_DAY_BEFORE_HOURS } from '../../shared/rules';
 
 import { closeDueAttendance } from './db/queries';
+import { fillOpenPlaces } from './waitlist';
 import { sweepLessonImages } from './lesson-images';
 import * as s from './db/schema';
 import type { AppDeps } from './http';
@@ -97,6 +101,8 @@ export async function closeDueAndNotify(deps: AppDeps) {
   const closed = await closeDueAttendance(deps.db, deps.now());
   notifyHoursToConfirm(deps, closed, 'auto_closed');
   await remindMeetingLinks(deps);
+  await remindEvents(deps);
+  await offerWaitlistPlaces(deps);
   await sweepLessonImages(deps.db, deps.now());
   return closed.length;
 }
@@ -154,6 +160,129 @@ export async function remindMeetingLinks(deps: AppDeps) {
       })),
     );
   }
+}
+
+// ---------- a place opened on a full event ----------
+
+const PLACE_OPEN = {
+  ar: {
+    title: 'خلا مكان لك',
+    body: 'صار لك مكان في «{event}». هو محجوز لك حتى {time} بتوقيت طرابلس: أكمل انضمامك في التطبيق قبل ذلك.',
+  },
+  en: {
+    title: 'A place opened for you',
+    body: 'A place opened at "{event}". It is held for you until {time} Tripoli time: finish joining in the app before then.',
+  },
+};
+
+/** Tells those just offered a place on an event's waiting list. */
+export function notifyPlaceOffered(deps: AppDeps, eventId: string, offers: { user_id: string; offer_expires_at: string }[]) {
+  if (offers.length === 0) return;
+  send(deps, async () => {
+    const [event] = await deps.db.select({ title: s.events.title }).from(s.events).where(eq(s.events.id, eventId));
+    if (!event) return [];
+    return offers.map((o) => ({
+      userId: o.user_id,
+      text: (lang) => ({
+        title: PLACE_OPEN[lang].title,
+        body: PLACE_OPEN[lang].body.replace('{event}', event.title).replace('{time}', clockOf(new Date(o.offer_expires_at), lang, deps.timeZone)),
+      }),
+      data: { type: 'waitlist_offer', event_id: eventId },
+    }));
+  });
+}
+
+/** The scheduled job's part: offers that ran out go to the next in line, on every event with a list. */
+async function offerWaitlistPlaces(deps: AppDeps) {
+  const now = deps.now();
+  const listed = await deps.db
+    .selectDistinct({ id: s.waitlist.event_id })
+    .from(s.waitlist)
+    .innerJoin(s.events, eq(s.events.id, s.waitlist.event_id))
+    .where(and(eq(s.events.status, 'published'), gt(s.events.starts_at, new Date(now))));
+  for (const { id } of listed) {
+    const offers = await deps.db.transaction((tx) => fillOpenPlaces(tx, id, now));
+    notifyPlaceOffered(deps, id, offers);
+  }
+}
+
+// ---------- reminders before an event ----------
+
+const REMINDER = {
+  ar: {
+    dayTitle: 'تذكير بفعاليتك',
+    today: 'اليوم',
+    tomorrow: 'غداً',
+    inPlace: '«{event}» {day} الساعة {time} بتوقيت طرابلس، في {place}. راجع شروط الانضمام قبل أن تأتي.',
+    online: '«{event}» {day} الساعة {time} بتوقيت طرابلس، عبر الإنترنت. يظهر رابط الدخول في التطبيق قبل البدء بقليل.',
+    soonTitle: 'تبدأ فعاليتك بعد قليل',
+    soon: '«{event}» تبدأ الساعة {time}، في {place}. نراك هناك.',
+  },
+  en: {
+    dayTitle: 'A reminder of your event',
+    today: 'today',
+    tomorrow: 'tomorrow',
+    inPlace: '"{event}" is {day} at {time} Tripoli time, at {place}. Read the terms for joining again before you come.',
+    online: '"{event}" is {day} at {time} Tripoli time, online. The link shows in the app shortly before the start.',
+    soonTitle: 'Your event starts soon',
+    soon: '"{event}" starts at {time}, at {place}. See you there.',
+  },
+};
+
+/**
+ * Published events whose reminder is due (rules.dueReminder): their people are
+ * told once for each kind and start time. Claiming the reminder row first means
+ * two runs at once never both send it.
+ */
+export async function remindEvents(deps: AppDeps) {
+  const now = deps.now();
+  const upcoming = await deps.db
+    .select({ id: s.events.id, title: s.events.title, starts_at: s.events.starts_at, location_type: s.events.location_type, address_text: s.events.address_text })
+    .from(s.events)
+    .where(
+      and(
+        eq(s.events.status, 'published'),
+        gt(s.events.starts_at, new Date(now)),
+        lte(s.events.starts_at, new Date(now + REMINDER_DAY_BEFORE_HOURS * 3_600_000)),
+      ),
+    );
+  for (const event of upcoming) {
+    const kind = dueReminder({ ...event, starts_at: event.starts_at.toISOString() }, now);
+    if (!kind) continue;
+    const [claimed] = await deps.db
+      .insert(s.event_reminders)
+      .values({ event_id: event.id, kind, starts_at: event.starts_at, sent_at: new Date(now) })
+      .onConflictDoUpdate({
+        target: [s.event_reminders.event_id, s.event_reminders.kind],
+        set: { starts_at: event.starts_at, sent_at: new Date(now) },
+        setWhere: ne(s.event_reminders.starts_at, event.starts_at),
+      })
+      .returning({ event_id: s.event_reminders.event_id });
+    if (!claimed) continue;
+    send(deps, async () =>
+      (await peopleOfEvent(deps, event.id, '')).map((userId) => ({
+        userId,
+        text: (lang) => {
+          const t = REMINDER[lang];
+          const fill = (body: string) =>
+            body
+              .replace('{event}', event.title)
+              .replace('{time}', clockOf(event.starts_at, lang, deps.timeZone))
+              .replace('{place}', event.address_text ?? '')
+              .replace('{day}', sameDay(event.starts_at, new Date(now), deps.timeZone) ? t.today : t.tomorrow);
+          if (kind === 'soon') return { title: t.soonTitle, body: fill(t.soon) };
+          return { title: t.dayTitle, body: fill(event.location_type === 'online' ? t.online : t.inPlace) };
+        },
+        data: { type: 'event_reminder', event_id: event.id },
+      })),
+    );
+  }
+}
+
+/** The two moments fall on the same calendar day where the association is. */
+function sameDay(a: Date, b: Date, timeZone: string) {
+  const day = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
+  return day.format(a) === day.format(b);
 }
 
 function clockOf(at: Date, lang: Lang, timeZone: string) {

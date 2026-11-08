@@ -12,7 +12,7 @@ import * as s from './schema';
 
 const ALL_TABLES = [
   'reports', 'warnings', 'admin_actions', 'user_photos', 'push_tokens', 'login_codes', 'user_passwords', 'points_ledger', 'attendance', 'term_acceptances', 'registrations', 'event_terms',
-  'lesson_completions', 'event_lessons', 'lesson_images',
+  'lesson_completions', 'event_lessons', 'lesson_images', 'event_reminders', 'waitlist',
   'notice_reactions', 'event_notices', 'event_organizers', 'events', 'levels', 'branches', 'users',
 ];
 

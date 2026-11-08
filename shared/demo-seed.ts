@@ -19,7 +19,8 @@ import { pointsForAttendance } from './rules';
 // 9: online events (a platform and a meeting link instead of a place).
 // 10: a lesson may have a picture.
 // 11: and a YouTube video.
-export const SEED_VERSION = 11;
+// 12: full events have a waiting list.
+export const SEED_VERSION = 12;
 
 export const DEMO_ACCOUNTS = {
   participant: 'u_ahmad',
@@ -289,6 +290,7 @@ export function buildSeed(nowMs: number): Db {
     event_lessons: [],
     lesson_images: [],
     lesson_completions: [],
+    waitlist: [],
     registrations: [],
     term_acceptances: [],
     attendance: [],

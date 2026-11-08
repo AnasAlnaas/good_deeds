@@ -121,12 +121,18 @@ export function pointsForAttendance(db: Db, a: Attendance): number {
 
 export function tick(db: Db, now: number): Db {
   const due = db.attendance.filter((a) => rules.decideAutoClose(a, getEvent(db, a.event_id), now));
-  if (due.length === 0) return db;
+  // Waiting lists whose offers ran out, or with a place to offer.
+  const listed = [...new Set(db.waitlist.map((w) => w.event_id))].filter((id) => {
+    const plan = planOffers(db, id, now);
+    return plan.expired.length > 0 || plan.offer.length > 0;
+  });
+  if (due.length === 0 && listed.length === 0) return db;
   const next = clone(db);
   for (const a of next.attendance) {
     const close = rules.decideAutoClose(a, getEvent(next, a.event_id), now);
     if (close) Object.assign(a, close);
   }
+  for (const id of listed) fillOpenPlaces(next, id, now);
   return next;
 }
 
@@ -377,20 +383,72 @@ export function completeJoin(db: Db, userId: string, eventId: string, now: numbe
     lessons: eventLessons(db, eventId),
     learnedLessonIds: learnedIds(db, userId, eventId),
     joinedCount: joinedUsers(db, eventId).length,
+    heldForOthers: rules.seatsHeld(waitlistOf(db, eventId), now, userId),
     now,
   });
   const next = clone(db);
   const r = next.registrations.find((x) => x.id === reg!.id)!;
   r.status = 'joined';
   r.joined_at = new Date(now).toISOString();
+  // Joined: off the waiting list, and the place held for them is theirs now.
+  next.waitlist = next.waitlist.filter((w) => !(w.event_id === eventId && w.user_id === userId));
   return next;
 }
 
-export function cancelJoin(db: Db, userId: string, eventId: string): Db {
+export function cancelJoin(db: Db, userId: string, eventId: string, now = Date.now()): Db {
   const reg = registrationOf(db, eventId, userId);
   rules.assertCancelJoin({ registration: reg, hasAttendance: !!attendanceOf(db, eventId, userId) });
   const next = clone(db);
   next.registrations.find((x) => x.id === reg!.id)!.status = 'cancelled';
+  // The place they leave goes to the next on the waiting list.
+  fillOpenPlaces(next, eventId, now);
+  return next;
+}
+
+// ---------- the waiting list of a full event (as server/src/waitlist.ts) ----------
+
+export function waitlistOf(db: Db, eventId: string) {
+  return rules.sortWaitlist(db.waitlist.filter((w) => w.event_id === eventId));
+}
+
+function planOffers(db: Db, eventId: string, now: number) {
+  const event = getEvent(db, eventId);
+  return rules.planOffers({ event, joinedCount: joinedUsers(db, eventId).length, waitlist: waitlistOf(db, eventId), now });
+}
+
+/** Offers the event's open places to the next in line, and takes off those whose offer ran out (in `next`, already a copy). */
+function fillOpenPlaces(next: Db, eventId: string, now: number) {
+  const plan = planOffers(next, eventId, now);
+  next.waitlist = next.waitlist.filter((w) => !(w.event_id === eventId && plan.expired.includes(w.user_id)));
+  for (const o of plan.offer) {
+    const w = next.waitlist.find((x) => x.event_id === eventId && x.user_id === o.user_id)!;
+    w.offered_at = new Date(now).toISOString();
+    w.offer_expires_at = o.offer_expires_at;
+  }
+}
+
+export function joinWaitlist(db: Db, userId: string, eventId: string, now: number): Db {
+  const list = waitlistOf(db, eventId);
+  const action = rules.decideJoinWaitlist({
+    user: getUser(db, userId)!,
+    event: getEvent(db, eventId),
+    registration: registrationOf(db, eventId, userId),
+    onList: list.some((w) => w.user_id === userId),
+    joinedCount: joinedUsers(db, eventId).length,
+    heldCount: rules.seatsHeld(list, now),
+    now,
+  });
+  if (action === 'nothing') return db;
+  const next = clone(db);
+  next.waitlist.push({ event_id: eventId, user_id: userId, created_at: new Date(now).toISOString(), offered_at: null, offer_expires_at: null });
+  return next;
+}
+
+/** Leaving the list; a place held for them goes to the next in line. */
+export function leaveWaitlist(db: Db, userId: string, eventId: string, now: number): Db {
+  const next = clone(db);
+  next.waitlist = next.waitlist.filter((w) => !(w.event_id === eventId && w.user_id === userId));
+  fillOpenPlaces(next, eventId, now);
   return next;
 }
 
