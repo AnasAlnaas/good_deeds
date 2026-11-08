@@ -13,6 +13,7 @@ import type {
   AttendanceItem,
   EventDetail,
   EventLessonItem,
+  LessonImageRef,
   EventNoticeItem,
   EventProposal,
   EventSummary,
@@ -127,16 +128,27 @@ function checkProposal(db: Db, body: EventProposal) {
   if (!(body.subtype in BASE_POINTS_BY_SUBTYPE) || rules.toMs(body.ends_at) <= rules.toMs(body.starts_at)) {
     throw new BackendError('invalid_request');
   }
-  // The same limits as the server's form (server/src/routes/event-input.ts).
-  const lessonOk = (l: { title: string; body: string }) =>
-    l.title.trim().length > 0 && l.title.length <= rules.LESSON_TITLE_MAX && l.body.trim().length > 0 && l.body.length <= rules.LESSON_BODY_MAX;
+  // The same limits as the server's form (server/src/routes/event-input.ts); a picture must have been sent.
+  const lessonOk = (l: EventProposal['lessons'][number]) =>
+    rules.lessonComplete(l) &&
+    l.title.length <= rules.LESSON_TITLE_MAX &&
+    l.body.length <= rules.LESSON_BODY_MAX &&
+    (!l.image_id || db.lesson_images.some((x) => x.id === l.image_id));
   if (body.lessons.length > rules.MAX_LESSONS || !body.lessons.every(lessonOk)) throw new BackendError('invalid_request');
+}
+
+/** A lesson's picture as the app shows it: the demo keeps it as a data: address. */
+function imageRef(db: Db, imageId: string | null): LessonImageRef | null {
+  const image = imageId ? db.lesson_images.find((x) => x.id === imageId) : undefined;
+  return image ? { id: image.id, url: image.data_url, width: image.width, height: image.height } : null;
 }
 
 /** The event's lessons as this person sees them, as the server builds them. */
 function lessonItems(db: Db, meId: string, eventId: string): EventLessonItem[] {
   const learned = server.learnedAt(db, meId);
-  return server.eventLessons(db, eventId).map(({ created_at, ...l }) => ({ ...l, learned_at: learned.get(l.id) ?? null }));
+  return server
+    .eventLessons(db, eventId)
+    .map(({ created_at, ...l }) => ({ ...l, image: imageRef(db, l.image_id), learned_at: learned.get(l.id) ?? null }));
 }
 
 export function createDemoBackend(store: DemoStore, meId: string): Backend {
@@ -237,6 +249,17 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
         change((d) => server.withdrawProposal(d, meId, id));
       }),
 
+    uploadLessonImage: ({ base64, width, height }) =>
+      async(() => {
+        let id = '';
+        const { db } = change((d, t) => {
+          const result = server.addLessonImage(d, meId, { data_url: `data:image/jpeg;base64,${base64}`, width, height }, t);
+          id = result.id;
+          return result.db;
+        });
+        return { image: imageRef(db, id)! };
+      }),
+
     learnLesson: (eventId, lessonId) =>
       async(() => {
         const { db } = change((d, t) => server.learnLesson(d, meId, eventId, lessonId, t));
@@ -254,7 +277,7 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
             const { created_at, ...lesson } = lessons.get(c.lesson_id)!;
             const e = db.events.find((x) => x.id === lesson.event_id)!;
             return {
-              lesson: { ...lesson, learned_at: c.learned_at },
+              lesson: { ...lesson, image: imageRef(db, lesson.image_id), learned_at: c.learned_at },
               event: { id: e.id, title: e.title, starts_at: e.starts_at, subtype: e.subtype },
             };
           });

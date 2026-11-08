@@ -75,7 +75,7 @@ const inputFrom = (d: AdminEventDetail): EventInput => ({
   gender_category: d.event.gender_category,
   organizer_ids: d.organizers.map((o) => o.id),
   terms: d.terms.map((t) => t.text ?? ''),
-  lessons: d.lessons.map(({ title, body }) => ({ title, body })),
+  lessons: d.lessons.map(({ title, body, image_id }) => ({ title, body, image_id })),
 });
 const detail = async (id: string): Promise<AdminEventDetail> => (await call('GET', `/admin/events/${id}`, admin)).body;
 const totalOf = async (token: string): Promise<number> => (await call('GET', '/me', token)).body.total_points;
@@ -128,7 +128,7 @@ const base: CreateEventBody = {
   gender_category: 'mixed',
   organizer_ids: [],
   terms: ['البند الأول', 'البند الثاني'],
-  lessons: [{ title: 'الدرس الأول', body: 'ما يتعلّمه المشارك قبل الانضمام.' }],
+  lessons: [{ title: 'الدرس الأول', body: 'ما يتعلّمه المشارك قبل الانضمام.', image_id: null }],
   publish: false,
 };
 await expectError('ends before it starts', 'invalid_request', call('POST', '/admin/events', admin, { ...base, ends_at: iso(NOW) }));

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/Button';
+import { LessonPicture } from '@/components/LessonPicture';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
 import { Badge, Card, QueryState } from '@/components/ui';
@@ -104,7 +105,8 @@ export default function LearnScreen() {
           )}
           <View key={current.id} style={styles.lesson}>
             <Txt variant="sectionTitle">{current.title}</Txt>
-            <Txt>{current.body}</Txt>
+            {current.image && <LessonPicture image={current.image} label={fmt(s.learn.picture, { title: current.title })} />}
+            {current.body.length > 0 && <Txt>{current.body}</Txt>}
             {current.learned_at && <Badge label={s.learn.learned} color={colors.success} icon="checkmark-circle" />}
           </View>
         </>

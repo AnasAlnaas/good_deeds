@@ -12,6 +12,7 @@ import type { Database } from '../db/client';
 import { newId } from '../db/queries';
 import * as s from '../db/schema';
 import { HttpError } from '../http';
+import { dropUnusedImages } from '../lesson-images';
 
 const subtypes = Object.keys(BASE_POINTS_BY_SUBTYPE) as [string, ...string[]];
 export const isoTime = z.iso.datetime({ offset: true });
@@ -33,8 +34,21 @@ const proposalFields = z.object({
   gender_category: z.enum(['male', 'female', 'mixed']),
   terms: z.array(z.string().trim().min(1).max(1000)).max(30),
   // Absent from a form sent by an app from before the learning corner: no lessons.
+  // A lesson has text, a picture (POST /lesson-images), or both; an older app sends no picture.
   lessons: z
-    .array(z.object({ title: z.string().trim().min(1).max(LESSON_TITLE_MAX), body: z.string().trim().min(1).max(LESSON_BODY_MAX) }))
+    .array(
+      z
+        .object({
+          title: z.string().trim().min(1).max(LESSON_TITLE_MAX),
+          body: z.string().trim().max(LESSON_BODY_MAX),
+          image_id: z
+            .string()
+            .min(1)
+            .nullish()
+            .transform((v) => v ?? null),
+        })
+        .refine(rules.lessonComplete),
+    )
     .max(MAX_LESSONS)
     .default([]),
 });
@@ -84,14 +98,32 @@ export async function writeLinks(q: Database, eventId: string, organizerIds: str
   if (added.length) await q.insert(s.event_organizers).values(added.map((user_id) => ({ event_id: eventId, user_id, added_by: null })));
 }
 
-/** Replaces the event's lessons. Only while nobody has learned one (the callers check). */
-export async function writeLessons(q: Database, eventId: string, lessons: { title: string; body: string }[], at: Date) {
-  await q.delete(s.event_lessons).where(eq(s.event_lessons.event_id, eventId));
+type LessonFields = { title: string; body: string; image_id: string | null };
+
+/**
+ * Replaces the event's lessons. Only while nobody has learned one (the callers
+ * check). Every picture named must have been sent; the ones the old lessons
+ * showed and the new ones do not are removed.
+ */
+export async function writeLessons(q: Database, eventId: string, lessons: LessonFields[], at: Date) {
+  const wanted = [...new Set(lessons.flatMap((l) => (l.image_id ? [l.image_id] : [])))];
+  const found = wanted.length ? await q.select({ id: s.lesson_images.id }).from(s.lesson_images).where(inArray(s.lesson_images.id, wanted)) : [];
+  if (found.length !== wanted.length) throw new HttpError(400, 'invalid_request');
+  const before = await removeLessons(q, eventId, false);
   if (lessons.length) {
     await q.insert(s.event_lessons).values(
-      lessons.map((l, i) => ({ id: newId(), event_id: eventId, order_index: i + 1, title: l.title, body: l.body, created_at: at })),
+      lessons.map((l, i) => ({ id: newId(), event_id: eventId, order_index: i + 1, title: l.title, body: l.body, image_id: l.image_id, created_at: at })),
     );
   }
+  await dropUnusedImages(q, before);
+}
+
+/** Deletes the event's lessons, and, unless told not to, the pictures no other lesson shows. Returns the pictures they showed. */
+export async function removeLessons(q: Database, eventId: string, dropImages = true) {
+  const gone = await q.delete(s.event_lessons).where(eq(s.event_lessons.event_id, eventId)).returning({ image_id: s.event_lessons.image_id });
+  const images = gone.map((l) => l.image_id);
+  if (dropImages) await dropUnusedImages(q, images);
+  return images;
 }
 
 export async function writeTerms(q: Database, eventId: string, terms: string[], at: Date) {

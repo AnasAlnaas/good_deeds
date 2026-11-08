@@ -21,7 +21,7 @@ import type {
   ResolveDisputeBody,
   StatusChangeBody,
 } from '../../shared/admin-api';
-import type { LoginResponse, ResetPasswordBody, SignInBody } from '../../shared/api';
+import type { LessonImageResponse, LoginResponse, ResetPasswordBody, SignInBody } from '../../shared/api';
 import type { ReportStatus, WarningStatus } from '../../shared/types';
 import type { ErrorCode } from './strings';
 
@@ -78,12 +78,15 @@ export const api = {
   changeRole: (id: string, body: ChangeRoleBody) => call<void>('PATCH', `/admin/users/${enc(id)}`, body),
   removePhoto: (id: string) => call<void>('DELETE', `/admin/users/${enc(id)}/photo`),
   resetCode: (id: string) => call<ResetCodeResponse>('POST', `/admin/users/${enc(id)}/reset-code`),
-  /** A profile photo (users.avatar_url). It is served only with the sign-in token, so an <img src> cannot load it directly. */
+  /** A profile photo (users.avatar_url) or a lesson's picture. It is served only with the sign-in token, so an <img src> cannot load it directly. */
   photo: async (avatarUrl: string, signal?: AbortSignal): Promise<Blob> => {
     const res = await fetch(`${API_URL}${avatarUrl}`, { headers: token ? { Authorization: `Bearer ${token}` } : {}, signal });
     if (!res.ok) throw new ApiFailure(res.status === 404 ? 'not_found' : 'internal_error');
     return res.blob();
   },
+
+  /** A lesson's picture, sent before the event form that names it (LessonPicture.tsx makes it). */
+  uploadLessonImage: (jpegBase64: string) => call<LessonImageResponse>('POST', '/lesson-images', { jpeg_base64: jpegBase64 }),
 
   events: () => call<AdminEventRow[]>('GET', '/admin/events'),
   event: (id: string) => call<AdminEventDetail>('GET', `/admin/events/${enc(id)}`),

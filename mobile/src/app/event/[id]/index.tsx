@@ -250,6 +250,7 @@ export default function EventDetail() {
               <Txt variant="bodyStrong" style={styles.flex} numberOfLines={2}>
                 {l.title}
               </Txt>
+              {l.image && <Ionicons name="image-outline" size={18} color={colors.inkMuted} accessibilityLabel={s.event.lessonHasPicture} />}
               {l.learned_at && (
                 <Txt variant="caption" color={colors.success}>
                   {s.event.lessonLearned}

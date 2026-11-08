@@ -84,6 +84,7 @@ export function createApiBackend(opts: { baseUrl: string; token: string; onUnaut
     withdrawProposal: (id) => send('DELETE', `/events/${enc(id)}`),
     learnLesson: (eventId, lessonId) => send('POST', `/events/${enc(eventId)}/lessons/${enc(lessonId)}/learn`),
     myLessons: () => get('/me/lessons'),
+    uploadLessonImage: ({ base64 }) => send('POST', '/lesson-images', { jpeg_base64: base64 }),
     startJoin: (eventId) => send('POST', `/events/${enc(eventId)}/join`),
     acceptTerm: (eventId, termId) => send('POST', `/events/${enc(eventId)}/terms/${enc(termId)}/accept`),
     completeJoin: (eventId) => send('POST', `/events/${enc(eventId)}/join/complete`),

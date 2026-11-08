@@ -268,6 +268,19 @@ export const MAX_LESSONS = 10;
 export const LESSON_TITLE_MAX = 120;
 export const LESSON_BODY_MAX = 4000;
 
+// Owner's decision (2026-11-08): a lesson is text, a picture (an infographic,
+// a diagram), or both, from the same people who write lessons. The app and the
+// panel make a picture at most LESSON_IMAGE_WIDTH_PX wide and
+// LESSON_IMAGE_MAX_HEIGHT_PX tall, a JPEG of at most LESSON_IMAGE_MAX_BYTES.
+export const LESSON_IMAGE_WIDTH_PX = 1080;
+export const LESSON_IMAGE_MAX_HEIGHT_PX = 4320;
+export const LESSON_IMAGE_MAX_BYTES = 1_000_000;
+
+/** A lesson says something: a title, and text or a picture, or both. */
+export function lessonComplete(l: { title: string; body: string; image_id?: string | null }) {
+  return l.title.trim().length > 0 && (l.body.trim().length > 0 || !!l.image_id);
+}
+
 export function sortLessons<T extends Pick<EventLesson, 'order_index'>>(lessons: T[]): T[] {
   return [...lessons].sort((a, b) => a.order_index - b.order_index);
 }

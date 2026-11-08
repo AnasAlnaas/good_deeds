@@ -18,7 +18,8 @@ import {
   type User,
   type Warning,
 } from '../../../shared/types';
-import type { EventLessonItem, EventNoticeItem, PublicUser } from '../../../shared/api';
+import type { EventLessonItem, EventNoticeItem, LessonImageRef, PublicUser } from '../../../shared/api';
+import { lessonImageUrl } from '../photo';
 import type { Database } from './client';
 import { iso } from './rows';
 import * as s from './schema';
@@ -99,11 +100,27 @@ export async function learnedAt(q: Database, userId: string, lessonIds: string[]
   return new Map(rows.map((r) => [r.lesson_id, r.learned_at.toISOString()]));
 }
 
-/** The event's lessons as this person sees them: in order, each with when they learned it. */
+/** The pictures of these lessons, by image id, as the app shows them. */
+export async function lessonImageRefs(q: Database, lessons: { image_id: string | null }[]): Promise<Map<string, LessonImageRef>> {
+  const ids = [...new Set(lessons.flatMap((l) => (l.image_id ? [l.image_id] : [])))];
+  if (ids.length === 0) return new Map();
+  const rows = await q
+    .select({ id: s.lesson_images.id, width: s.lesson_images.width, height: s.lesson_images.height })
+    .from(s.lesson_images)
+    .where(inArray(s.lesson_images.id, ids));
+  return new Map(rows.map((r) => [r.id, { ...r, url: lessonImageUrl(r.id) }]));
+}
+
+/** The event's lessons as this person sees them: in order, each with its picture and when they learned it. */
 export async function lessonItems(q: Database, userId: string, eventId: string): Promise<EventLessonItem[]> {
   const lessons = await lessonsOf(q, eventId);
   const learned = await learnedAt(q, userId, lessons.map((l) => l.id));
-  return lessons.map(({ created_at, ...l }) => ({ ...l, learned_at: learned.get(l.id) ?? null }));
+  const images = await lessonImageRefs(q, lessons);
+  return lessons.map(({ created_at, ...l }) => ({
+    ...l,
+    image: (l.image_id && images.get(l.image_id)) || null,
+    learned_at: learned.get(l.id) ?? null,
+  }));
 }
 
 export async function acceptedTermIds(q: Database, registrationId: string | undefined): Promise<string[]> {

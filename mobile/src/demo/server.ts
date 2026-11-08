@@ -173,10 +173,50 @@ export function proposeEvent(db: Db, userId: string, input: EventProposal, now: 
 
 /** Replaces an event's lessons (in `next`, already a copy). Only while nobody learned one: a draft's. */
 function writeLessons(next: Db, eventId: string, input: EventProposal, at: string) {
-  next.event_lessons = next.event_lessons.filter((x) => x.event_id !== eventId);
+  const before = removeLessons(next, eventId);
   input.lessons.forEach((l, i) =>
-    next.event_lessons.push({ id: newId('lesson'), event_id: eventId, order_index: i + 1, title: l.title, body: l.body, created_at: at }),
+    next.event_lessons.push({
+      id: newId('lesson'),
+      event_id: eventId,
+      order_index: i + 1,
+      title: l.title,
+      body: l.body,
+      image_id: l.image_id,
+      created_at: at,
+    }),
   );
+  dropUnusedImages(next, before);
+}
+
+/** Deletes the event's lessons (in `next`, already a copy); returns the pictures they showed. */
+function removeLessons(next: Db, eventId: string) {
+  const images = next.event_lessons.filter((x) => x.event_id === eventId).map((x) => x.image_id);
+  next.event_lessons = next.event_lessons.filter((x) => x.event_id !== eventId);
+  return images;
+}
+
+/** Those of these pictures no lesson shows any more are removed, as on the server (server/src/lesson-images.ts). */
+function dropUnusedImages(next: Db, ids: (string | null)[]) {
+  const shown = new Set(next.event_lessons.map((x) => x.image_id));
+  next.lesson_images = next.lesson_images.filter((x) => !ids.includes(x.id) || shown.has(x.id));
+}
+
+/** Pictures sent for a lesson and never used are kept this long (a form may still be open). */
+const UNUSED_IMAGE_MS = 2 * 24 * 60 * 60 * 1000;
+
+/**
+ * A lesson's picture, from whoever may write lessons. The demo has no
+ * scheduled job, so sending one also removes those never used for days.
+ */
+export function addLessonImage(db: Db, userId: string, image: { data_url: string; width: number; height: number }, now: number) {
+  const user = getUser(db, userId)!;
+  if (!rules.canCreateEvents(user, levelFor(db, totalPoints(db, userId)))) throw new ApiError('cannot_create_events');
+  const next = clone(db);
+  const shown = new Set(next.event_lessons.map((x) => x.image_id));
+  next.lesson_images = next.lesson_images.filter((x) => shown.has(x.id) || rules.toMs(x.created_at) > now - UNUSED_IMAGE_MS);
+  const id = newId('img');
+  next.lesson_images.push({ id, ...image, uploaded_by: userId, created_at: new Date(now).toISOString() });
+  return { db: next, id };
 }
 
 /** Where the event happens, as the server checks it (the form only sends a place that holds together). */
@@ -233,7 +273,7 @@ export function withdrawProposal(db: Db, userId: string, eventId: string): Db {
   next.events = next.events.filter((e) => e.id !== eventId);
   next.event_organizers = next.event_organizers.filter((x) => x.event_id !== eventId);
   next.event_terms = next.event_terms.filter((x) => x.event_id !== eventId);
-  next.event_lessons = next.event_lessons.filter((x) => x.event_id !== eventId);
+  dropUnusedImages(next, removeLessons(next, eventId));
   return next;
 }
 

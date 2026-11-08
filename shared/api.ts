@@ -178,7 +178,10 @@ export interface EventProposal {
 
 export interface LessonInput {
   title: string;
+  /** May be empty when there is a picture (rules.lessonComplete). */
   body: string;
+  /** A picture sent first to POST /api/lesson-images; null = text only. */
+  image_id: string | null;
 }
 export interface ProposeEventResponse {
   id: string;
@@ -263,8 +266,33 @@ export interface NoticeResponse {
 // ---------- the learning corner (ركن التعلم) ----------
 
 export interface EventLessonItem extends Omit<EventLesson, 'created_at'> {
+  image: LessonImageRef | null;
   /** When the signed-in user learned it; null = not yet. */
   learned_at: string | null;
+}
+
+/**
+ * A lesson's picture. `url` is GET /api/lesson-images/:id on the server (for
+ * signed-in people; it never changes) or a data: address in the offline demo.
+ * The size lets a screen keep its shape before it loads.
+ */
+export interface LessonImageRef {
+  id: string;
+  url: string;
+  width: number;
+  height: number;
+}
+
+/**
+ * POST /api/lesson-images: a JPEG for a lesson (rules.LESSON_IMAGE_*), base64,
+ * from anyone who may write lessons. Its metadata is removed. It belongs to a
+ * lesson once an event form names it; one never used is removed after a day.
+ */
+export interface LessonImageBody {
+  jpeg_base64: string;
+}
+export interface LessonImageResponse {
+  image: LessonImageRef;
 }
 
 /** POST /api/events/:id/lessons/:lessonId/learn: anyone who can see the event, joined or not. */

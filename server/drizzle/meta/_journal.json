@@ -92,6 +92,13 @@
       "when": 1794080160425,
       "tag": "0012_online_events",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794119195867,
+      "tag": "0013_lesson_images",
+      "breakpoints": true
     }
   ]
 }

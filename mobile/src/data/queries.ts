@@ -41,8 +41,8 @@ export const queryClient = new QueryClient({
 export const persistOptions: Omit<PersistQueryClientOptions, 'queryClient'> = {
   persister: createAsyncStoragePersister({ storage: AsyncStorage, key: 'gd.queries', throttleTime: 1000 }),
   maxAge: WEEK,
-  // 2: event pages have lessons (the learning corner).
-  buster: '2',
+  // 2: event pages have lessons (the learning corner). 3: lessons may have a picture.
+  buster: '3',
   dehydrateOptions: {
     shouldDehydrateQuery: (q: Query) => q.state.status === 'success' && String(q.queryKey[0]).startsWith('api:'),
   },

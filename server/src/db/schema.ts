@@ -194,6 +194,20 @@ export const event_terms = pgTable(
   (t) => [uniqueIndex('event_terms_order').on(t.event_id, t.order_index)],
 );
 
+// A lesson's picture (shared/types.ts LessonImage; the demo's data_url is the
+// jpeg here): an infographic or a diagram, kept in the database like profile
+// photos. Removed with the last lesson that shows it, or after a while if no
+// lesson ever did (src/lesson-images.ts).
+export const lesson_images = pgTable('lesson_images', {
+  id: text('id').primaryKey(),
+  /** A JPEG with its metadata removed (src/photo.ts). */
+  jpeg: bytea('jpeg').notNull(),
+  width: integer('width').notNull(),
+  height: integer('height').notNull(),
+  uploaded_by: text('uploaded_by').notNull().references(() => users.id),
+  created_at: at('created_at').notNull(),
+});
+
 // An event's learning corner (shared/types.ts EventLesson): read before joining, approved with the event.
 export const event_lessons = pgTable(
   'event_lessons',
@@ -203,6 +217,7 @@ export const event_lessons = pgTable(
     order_index: integer('order_index').notNull(),
     title: text('title').notNull(),
     body: text('body').notNull(),
+    image_id: text('image_id').references(() => lesson_images.id),
     created_at: at('created_at').notNull().defaultNow(),
   },
   (t) => [uniqueIndex('event_lessons_order').on(t.event_id, t.order_index)],

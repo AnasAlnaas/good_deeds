@@ -58,7 +58,7 @@ import { iso } from '../db/rows';
 import * as s from '../db/schema';
 import { type AppEnv, readBody } from '../http';
 import { notifyEventNotice, notifyHoursToConfirm, notifySupervisorAdded, notifyWarningGiven } from '../notify';
-import { placeOf, proposalInput, writeLessons, writeLinks, writeTerms } from './event-input';
+import { placeOf, proposalInput, removeLessons, writeLessons, writeLinks, writeTerms } from './event-input';
 
 // `recorded_at`: the record was made on the phone without a connection, at that time (rules.decideRecordStart).
 const recordTimeBody = z.object({
@@ -250,7 +250,7 @@ export const eventRoutes = new Hono<AppEnv>()
       const [row] = await tx.select().from(s.events).where(eq(s.events.id, id)).for('update');
       rules.assertCanChangeProposal(me, row);
       await tx.delete(s.event_terms).where(eq(s.event_terms.event_id, id));
-      await tx.delete(s.event_lessons).where(eq(s.event_lessons.event_id, id));
+      await removeLessons(tx, id);
       await tx.delete(s.event_organizers).where(eq(s.event_organizers.event_id, id));
       await tx.delete(s.events).where(eq(s.events.id, id));
     });
