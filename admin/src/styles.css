@@ -187,6 +187,9 @@ td.num, th.num { text-align: end; font-variant-numeric: tabular-nums; }
 .pick-list { max-height: 240px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-input); padding: 4px 12px; }
 .term-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: start; }
 .term-tools { display: grid; gap: 4px; }
+.lesson-picture { display: block; width: 100%; max-width: 420px; max-height: 480px; object-fit: contain; border-radius: 8px; background: var(--surface-alt); border: 1px solid var(--border); }
+label.btn input[hidden] { display: none; }
+.btn-disabled { pointer-events: none; opacity: 0.6; }
 ol.terms { margin: 0; padding-inline-start: 22px; display: grid; gap: 6px; }
 
 /* ---------- sign-in ---------- */

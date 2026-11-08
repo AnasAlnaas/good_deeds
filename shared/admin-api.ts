@@ -2,7 +2,7 @@
 // builds these and the admin panel (admin/) reads them. Only users whose role
 // is `admin` may call them; anyone else gets 403 `forbidden`.
 
-import type { EventProposal, PublicUser } from './api';
+import type { EventProposal, LessonImageRef, PublicUser } from './api';
 import type { EventClassId } from './classes';
 import type {
   AppEvent,
@@ -100,7 +100,7 @@ export interface StatusChangeBody {
 export interface AdminEventDetail extends AdminEventRow {
   terms: EventTerm[];
   /** The learning corner, in order, and how many people learned each lesson. */
-  lessons: (EventLesson & { learned_count: number })[];
+  lessons: (EventLesson & { image: LessonImageRef | null; learned_count: number })[];
   participants: { user: PublicUser & Pick<User, 'phone'>; registration: Registration; attendance: Attendance | null }[];
 }
 

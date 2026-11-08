@@ -209,6 +209,24 @@ expectEqual('he withdraws it: gone, with its terms and supervisors', [
 ], [false, false, false, 2]);
 expectError('withdrawn twice', 'not_found', () => server.withdrawProposal(withdrawn, 'u_khaled', draft.id));
 
+console.log('\n— pictures in lessons');
+{
+  const picture = { data_url: 'data:image/jpeg;base64,/9j/', width: 1080, height: 1920 };
+  expectError('a member who may not write lessons sends a picture', 'cannot_create_events', () => server.addLessonImage(db, 'u_ahmad', picture, NOW));
+  const sent = server.addLessonImage(db, 'u_khaled', picture, NOW);
+  const lessons = [{ title: 'خريطة الحديقة', body: '', image_id: sent.id }];
+  const { db: pictured, event } = server.proposeEvent(sent.db, 'u_khaled', proposal({ lessons }), NOW);
+  expectEqual('a lesson that is only a picture', server.eventLessons(pictured, event.id).map((l) => l.image_id), [sent.id]);
+  const other = server.addLessonImage(pictured, 'u_khaled', picture, NOW);
+  const changed = server.editProposal(other.db, 'u_khaled', event.id, proposal({ lessons: [{ ...lessons[0], image_id: other.id }] }), NOW);
+  expectEqual('changing it removes the old picture', changed.lesson_images.map((x) => x.id), [other.id]);
+  const unused = server.addLessonImage(changed, 'u_khaled', picture, NOW);
+  expectEqual('a picture no lesson used stays a while', unused.db.lesson_images.length, 2);
+  const later = server.addLessonImage(unused.db, 'u_khaled', picture, NOW + 3 * 24 * HOUR);
+  expectEqual('and goes days later', later.db.lesson_images.some((x) => x.id === unused.id), false);
+  expectEqual('withdrawing the event removes its picture', server.withdrawProposal(changed, 'u_khaled', event.id).lesson_images.length, 0);
+}
+
 console.log('\n— phone numbers, names and cities');
 for (const typed of ['0912345678', '091 234 5678', '091-234-5678', '912345678', '+218912345678', '+218 91 234 5678', '00218912345678', '218912345678', '٠٩١٢٣٤٥٦٧٨', '⁦+218912345678⁩']) {
   expectEqual(`"${typed}" is a Libyan mobile number`, rules.libyanMobile(typed), '+218912345678');

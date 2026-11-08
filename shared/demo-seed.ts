@@ -17,7 +17,8 @@ import { pointsForAttendance } from './rules';
 // 7: a notice is an announcement or a question, each with its own reactions.
 // 8: events have a learning corner (lessons read before joining).
 // 9: online events (a platform and a meeting link instead of a place).
-export const SEED_VERSION = 9;
+// 10: a lesson may have a picture.
+export const SEED_VERSION = 10;
 
 export const DEMO_ACCOUNTS = {
   participant: 'u_ahmad',
@@ -285,6 +286,7 @@ export function buildSeed(nowMs: number): Db {
     notice_reactions: [],
     event_terms: [],
     event_lessons: [],
+    lesson_images: [],
     lesson_completions: [],
     registrations: [],
     term_acceptances: [],
@@ -329,7 +331,7 @@ export function buildSeed(nowMs: number): Db {
     );
     const lessons = LESSONS[s.subtype] ?? [];
     lessons.forEach((l, i) =>
-      db.event_lessons.push({ id: `${s.id}_l${i + 1}`, event_id: s.id, order_index: i + 1, title: l.title, body: l.body, created_at: created }),
+      db.event_lessons.push({ id: `${s.id}_l${i + 1}`, event_id: s.id, order_index: i + 1, title: l.title, body: l.body, image_id: null, created_at: created }),
     );
     for (const u of s.joined) {
       // Whoever joined learned the lessons first.

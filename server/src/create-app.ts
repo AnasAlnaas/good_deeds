@@ -8,18 +8,20 @@ import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 
 import type { ErrorBody } from '../../shared/api';
-import { PHOTO_MAX_BYTES } from '../../shared/rules';
+import { LESSON_IMAGE_MAX_BYTES, PHOTO_MAX_BYTES } from '../../shared/rules';
 import { type AppDeps, type AppEnv, errorResponse } from './http';
 import { closeDueAndNotify } from './notify';
 import { adminRoutes } from './routes/admin';
 import { authRoutes } from './routes/auth';
 import { eventRoutes } from './routes/events';
 import { attendanceRoutes, meRoutes, userRoutes } from './routes/me';
+import { lessonImageRoutes } from './routes/lesson-images';
 import { reportRoutes, warningRoutes } from './routes/reports';
 
-// The largest body any request needs: a profile photo, base64 (4 bytes for every 3)
-// in JSON, with room to spare. Anything bigger is refused before it is read into memory.
-const MAX_BODY_BYTES = Math.ceil((PHOTO_MAX_BYTES * 4) / 3) + 64 * 1024;
+// The largest body any request needs: a lesson's picture or a profile photo,
+// base64 (4 bytes for every 3) in JSON, with room to spare. Anything bigger is
+// refused before it is read into memory.
+const MAX_BODY_BYTES = Math.ceil((Math.max(PHOTO_MAX_BYTES, LESSON_IMAGE_MAX_BYTES) * 4) / 3) + 64 * 1024;
 
 export function createApp(deps: AppDeps) {
   const app = new Hono<AppEnv>().basePath('/api');
@@ -40,6 +42,7 @@ export function createApp(deps: AppDeps) {
   app.route('/me', meRoutes);
   app.route('/attendance', attendanceRoutes);
   app.route('/users', userRoutes);
+  app.route('/lesson-images', lessonImageRoutes);
   app.route('/reports', reportRoutes);
   app.route('/warnings', warningRoutes);
   app.route('/admin', adminRoutes);

@@ -53,9 +53,20 @@ export default function MyLessonsScreen() {
           {lessons.map((l) => (
             <Card key={l.id} onPress={() => router.push({ pathname: '/event/[id]/learn', params: { id: event.id, lesson: l.id } })}>
               <Txt variant="bodyStrong">{l.title}</Txt>
-              <Txt numberOfLines={2} color={colors.inkMuted}>
-                {l.body}
-              </Txt>
+              {l.body.length > 0 ? (
+                <Txt numberOfLines={2} color={colors.inkMuted}>
+                  {l.body}
+                </Txt>
+              ) : (
+                l.image && (
+                  <View style={styles.pictureRow}>
+                    <Ionicons name="image-outline" size={16} color={colors.inkMuted} />
+                    <Txt variant="caption" color={colors.inkMuted}>
+                      {s.myLessons.picture}
+                    </Txt>
+                  </View>
+                )
+              )}
               {l.learned_at && (
                 <Txt variant="caption" color={colors.success}>
                   {fmt(s.myLessons.learnedOn, { day: day(l.learned_at, s, now) })}
@@ -73,4 +84,5 @@ const styles = StyleSheet.create({
   group: { gap: space.sm },
   eventRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.sm },
   flex: { flex: 1 },
+  pictureRow: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
 });

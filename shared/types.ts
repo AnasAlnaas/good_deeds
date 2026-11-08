@@ -149,7 +149,25 @@ export interface EventLesson {
   event_id: string;
   order_index: number;
   title: string;
+  /** May be empty when the lesson has a picture: an infographic can say it all. */
   body: string;
+  /** A picture shown with the lesson (an infographic, a diagram); null = text only. */
+  image_id: string | null;
+  created_at: string;
+}
+
+/**
+ * Owner's decision (2026-11-08): a lesson is text, a picture, or both. A
+ * picture is a JPEG made small enough before it is sent (rules.LESSON_IMAGE_*).
+ * The server keeps its bytes in a table of its own; the offline demo keeps
+ * them here, as a data: address.
+ */
+export interface LessonImage {
+  id: string;
+  width: number;
+  height: number;
+  uploaded_by: string;
+  data_url: string;
   created_at: string;
 }
 
@@ -276,6 +294,7 @@ export interface Db {
   notice_reactions: NoticeReaction[];
   event_terms: EventTerm[];
   event_lessons: EventLesson[];
+  lesson_images: LessonImage[];
   lesson_completions: LessonCompletion[];
   registrations: Registration[];
   term_acceptances: TermAcceptance[];

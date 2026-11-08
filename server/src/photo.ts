@@ -2,7 +2,7 @@
 // if it really is one and of a sensible size, and removes its metadata first:
 // EXIF can carry where the photo was taken, the phone, the date.
 
-import { PHOTO_MAX_BYTES } from '../../shared/rules';
+import { LESSON_IMAGE_MAX_BYTES, LESSON_IMAGE_MAX_HEIGHT_PX, LESSON_IMAGE_WIDTH_PX, PHOTO_MAX_BYTES } from '../../shared/rules';
 
 const SOI = 0xd8; // start of image
 const SOS = 0xda; // start of scan: the image data follows, to the end of the file
@@ -47,13 +47,53 @@ function concat(parts: Uint8Array[]) {
   return out;
 }
 
-/** Decodes and checks an uploaded photo. null = not a JPEG, or too big. */
-export function readPhoto(base64: string): Uint8Array | null {
+/**
+ * The width and height in a JPEG's frame header (a SOF segment), or null when
+ * there is none before the image data. Markers C4, C8 and CC share the range
+ * but are not frame headers.
+ */
+export function jpegSize(bytes: Uint8Array): { width: number; height: number } | null {
+  let i = 2;
+  while (i + 4 <= bytes.length && bytes[i] === 0xff) {
+    const marker = bytes[i + 1];
+    if (marker === 0xff) {
+      i++;
+      continue;
+    }
+    if (marker === SOS || marker === EOI) return null;
+    const length = (bytes[i + 2] << 8) | bytes[i + 3];
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+      if (i + 9 > bytes.length) return null;
+      return { height: (bytes[i + 5] << 8) | bytes[i + 6], width: (bytes[i + 7] << 8) | bytes[i + 8] };
+    }
+    i += 2 + length;
+  }
+  return null;
+}
+
+function decode(base64: string, maxBytes: number) {
   if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) return null;
   const bytes = new Uint8Array(Buffer.from(base64, 'base64'));
-  if (bytes.length === 0 || bytes.length > PHOTO_MAX_BYTES) return null;
+  if (bytes.length === 0 || bytes.length > maxBytes) return null;
   return stripJpegMetadata(bytes);
 }
+
+/** Decodes and checks an uploaded photo. null = not a JPEG, or too big. */
+export function readPhoto(base64: string): Uint8Array | null {
+  return decode(base64, PHOTO_MAX_BYTES);
+}
+
+/** Decodes and checks a lesson's picture. null = not a JPEG, too big, or larger than the app and panel make one. */
+export function readLessonImage(base64: string): { jpeg: Uint8Array; width: number; height: number } | null {
+  const jpeg = decode(base64, LESSON_IMAGE_MAX_BYTES);
+  const size = jpeg && jpegSize(jpeg);
+  if (!jpeg || !size || size.width < 1 || size.height < 1) return null;
+  if (size.width > LESSON_IMAGE_WIDTH_PX || size.height > LESSON_IMAGE_MAX_HEIGHT_PX) return null;
+  return { jpeg, ...size };
+}
+
+/** Where the app finds a lesson's picture. A picture never changes; a new one has a new id. */
+export const lessonImageUrl = (id: string) => `/api/lesson-images/${encodeURIComponent(id)}`;
 
 /** Where the app finds a person's photo. The version changes with each new photo, so caches never show an old one. */
 export const photoUrl = (userId: string, at: Date) => `/api/users/${encodeURIComponent(userId)}/photo?v=${at.getTime()}`;

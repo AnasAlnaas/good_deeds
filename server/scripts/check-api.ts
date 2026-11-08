@@ -21,8 +21,9 @@ import type {
   ReportFormMeta,
   RosterResponse,
 } from '../../shared/api';
-import { DELETED_NAME, NOTICE_MAX, PHOTO_MAX_BYTES } from '../../shared/rules';
+import { DELETED_NAME, LESSON_IMAGE_MAX_BYTES, NOTICE_MAX, PHOTO_MAX_BYTES } from '../../shared/rules';
 import * as s from '../src/db/schema';
+import { sweepLessonImages } from '../src/lesson-images';
 import { startHarness } from './harness';
 
 const NOW = new Date('2026-10-21T12:00:00').getTime();
@@ -569,6 +570,48 @@ const renewed = (await call('PUT', '/me/photo', ahmad, b64(jpeg))).body.avatar_u
 expectEqual('a new photo gets a new address, so no phone shows the old one', renewed !== avatar_url, true);
 await expectOk('remove the photo', call('DELETE', '/me/photo', ahmad));
 expectEqual('gone from the profile and the server', [(await meOf(ahmad)).user.avatar_url, (await h.raw(renewed, khaled)).status], [null, 404]);
+
+// ---------------------------------------------------------------------------
+console.log('\n— pictures in lessons');
+// The same kind of header, with a frame header (SOF0) giving its size: height, then width.
+const picture = (width: number, height: number, extra = Buffer.alloc(0)) =>
+  Buffer.concat([
+    jpeg.subarray(0, jpeg.length - 14),
+    segment(0xc0, Buffer.from([8, height >> 8, height & 0xff, width >> 8, width & 0xff, 1, 1, 0x11, 0])),
+    extra,
+    jpeg.subarray(jpeg.length - 14),
+  ]);
+const upload = (token: string, bytes: Buffer) => call('POST', '/lesson-images', token, b64(bytes));
+await expectError('a member who may not write lessons sends a picture', 'cannot_create_events', upload(ahmad, picture(800, 1200)));
+await expectError('a file that is not a JPEG', 'photo_invalid', upload(khaled, Buffer.from('<svg onload="alert(1)"/>')));
+await expectError('a JPEG without a size', 'photo_invalid', upload(khaled, jpeg));
+await expectError('wider than the app makes one', 'photo_invalid', upload(khaled, picture(4000, 3000)));
+await expectError('taller than the app makes one', 'photo_invalid', upload(khaled, picture(1080, 9000)));
+await expectError('too big', 'photo_invalid', upload(khaled, picture(1080, 1920, Buffer.alloc(LESSON_IMAGE_MAX_BYTES))));
+const sent = (await expectOk('a supervisor sends an infographic', upload(khaled, picture(1080, 1920)))).image;
+expectEqual('with its size, read from the file', [sent.width, sent.height, sent.url], [1080, 1920, `/api/lesson-images/${sent.id}`]);
+const seenPicture = await h.raw(sent.url, mariam);
+expectEqual('anyone signed in sees it, as a JPEG without its metadata', [seenPicture.status, seenPicture.type, seenPicture.bytes.includes('GPS')], [200, 'image/jpeg', false]);
+expectEqual('nobody signed out does', (await h.raw(sent.url)).status, 401);
+const lessonsWith = (image_id: string | null) => [
+  { title: 'خريطة الحديقة', body: '', image_id },
+  { title: 'ما نجمعه', body: 'البلاستيك وحده، والزجاج وحده.', image_id: null },
+];
+await expectError('a lesson with neither text nor a picture', 'invalid_request', call('POST', '/events', khaled, proposal({ lessons: lessonsWith(null) })));
+await expectError('a picture that was never sent', 'invalid_request', call('POST', '/events', khaled, proposal({ lessons: lessonsWith('nope') })));
+const withPicture = await expectOk('a lesson that is only a picture, and one only text', call('POST', '/events', khaled, proposal({ lessons: lessonsWith(sent.id) })));
+const pictured: EventDetail = (await call('GET', `/events/${withPicture.id}`, khaled)).body;
+expectEqual('the event shows the picture with its lesson', pictured.lessons.map((l) => l.image?.url ?? null), [sent.url, null]);
+const another = (await upload(khaled, picture(1080, 1350))).body.image;
+await expectOk('he changes the picture', call('PUT', `/events/${withPicture.id}`, khaled, proposal({ lessons: lessonsWith(another.id) })));
+expectEqual('the old one is removed, the new one shows', [(await h.raw(sent.url, khaled)).status, (await h.raw(another.url, khaled)).status], [404, 200]);
+await expectOk('he withdraws the event', call('DELETE', `/events/${withPicture.id}`, khaled));
+expectEqual('its picture goes with it', (await h.raw(another.url, khaled)).status, 404);
+const forgotten = (await upload(admin, picture(600, 600))).body.image;
+await sweepLessonImages(conn.db, h.clock() + 60_000);
+expectEqual('a picture no lesson used stays a while (a form may still be open)', (await h.raw(forgotten.url, admin)).status, 200);
+await sweepLessonImages(conn.db, h.clock() + 3 * 24 * HOUR);
+expectEqual('then the scheduled job removes it', (await h.raw(forgotten.url, admin)).status, 404);
 
 // ---------------------------------------------------------------------------
 console.log('\n— editing the profile');

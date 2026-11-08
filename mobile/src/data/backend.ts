@@ -12,6 +12,7 @@ import type {
   EventDetail,
   EventFormMeta,
   LearnLessonResponse,
+  LessonImageResponse,
   MyLesson,
   EventProposal,
   EventSummary,
@@ -66,6 +67,8 @@ export interface Backend {
   learnLesson(eventId: string, lessonId: string): Promise<LearnLessonResponse>;
   /** Every lesson the person learned, latest first. */
   myLessons(): Promise<MyLesson[]>;
+  /** A lesson's picture, sent before the event form that names it (src/lib/photo.ts makes it). */
+  uploadLessonImage(picture: { base64: string; width: number; height: number }): Promise<LessonImageResponse>;
   startJoin(eventId: string): Promise<RegistrationResponse>;
   acceptTerm(eventId: string, termId: string): Promise<AcceptTermResponse>;
   completeJoin(eventId: string): Promise<RegistrationResponse>;

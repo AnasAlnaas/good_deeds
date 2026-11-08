@@ -7,7 +7,9 @@ import { ADDRESS_MAX, cleanPlace, MEETING_URL_MAX } from '../../../shared/rules'
 import { type GenderCategory, type LocationType, MEETING_PLATFORMS, type MeetingPlatform } from '../../../shared/types';
 import { api } from '../api';
 import { fill, fromLocalInput, toLocalInput } from '../format';
-import { LESSON_BODY_MAX, LESSON_TITLE_MAX, MAX_LESSONS } from '../../../shared/rules';
+import type { LessonImageRef } from '../../../shared/api';
+import { LESSON_BODY_MAX, LESSON_TITLE_MAX, lessonComplete, MAX_LESSONS } from '../../../shared/rules';
+import { LessonPicture, lessonJpeg } from '../LessonPicture';
 import { t } from '../strings';
 import { Button, ErrorNote, Field, Notice, PageHeader, QueryState, useAction } from '../ui';
 
@@ -66,7 +68,7 @@ function initial(existing: AdminEventDetail | undefined): EventInput {
     gender_category: e.gender_category,
     organizer_ids: existing.organizers.map((o) => o.id),
     terms: existing.terms.map((x) => x.text ?? ''),
-    lessons: existing.lessons.map(({ title, body }) => ({ title, body })),
+    lessons: existing.lessons.map(({ title, body, image_id }) => ({ title, body, image_id })),
   };
 }
 
@@ -100,6 +102,12 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
   const cleaned = cleanPlace(place);
   const [peopleFilter, setPeopleFilter] = useState('');
   const [invalid, setInvalid] = useState(false);
+  // The lessons' pictures, to show them; the form itself names each by its id.
+  const [pictures, setPictures] = useState<Record<string, LessonImageRef>>(() =>
+    Object.fromEntries((existing?.lessons ?? []).flatMap((l) => (l.image ? [[l.image.id, l.image]] : []))),
+  );
+  const [sending, setSending] = useState<number | null>(null);
+  const [pictureProblem, setPictureProblem] = useState<{ i: number; text: string } | null>(null);
   const set = <K extends keyof EventInput>(key: K, value: EventInput[K]) => setV((prev) => ({ ...prev, [key]: value }));
 
   // What the server would refuse to change, shown as locked instead.
@@ -118,7 +126,8 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
     Date.parse(v.ends_at) > Date.parse(v.starts_at) &&
     v.capacity >= 1 &&
     v.terms.every((x) => x.trim().length > 0) &&
-    v.lessons.every((l) => l.title.trim().length > 0 && l.body.trim().length > 0);
+    v.lessons.every(lessonComplete);
+  const lessonsIncomplete = !v.lessons.every(lessonComplete);
 
   const submit = async (publish: boolean) => {
     if (!valid || !cleaned) {
@@ -130,7 +139,7 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
       ...v,
       ...cleaned,
       terms: v.terms.map((x) => x.trim()),
-      lessons: v.lessons.map((l) => ({ title: l.title.trim(), body: l.body.trim() })),
+      lessons: v.lessons.map((l) => ({ title: l.title.trim(), body: l.body.trim(), image_id: l.image_id })),
     };
     if (existing) {
       if (await run(() => api.updateEvent(existing.event.id, body))) navigate(`/events/${existing.event.id}`);
@@ -152,7 +161,24 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
     set('lessons', next);
   };
   const putLesson = (i: number, patch: Partial<EventInput['lessons'][number]>) =>
-    set('lessons', v.lessons.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+    setV((prev) => ({ ...prev, lessons: prev.lessons.map((x, j) => (j === i ? { ...x, ...patch } : x)) }));
+  // The picture is made small enough here and sent first; saving the event keeps it.
+  const choosePicture = async (i: number, file: File | undefined) => {
+    setPictureProblem(null);
+    if (!file) return;
+    const jpeg = await lessonJpeg(file);
+    if (jpeg === 'unreadable' || jpeg === 'too_big') {
+      setPictureProblem({ i, text: jpeg === 'unreadable' ? t.form.pictureUnreadable : t.form.pictureTooBig });
+      return;
+    }
+    setSending(i);
+    const r = await run(() => api.uploadLessonImage(jpeg));
+    setSending(null);
+    if (!r) return;
+    const { image } = r.value;
+    setPictures((prev) => ({ ...prev, [image.id]: image }));
+    putLesson(i, { image_id: image.id });
+  };
   const filterText = peopleFilter.trim();
   const people = meta.people.filter((p) => !filterText || p.full_name.includes(filterText) || p.phone.includes(filterText));
   const chosen = meta.people.filter((p) => v.organizer_ids.includes(p.id));
@@ -306,7 +332,34 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
               <Field label={t.form.lessonTitle}>
                 <input value={lesson.title} maxLength={LESSON_TITLE_MAX} disabled={lessonsLocked} onChange={(e) => putLesson(i, { title: e.target.value })} />
               </Field>
-              <Field label={t.form.lessonBody}>
+              {lesson.image_id && pictures[lesson.image_id] && (
+                <LessonPicture image={pictures[lesson.image_id]} alt={fill(t.event.lessonPicture, { title: lesson.title })} />
+              )}
+              {!lessonsLocked && (
+                <div className="row">
+                  <label className={`btn btn-secondary btn-small ${busy ? 'btn-disabled' : ''}`}>
+                    {lesson.image_id ? t.form.changePicture : t.form.addPicture}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      disabled={busy}
+                      onChange={(e) => {
+                        void choosePicture(i, e.target.files?.[0]);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                  {lesson.image_id && (
+                    <Button variant="quiet" className="btn-small" onClick={() => putLesson(i, { image_id: null })}>
+                      {t.form.removePicture}
+                    </Button>
+                  )}
+                  {sending === i && <span className="small muted">{t.form.sendingPicture}</span>}
+                </div>
+              )}
+              {pictureProblem?.i === i && <Notice tone="danger">{pictureProblem.text}</Notice>}
+              <Field label={lesson.image_id ? t.form.lessonBodyOptional : t.form.lessonBody}>
                 <textarea rows={4} value={lesson.body} maxLength={LESSON_BODY_MAX} disabled={lessonsLocked} onChange={(e) => putLesson(i, { body: e.target.value })} />
               </Field>
             </div>
@@ -327,7 +380,7 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
         ))}
         {!lessonsLocked && v.lessons.length < MAX_LESSONS && (
           <div>
-            <Button variant="secondary" onClick={() => set('lessons', [...v.lessons, { title: '', body: '' }])}>
+            <Button variant="secondary" onClick={() => set('lessons', [...v.lessons, { title: '', body: '', image_id: null }])}>
               {t.form.addLesson}
             </Button>
           </div>
@@ -372,7 +425,7 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
         )}
       </section>
 
-      {invalid && <Notice tone="danger">{t.form.invalid}</Notice>}
+      {invalid && <Notice tone="danger">{lessonsIncomplete ? t.form.lessonIncomplete : t.form.invalid}</Notice>}
       <ErrorNote code={error} />
       <div className="actions">
         {existing ? (

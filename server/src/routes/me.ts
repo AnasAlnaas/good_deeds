@@ -24,7 +24,7 @@ import * as rules from '../../../shared/rules';
 import type { Attendance, User } from '../../../shared/types';
 import { requireUser } from '../auth';
 import type { Database } from '../db/client';
-import { allLevels, attendanceById, creditPoints, findEvent, findUser, ledgerOf, publicUser, shownTo } from '../db/queries';
+import { allLevels, attendanceById, creditPoints, findEvent, findUser, lessonImageRefs, ledgerOf, publicUser, shownTo } from '../db/queries';
 import { iso } from '../db/rows';
 import * as s from '../db/schema';
 import { EMAIL_CODE_MINUTES, sendEmailCode, takeEmailCode } from '../email-codes';
@@ -143,10 +143,12 @@ export const meRoutes = new Hono<AppEnv>()
       .innerJoin(s.events, eq(s.events.id, s.event_lessons.event_id))
       .where(eq(s.lesson_completions.user_id, c.var.user.id))
       .orderBy(desc(s.lesson_completions.learned_at));
+    const images = await lessonImageRefs(db, rows.map((r) => r.lesson));
     return c.json<MyLesson[]>(
       rows.map((r) => {
         const { created_at, ...lesson } = iso(r.lesson);
-        return { lesson: { ...lesson, learned_at: r.learned_at.toISOString() }, event: iso(r.event) };
+        const image = (lesson.image_id && images.get(lesson.image_id)) || null;
+        return { lesson: { ...lesson, image, learned_at: r.learned_at.toISOString() }, event: iso(r.event) };
       }),
     );
   })

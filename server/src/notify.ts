@@ -18,6 +18,7 @@ import { and, eq, gt, inArray, isNull, lte, ne } from 'drizzle-orm';
 import { MEETING_LINK_OPENS_MINUTES } from '../../shared/rules';
 
 import { closeDueAttendance } from './db/queries';
+import { sweepLessonImages } from './lesson-images';
 import * as s from './db/schema';
 import type { AppDeps } from './http';
 import type { PushMessage } from './push';
@@ -96,6 +97,7 @@ export async function closeDueAndNotify(deps: AppDeps) {
   const closed = await closeDueAttendance(deps.db, deps.now());
   notifyHoursToConfirm(deps, closed, 'auto_closed');
   await remindMeetingLinks(deps);
+  await sweepLessonImages(deps.db, deps.now());
   return closed.length;
 }
 

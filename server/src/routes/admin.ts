@@ -28,7 +28,7 @@ import * as rules from '../../../shared/rules';
 import { type AppEvent, type Attendance } from '../../../shared/types';
 import { requireUser } from '../auth';
 import type { Database } from '../db/client';
-import { creditPoints, joinedCounts, newId, publicUser, warningById } from '../db/queries';
+import { creditPoints, joinedCounts, lessonImageRefs, newId, publicUser, warningById } from '../db/queries';
 import { iso } from '../db/rows';
 import * as s from '../db/schema';
 import { type AppEnv, HttpError, readBody } from '../http';
@@ -128,7 +128,12 @@ async function lessonsWithCounts(q: Database, eventId: string) {
         .where(inArray(s.lesson_completions.lesson_id, rows.map((r) => r.id)))
         .groupBy(s.lesson_completions.lesson_id)
     : [];
-  return rows.map((r) => ({ ...iso(r), learned_count: counts.find((x) => x.lesson_id === r.id)?.n ?? 0 }));
+  const images = await lessonImageRefs(q, rows);
+  return rows.map((r) => ({
+    ...iso(r),
+    image: (r.image_id && images.get(r.image_id)) || null,
+    learned_count: counts.find((x) => x.lesson_id === r.id)?.n ?? 0,
+  }));
 }
 
 async function termTexts(q: Database, eventId: string) {

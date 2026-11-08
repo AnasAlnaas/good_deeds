@@ -9,15 +9,17 @@ import { type LatLng, LocationPicker } from '@/components/LocationPicker';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
 import { Card, Chip, Field, Row, SectionTitle } from '@/components/ui';
-import type { EventDetail, EventFormMeta, EventProposal, ProposeEventResponse } from '@/data/api';
+import { LessonPicture } from '@/components/LessonPicture';
+import type { EventDetail, EventFormMeta, EventProposal, LessonImageRef, LessonInput, ProposeEventResponse } from '@/data/api';
 import { type GenderCategory, MEETING_PLATFORMS, type MeetingPlatform } from '@/data/types';
 import { count, fmt } from '@/i18n/format';
 import { goBack } from '@/lib/goBack';
+import { pickLessonPicture } from '@/lib/photo';
 import { useApp, useMe } from '@/state/app';
 import { useAction } from '@/state/useAction';
 import { classIcon, className, EVENT_CLASSES } from '@/theme/classes';
 import { colors, space, touch } from '@/theme/tokens';
-import { ADDRESS_MAX, cleanPlace, LESSON_BODY_MAX, LESSON_TITLE_MAX, MAX_LESSONS, MEETING_URL_MAX } from '../../../shared/rules';
+import { ADDRESS_MAX, cleanPlace, LESSON_BODY_MAX, LESSON_TITLE_MAX, lessonComplete, MAX_LESSONS, MEETING_URL_MAX } from '../../../shared/rules';
 
 // The event form of the app: proposing an event (level 5, or a supervisor),
 // and the proposer editing it while it waits for an admin (`editing`). An
@@ -26,14 +28,20 @@ import { ADDRESS_MAX, cleanPlace, LESSON_BODY_MAX, LESSON_TITLE_MAX, MAX_LESSONS
 const TRIPOLI: LatLng = { lat: 32.8872, lng: 13.1913 };
 const HOUR = 3_600_000;
 
+/** A lesson as the form keeps it: with its picture, to show it. */
+type FormLesson = LessonInput & { image: LessonImageRef | null };
+
 /** The form keeps both kinds of place while one is chosen; rules.cleanPlace sends only the chosen one's. */
-type Values = Omit<EventProposal, 'capacity' | 'address_text' | 'lat' | 'lng' | 'meeting_platform' | 'meeting_url'> & {
+type Values = Omit<EventProposal, 'capacity' | 'address_text' | 'lat' | 'lng' | 'meeting_platform' | 'meeting_url' | 'lessons'> & {
   address_text: string;
   lat: number;
   lng: number;
   meeting_platform: MeetingPlatform;
   meeting_url: string;
+  lessons: FormLesson[];
 };
+
+const NEW_LESSON: FormLesson = { title: '', body: '', image_id: null, image: null };
 
 function blank(): Values {
   const start = new Date();
@@ -73,7 +81,8 @@ function valuesOf(e: EventDetail): Values {
     ends_at: e.ends_at,
     gender_category: e.gender_category,
     terms: e.terms.map((x) => x.text ?? ''),
-    lessons: (e.lessons ?? []).map(({ title, body }) => ({ title, body })),
+    // A server from before lesson pictures sends none.
+    lessons: (e.lessons ?? []).map(({ title, body, image }) => ({ title, body, image_id: image?.id ?? null, image: image ?? null })),
   };
 }
 
@@ -86,6 +95,9 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
   const [invalid, setInvalid] = useState(false);
   const [mapTouched, setMapTouched] = useState(false);
   const [done, setDone] = useState<ProposeEventResponse | null>(null);
+  // The lesson whose picture is being sent, and the one whose picture could not be used.
+  const [sending, setSending] = useState<number | null>(null);
+  const [badPicture, setBadPicture] = useState<number | null>(null);
   const set = <K extends keyof typeof v>(key: K, value: (typeof v)[K]) => setV((prev) => ({ ...prev, [key]: value }));
   // Where the map opens: the event's pin, or the city. Kept fixed so moving the map does not re-centre it.
   const [startPin] = useState<LatLng>(() => ({ lat: v.lat, lng: v.lng }));
@@ -112,7 +124,25 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
     Number.isInteger(seats) &&
     seats >= 1 &&
     v.terms.every((x) => x.trim().length > 0) &&
-    v.lessons.every((l) => l.title.trim().length > 0 && l.body.trim().length > 0);
+    v.lessons.every(lessonComplete);
+  const lessonsIncomplete = !v.lessons.every(lessonComplete);
+
+  const putLesson = (i: number, patch: Partial<FormLesson>) =>
+    setV((prev) => ({ ...prev, lessons: prev.lessons.map((x, j) => (j === i ? { ...x, ...patch } : x)) }));
+  // The picture is sent first; the form then names it, and saving the event keeps it.
+  const choosePicture = async (i: number) => {
+    setBadPicture(null);
+    const picked = await pickLessonPicture();
+    if (!picked) return;
+    if (picked === 'too_big') {
+      setBadPicture(i);
+      return;
+    }
+    setSending(i);
+    const result = await run((b) => b.uploadLessonImage(picked));
+    setSending(null);
+    if (result) putLesson(i, { image_id: result.value.image.id, image: result.value.image });
+  };
 
   // A new start keeps the event's length.
   const setStart = (next: Date) =>
@@ -135,7 +165,7 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
       description: v.description.trim(),
       capacity: seats,
       terms: v.terms.map((x) => x.trim()),
-      lessons: v.lessons.map((l) => ({ title: l.title.trim(), body: l.body.trim() })),
+      lessons: v.lessons.map((l) => ({ title: l.title.trim(), body: l.body.trim(), image_id: l.image_id })),
     };
     if (editing) {
       if (await run((b) => b.editProposal(editing.id, body))) goBack(`/event/${editing.id}`);
@@ -167,7 +197,7 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
     <>
       {invalid && (
         <Txt variant="caption" color={colors.danger}>
-          {s.newEvent.invalid}
+          {lessonsIncomplete ? s.newEvent.lessonIncomplete : s.newEvent.invalid}
         </Txt>
       )}
       <Button
@@ -293,7 +323,7 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
         {s.newEvent.lessonsHint}
       </Txt>
       {v.lessons.map((lesson, i) => {
-        const put = (patch: Partial<typeof lesson>) => set('lessons', v.lessons.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+        const put = (patch: Partial<FormLesson>) => putLesson(i, patch);
         return (
           <Card key={i}>
             <View style={styles.term}>
@@ -316,8 +346,30 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
               maxLength={LESSON_TITLE_MAX}
               onChangeText={(title) => put({ title })}
             />
+            {lesson.image && (
+              <LessonPicture image={lesson.image} label={fmt(s.learn.picture, { title: lesson.title })} maxHeight={260} />
+            )}
+            {sending === i ? (
+              <Button variant="quiet" icon="hourglass-outline" label={s.newEvent.sendingPicture} disabled onPress={() => {}} />
+            ) : lesson.image ? (
+              <Row>
+                <View style={styles.flex}>
+                  <Button variant="secondary" icon="image-outline" label={s.newEvent.changePicture} disabled={busy} onPress={() => choosePicture(i)} />
+                </View>
+                <View style={styles.flex}>
+                  <Button variant="quiet" icon="close" label={s.newEvent.removePicture} onPress={() => put({ image_id: null, image: null })} />
+                </View>
+              </Row>
+            ) : (
+              <Button variant="secondary" icon="image-outline" label={s.newEvent.addPicture} disabled={busy} onPress={() => choosePicture(i)} />
+            )}
+            {badPicture === i && (
+              <Txt variant="caption" color={colors.danger}>
+                {s.errors.photo_invalid}
+              </Txt>
+            )}
             <Field
-              label={s.newEvent.lessonBody}
+              label={lesson.image ? s.newEvent.lessonBodyOptional : s.newEvent.lessonBody}
               placeholder={s.newEvent.lessonBodyPlaceholder}
               value={lesson.body}
               maxLength={LESSON_BODY_MAX}
@@ -328,7 +380,7 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
         );
       })}
       {v.lessons.length < MAX_LESSONS && (
-        <Button variant="secondary" icon="add" label={s.newEvent.addLesson} onPress={() => set('lessons', [...v.lessons, { title: '', body: '' }])} />
+        <Button variant="secondary" icon="add" label={s.newEvent.addLesson} onPress={() => set('lessons', [...v.lessons, NEW_LESSON])} />
       )}
 
       <SectionTitle>{s.newEvent.terms}</SectionTitle>
