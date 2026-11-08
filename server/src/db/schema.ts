@@ -218,6 +218,8 @@ export const event_lessons = pgTable(
     title: text('title').notNull(),
     body: text('body').notNull(),
     image_id: text('image_id').references(() => lesson_images.id),
+    /** A YouTube video's id, never a link (shared/rules.ts youtubeId). */
+    video_id: text('video_id'),
     created_at: at('created_at').notNull().defaultNow(),
   },
   (t) => [uniqueIndex('event_lessons_order').on(t.event_id, t.order_index)],

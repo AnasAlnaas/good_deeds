@@ -594,8 +594,8 @@ const seenPicture = await h.raw(sent.url, mariam);
 expectEqual('anyone signed in sees it, as a JPEG without its metadata', [seenPicture.status, seenPicture.type, seenPicture.bytes.includes('GPS')], [200, 'image/jpeg', false]);
 expectEqual('nobody signed out does', (await h.raw(sent.url)).status, 401);
 const lessonsWith = (image_id: string | null) => [
-  { title: 'خريطة الحديقة', body: '', image_id },
-  { title: 'ما نجمعه', body: 'البلاستيك وحده، والزجاج وحده.', image_id: null },
+  { title: 'خريطة الحديقة', body: '', image_id, video_id: null },
+  { title: 'ما نجمعه', body: 'البلاستيك وحده، والزجاج وحده.', image_id: null, video_id: null },
 ];
 await expectError('a lesson with neither text nor a picture', 'invalid_request', call('POST', '/events', khaled, proposal({ lessons: lessonsWith(null) })));
 await expectError('a picture that was never sent', 'invalid_request', call('POST', '/events', khaled, proposal({ lessons: lessonsWith('nope') })));
@@ -612,6 +612,15 @@ await sweepLessonImages(conn.db, h.clock() + 60_000);
 expectEqual('a picture no lesson used stays a while (a form may still be open)', (await h.raw(forgotten.url, admin)).status, 200);
 await sweepLessonImages(conn.db, h.clock() + 3 * 24 * HOUR);
 expectEqual('then the scheduled job removes it', (await h.raw(forgotten.url, admin)).status, 404);
+
+console.log('\n— videos in lessons');
+const videoLesson = (video_id: string) => [{ title: 'كيف نوقف النزيف', body: '', image_id: null, video_id }];
+await expectError('a link instead of a video id', 'invalid_request', call('POST', '/events', khaled, proposal({ lessons: videoLesson('https://evil.example/x') })));
+await expectError('an id of the wrong shape', 'invalid_request', call('POST', '/events', khaled, proposal({ lessons: videoLesson('abc') })));
+const withVideo = await expectOk('a lesson that is only a video', call('POST', '/events', khaled, proposal({ lessons: videoLesson('dQw4w9WgXcQ') })));
+const videoed: EventDetail = (await call('GET', `/events/${withVideo.id}`, khaled)).body;
+expectEqual('the event shows the video with its lesson', videoed.lessons.map((l) => l.video_id), ['dQw4w9WgXcQ']);
+await expectOk('he withdraws it', call('DELETE', `/events/${withVideo.id}`, khaled));
 
 // ---------------------------------------------------------------------------
 console.log('\n— editing the profile');

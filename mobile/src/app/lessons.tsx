@@ -58,11 +58,11 @@ export default function MyLessonsScreen() {
                   {l.body}
                 </Txt>
               ) : (
-                l.image && (
+                (l.video_id || l.image) && (
                   <View style={styles.pictureRow}>
-                    <Ionicons name="image-outline" size={16} color={colors.inkMuted} />
+                    <Ionicons name={l.video_id ? 'logo-youtube' : 'image-outline'} size={16} color={colors.inkMuted} />
                     <Txt variant="caption" color={colors.inkMuted}>
-                      {s.myLessons.picture}
+                      {l.video_id ? s.myLessons.video : s.myLessons.picture}
                     </Txt>
                   </View>
                 )

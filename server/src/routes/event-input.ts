@@ -46,6 +46,12 @@ const proposalFields = z.object({
             .min(1)
             .nullish()
             .transform((v) => v ?? null),
+          // The app and the panel send the id read from the link; an older app sends none.
+          video_id: z
+            .string()
+            .refine(rules.isYoutubeId)
+            .nullish()
+            .transform((v) => v ?? null),
         })
         .refine(rules.lessonComplete),
     )
@@ -98,7 +104,7 @@ export async function writeLinks(q: Database, eventId: string, organizerIds: str
   if (added.length) await q.insert(s.event_organizers).values(added.map((user_id) => ({ event_id: eventId, user_id, added_by: null })));
 }
 
-type LessonFields = { title: string; body: string; image_id: string | null };
+type LessonFields = { title: string; body: string; image_id: string | null; video_id: string | null };
 
 /**
  * Replaces the event's lessons. Only while nobody has learned one (the callers
@@ -112,7 +118,7 @@ export async function writeLessons(q: Database, eventId: string, lessons: Lesson
   const before = await removeLessons(q, eventId, false);
   if (lessons.length) {
     await q.insert(s.event_lessons).values(
-      lessons.map((l, i) => ({ id: newId(), event_id: eventId, order_index: i + 1, title: l.title, body: l.body, image_id: l.image_id, created_at: at })),
+      lessons.map((l, i) => ({ id: newId(), event_id: eventId, order_index: i + 1, title: l.title, body: l.body, image_id: l.image_id, video_id: l.video_id, created_at: at })),
     );
   }
   await dropUnusedImages(q, before);

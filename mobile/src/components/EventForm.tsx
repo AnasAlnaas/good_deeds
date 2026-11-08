@@ -10,6 +10,7 @@ import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
 import { Card, Chip, Field, Row, SectionTitle } from '@/components/ui';
 import { LessonPicture } from '@/components/LessonPicture';
+import { LessonVideo } from '@/components/LessonVideo';
 import type { EventDetail, EventFormMeta, EventProposal, LessonImageRef, LessonInput, ProposeEventResponse } from '@/data/api';
 import { type GenderCategory, MEETING_PLATFORMS, type MeetingPlatform } from '@/data/types';
 import { count, fmt } from '@/i18n/format';
@@ -19,7 +20,17 @@ import { useApp, useMe } from '@/state/app';
 import { useAction } from '@/state/useAction';
 import { classIcon, className, EVENT_CLASSES } from '@/theme/classes';
 import { colors, space, touch } from '@/theme/tokens';
-import { ADDRESS_MAX, cleanPlace, LESSON_BODY_MAX, LESSON_TITLE_MAX, lessonComplete, MAX_LESSONS, MEETING_URL_MAX } from '../../../shared/rules';
+import {
+  ADDRESS_MAX,
+  cleanPlace,
+  LESSON_BODY_MAX,
+  LESSON_TITLE_MAX,
+  lessonComplete,
+  MAX_LESSONS,
+  MEETING_URL_MAX,
+  youtubeId,
+  youtubeWatchUrl,
+} from '../../../shared/rules';
 
 // The event form of the app: proposing an event (level 5, or a supervisor),
 // and the proposer editing it while it waits for an admin (`editing`). An
@@ -28,8 +39,11 @@ import { ADDRESS_MAX, cleanPlace, LESSON_BODY_MAX, LESSON_TITLE_MAX, lessonCompl
 const TRIPOLI: LatLng = { lat: 32.8872, lng: 13.1913 };
 const HOUR = 3_600_000;
 
-/** A lesson as the form keeps it: with its picture, to show it. */
-type FormLesson = LessonInput & { image: LessonImageRef | null };
+/** A lesson as the form keeps it: with its picture, to show it, and its video link as typed (video_id is read from it). */
+type FormLesson = LessonInput & { image: LessonImageRef | null; video_link: string };
+
+/** A typed link is fine when empty, or when it is a YouTube video's. */
+const videoLinkOk = (l: FormLesson) => !l.video_link.trim() || !!l.video_id;
 
 /** The form keeps both kinds of place while one is chosen; rules.cleanPlace sends only the chosen one's. */
 type Values = Omit<EventProposal, 'capacity' | 'address_text' | 'lat' | 'lng' | 'meeting_platform' | 'meeting_url' | 'lessons'> & {
@@ -41,7 +55,7 @@ type Values = Omit<EventProposal, 'capacity' | 'address_text' | 'lat' | 'lng' | 
   lessons: FormLesson[];
 };
 
-const NEW_LESSON: FormLesson = { title: '', body: '', image_id: null, image: null };
+const NEW_LESSON: FormLesson = { title: '', body: '', image_id: null, image: null, video_id: null, video_link: '' };
 
 function blank(): Values {
   const start = new Date();
@@ -82,7 +96,14 @@ function valuesOf(e: EventDetail): Values {
     gender_category: e.gender_category,
     terms: e.terms.map((x) => x.text ?? ''),
     // A server from before lesson pictures sends none.
-    lessons: (e.lessons ?? []).map(({ title, body, image }) => ({ title, body, image_id: image?.id ?? null, image: image ?? null })),
+    lessons: (e.lessons ?? []).map(({ title, body, image, video_id }) => ({
+      title,
+      body,
+      image_id: image?.id ?? null,
+      image: image ?? null,
+      video_id: video_id ?? null,
+      video_link: video_id ? youtubeWatchUrl(video_id) : '',
+    })),
   };
 }
 
@@ -124,8 +145,8 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
     Number.isInteger(seats) &&
     seats >= 1 &&
     v.terms.every((x) => x.trim().length > 0) &&
-    v.lessons.every(lessonComplete);
-  const lessonsIncomplete = !v.lessons.every(lessonComplete);
+    v.lessons.every((l) => lessonComplete(l) && videoLinkOk(l));
+  const lessonsIncomplete = !v.lessons.every((l) => lessonComplete(l) && videoLinkOk(l));
 
   const putLesson = (i: number, patch: Partial<FormLesson>) =>
     setV((prev) => ({ ...prev, lessons: prev.lessons.map((x, j) => (j === i ? { ...x, ...patch } : x)) }));
@@ -165,7 +186,7 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
       description: v.description.trim(),
       capacity: seats,
       terms: v.terms.map((x) => x.trim()),
-      lessons: v.lessons.map((l) => ({ title: l.title.trim(), body: l.body.trim(), image_id: l.image_id })),
+      lessons: v.lessons.map((l) => ({ title: l.title.trim(), body: l.body.trim(), image_id: l.image_id, video_id: l.video_id })),
     };
     if (editing) {
       if (await run((b) => b.editProposal(editing.id, body))) goBack(`/event/${editing.id}`);
@@ -369,7 +390,19 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
               </Txt>
             )}
             <Field
-              label={lesson.image ? s.newEvent.lessonBodyOptional : s.newEvent.lessonBody}
+              label={s.newEvent.videoLink}
+              placeholder="https://youtu.be/…"
+              value={lesson.video_link}
+              ltr
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+              error={videoLinkOk(lesson) ? null : s.newEvent.videoInvalid}
+              onChangeText={(video_link) => put({ video_link, video_id: youtubeId(video_link) })}
+            />
+            {lesson.video_id && <LessonVideo videoId={lesson.video_id} title={lesson.title} />}
+            <Field
+              label={lesson.image || lesson.video_id ? s.newEvent.lessonBodyOptional : s.newEvent.lessonBody}
               placeholder={s.newEvent.lessonBodyPlaceholder}
               value={lesson.body}
               maxLength={LESSON_BODY_MAX}

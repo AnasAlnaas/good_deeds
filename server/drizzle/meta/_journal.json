@@ -99,6 +99,13 @@
       "when": 1794119195867,
       "tag": "0013_lesson_images",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794123831864,
+      "tag": "0014_lesson_videos",
+      "breakpoints": true
     }
   ]
 }

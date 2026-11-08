@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 
 import type { LessonImageRef } from '../../shared/api';
-import { LESSON_IMAGE_MAX_BYTES, LESSON_IMAGE_MAX_HEIGHT_PX, LESSON_IMAGE_WIDTH_PX } from '../../shared/rules';
+import { LESSON_IMAGE_MAX_BYTES, LESSON_IMAGE_MAX_HEIGHT_PX, LESSON_IMAGE_WIDTH_PX, youtubeThumbnail, youtubeWatchUrl } from '../../shared/rules';
 import { api } from './api';
 
 export function LessonPicture({ image, alt }: { image: LessonImageRef; alt: string }) {
@@ -33,6 +33,18 @@ export function LessonPicture({ image, alt }: { image: LessonImageRef; alt: stri
   return (
     <a href={src} target="_blank" rel="noreferrer" title={alt}>
       <img className="lesson-picture" style={style} src={src} alt={alt} />
+    </a>
+  );
+}
+
+/** A lesson's YouTube video: its still picture, opening the video on YouTube. */
+export function LessonVideo({ videoId, label }: { videoId: string; label: string }) {
+  return (
+    <a className="lesson-video" href={youtubeWatchUrl(videoId)} target="_blank" rel="noreferrer" title={label}>
+      <img src={youtubeThumbnail(videoId)} alt={label} />
+      <span className="lesson-video-play" aria-hidden="true">
+        ▶
+      </span>
     </a>
   );
 }

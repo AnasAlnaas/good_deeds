@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router';
 
 import { classOf, EVENT_CLASSES } from '../../../shared/classes';
 import { api } from '../api';
-import { LessonPicture } from '../LessonPicture';
+import { LessonPicture, LessonVideo } from '../LessonPicture';
 import { fill, ltr, num, range, time } from '../format';
 import { t } from '../strings';
 import { Badge, Button, ErrorNote, Notice, PageHeader, QueryState, StatusBadge, useAction } from '../ui';
@@ -126,6 +126,7 @@ export function EventPage() {
                 <li key={l.id}>
                   <strong>{l.title}</strong>
                   {l.image && <LessonPicture image={l.image} alt={fill(t.event.lessonPicture, { title: l.title })} />}
+                  {l.video_id && <LessonVideo videoId={l.video_id} label={fill(t.event.lessonVideo, { title: l.title })} />}
                   {l.body && <p style={{ margin: '4px 0', whiteSpace: 'pre-wrap' }}>{l.body}</p>}
                   {l.learned_count > 0 && <span className="small muted tabular">{fill(t.event.learnedCount, { n: l.learned_count })}</span>}
                 </li>
