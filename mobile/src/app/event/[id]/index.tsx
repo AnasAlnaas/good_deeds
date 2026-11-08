@@ -251,6 +251,7 @@ export default function EventDetail() {
                 {l.title}
               </Txt>
               {l.image && <Ionicons name="image-outline" size={18} color={colors.inkMuted} accessibilityLabel={s.event.lessonHasPicture} />}
+              {l.video_id && <Ionicons name="logo-youtube" size={18} color={colors.inkMuted} accessibilityLabel={s.event.lessonHasVideo} />}
               {l.learned_at && (
                 <Txt variant="caption" color={colors.success}>
                   {s.event.lessonLearned}

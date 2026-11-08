@@ -214,7 +214,7 @@ console.log('\n— pictures in lessons');
   const picture = { data_url: 'data:image/jpeg;base64,/9j/', width: 1080, height: 1920 };
   expectError('a member who may not write lessons sends a picture', 'cannot_create_events', () => server.addLessonImage(db, 'u_ahmad', picture, NOW));
   const sent = server.addLessonImage(db, 'u_khaled', picture, NOW);
-  const lessons = [{ title: 'خريطة الحديقة', body: '', image_id: sent.id }];
+  const lessons = [{ title: 'خريطة الحديقة', body: '', image_id: sent.id, video_id: null }];
   const { db: pictured, event } = server.proposeEvent(sent.db, 'u_khaled', proposal({ lessons }), NOW);
   expectEqual('a lesson that is only a picture', server.eventLessons(pictured, event.id).map((l) => l.image_id), [sent.id]);
   const other = server.addLessonImage(pictured, 'u_khaled', picture, NOW);
@@ -225,6 +225,29 @@ console.log('\n— pictures in lessons');
   const later = server.addLessonImage(unused.db, 'u_khaled', picture, NOW + 3 * 24 * HOUR);
   expectEqual('and goes days later', later.db.lesson_images.some((x) => x.id === unused.id), false);
   expectEqual('withdrawing the event removes its picture', server.withdrawProposal(changed, 'u_khaled', event.id).lesson_images.length, 0);
+}
+
+console.log('\n— videos in lessons');
+{
+  const id = 'dQw4w9WgXcQ';
+  const read = (link: string) => rules.youtubeId(link);
+  expectEqual('YouTube links of every kind give the video', [
+    read(`https://www.youtube.com/watch?v=${id}&t=42s`),
+    read(`https://youtu.be/${id}?si=abc`),
+    read(`youtube.com/shorts/${id}`),
+    read(`https://m.youtube.com/watch?feature=share&v=${id}`),
+    read(`https://www.youtube.com/embed/${id}`),
+    read(`  https://www.youtube.com/live/${id}  `),
+  ], [id, id, id, id, id, id]);
+  expectEqual('anything else gives none', [
+    read('https://evil.example/watch?v=dQw4w9WgXcQ'),
+    read('https://www.youtube.com.evil.example/watch?v=dQw4w9WgXcQ'),
+    read('https://www.youtube.com/watch?v=short'),
+    read('https://www.youtube.com/@channel'),
+    read('not a link'),
+  ], [null, null, null, null, null]);
+  const { db: videoed, event } = server.proposeEvent(db, 'u_khaled', proposal({ lessons: [{ title: 'كيف نوقف النزيف', body: '', image_id: null, video_id: id }] }), NOW);
+  expectEqual('a lesson that is only a video', server.eventLessons(videoed, event.id).map((l) => l.video_id), [id]);
 }
 
 console.log('\n— phone numbers, names and cities');

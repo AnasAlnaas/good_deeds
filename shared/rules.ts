@@ -276,10 +276,46 @@ export const LESSON_IMAGE_WIDTH_PX = 1080;
 export const LESSON_IMAGE_MAX_HEIGHT_PX = 4320;
 export const LESSON_IMAGE_MAX_BYTES = 1_000_000;
 
-/** A lesson says something: a title, and text or a picture, or both. */
-export function lessonComplete(l: { title: string; body: string; image_id?: string | null }) {
-  return l.title.trim().length > 0 && (l.body.trim().length > 0 || !!l.image_id);
+/** A lesson says something: a title, and text, a picture or a video (any of them together). */
+export function lessonComplete(l: { title: string; body: string; image_id?: string | null; video_id?: string | null }) {
+  return l.title.trim().length > 0 && (l.body.trim().length > 0 || !!l.image_id || !!l.video_id);
 }
+
+// Owner's decision (2026-11-08): a lesson may show a YouTube video. Only the
+// video's id is kept, never the link as written, so a lesson can only ever
+// open YouTube itself.
+
+const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/;
+const YOUTUBE_HOSTS = ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtube-nocookie.com', 'www.youtube-nocookie.com'];
+
+export const isYoutubeId = (id: string) => YOUTUBE_ID.test(id);
+
+/**
+ * The video's id in a YouTube link: youtube.com/watch?v=…, youtu.be/…, and
+ * /shorts/, /embed/, /live/ or /v/ links. null when it is no YouTube video link.
+ */
+export function youtubeId(link: string): string | null {
+  const text = link.trim();
+  let url: URL;
+  try {
+    url = new URL(/^https?:\/\//i.test(text) ? text : `https://${text}`);
+  } catch {
+    return null;
+  }
+  const host = url.hostname.toLowerCase();
+  let id: string | null = null;
+  if (host === 'youtu.be' || host === 'www.youtu.be') id = url.pathname.split('/')[1] ?? null;
+  else if (YOUTUBE_HOSTS.includes(host)) {
+    const [first, second] = url.pathname.split('/').filter(Boolean);
+    if (first === 'watch') id = url.searchParams.get('v');
+    else if (['shorts', 'embed', 'live', 'v'].includes(first ?? '')) id = second ?? null;
+  }
+  return id && isYoutubeId(id) ? id : null;
+}
+
+/** Where a lesson's video is watched on YouTube, and its still picture (YouTube's own, public). */
+export const youtubeWatchUrl = (id: string) => `https://www.youtube.com/watch?v=${id}`;
+export const youtubeThumbnail = (id: string) => `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
 
 export function sortLessons<T extends Pick<EventLesson, 'order_index'>>(lessons: T[]): T[] {
   return [...lessons].sort((a, b) => a.order_index - b.order_index);

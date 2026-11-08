@@ -1,0 +1,1 @@
+ALTER TABLE "event_lessons" ADD COLUMN "video_id" text;

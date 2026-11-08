@@ -8,8 +8,8 @@ import { type GenderCategory, type LocationType, MEETING_PLATFORMS, type Meeting
 import { api } from '../api';
 import { fill, fromLocalInput, toLocalInput } from '../format';
 import type { LessonImageRef } from '../../../shared/api';
-import { LESSON_BODY_MAX, LESSON_TITLE_MAX, lessonComplete, MAX_LESSONS } from '../../../shared/rules';
-import { LessonPicture, lessonJpeg } from '../LessonPicture';
+import { LESSON_BODY_MAX, LESSON_TITLE_MAX, lessonComplete, MAX_LESSONS, youtubeId, youtubeWatchUrl } from '../../../shared/rules';
+import { LessonPicture, LessonVideo, lessonJpeg } from '../LessonPicture';
 import { t } from '../strings';
 import { Button, ErrorNote, Field, Notice, PageHeader, QueryState, useAction } from '../ui';
 
@@ -68,7 +68,7 @@ function initial(existing: AdminEventDetail | undefined): EventInput {
     gender_category: e.gender_category,
     organizer_ids: existing.organizers.map((o) => o.id),
     terms: existing.terms.map((x) => x.text ?? ''),
-    lessons: existing.lessons.map(({ title, body, image_id }) => ({ title, body, image_id })),
+    lessons: existing.lessons.map(({ title, body, image_id, video_id }) => ({ title, body, image_id, video_id })),
   };
 }
 
@@ -107,6 +107,11 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
     Object.fromEntries((existing?.lessons ?? []).flatMap((l) => (l.image ? [[l.image.id, l.image]] : []))),
   );
   const [sending, setSending] = useState<number | null>(null);
+  // Each lesson's video link as typed, beside its lesson; the form sends the id read from it.
+  const [videoLinks, setVideoLinks] = useState<string[]>(() =>
+    (existing?.lessons ?? []).map((l) => (l.video_id ? youtubeWatchUrl(l.video_id) : '')),
+  );
+  const videoLinkOk = (i: number) => !(videoLinks[i] ?? '').trim() || !!v.lessons[i]?.video_id;
   const [pictureProblem, setPictureProblem] = useState<{ i: number; text: string } | null>(null);
   const set = <K extends keyof EventInput>(key: K, value: EventInput[K]) => setV((prev) => ({ ...prev, [key]: value }));
 
@@ -126,8 +131,8 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
     Date.parse(v.ends_at) > Date.parse(v.starts_at) &&
     v.capacity >= 1 &&
     v.terms.every((x) => x.trim().length > 0) &&
-    v.lessons.every(lessonComplete);
-  const lessonsIncomplete = !v.lessons.every(lessonComplete);
+    v.lessons.every((l, i) => lessonComplete(l) && videoLinkOk(i));
+  const lessonsIncomplete = !v.lessons.every((l, i) => lessonComplete(l) && videoLinkOk(i));
 
   const submit = async (publish: boolean) => {
     if (!valid || !cleaned) {
@@ -139,7 +144,7 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
       ...v,
       ...cleaned,
       terms: v.terms.map((x) => x.trim()),
-      lessons: v.lessons.map((l) => ({ title: l.title.trim(), body: l.body.trim(), image_id: l.image_id })),
+      lessons: v.lessons.map((l) => ({ title: l.title.trim(), body: l.body.trim(), image_id: l.image_id, video_id: l.video_id })),
     };
     if (existing) {
       if (await run(() => api.updateEvent(existing.event.id, body))) navigate(`/events/${existing.event.id}`);
@@ -156,9 +161,21 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
     set('terms', next);
   };
   const moveLesson = (i: number, by: number) => {
-    const next = [...v.lessons];
-    [next[i], next[i + by]] = [next[i + by], next[i]];
-    set('lessons', next);
+    const swap = <T,>(list: T[]) => {
+      const next = [...list];
+      [next[i], next[i + by]] = [next[i + by], next[i]];
+      return next;
+    };
+    set('lessons', swap(v.lessons));
+    setVideoLinks((prev) => swap(v.lessons.map((_, j) => prev[j] ?? '')));
+  };
+  const removeLesson = (i: number) => {
+    set('lessons', v.lessons.filter((_, j) => j !== i));
+    setVideoLinks((prev) => prev.filter((_, j) => j !== i));
+  };
+  const setVideoLink = (i: number, text: string) => {
+    setVideoLinks((prev) => v.lessons.map((_, j) => (j === i ? text : (prev[j] ?? ''))));
+    putLesson(i, { video_id: youtubeId(text) });
   };
   const putLesson = (i: number, patch: Partial<EventInput['lessons'][number]>) =>
     setV((prev) => ({ ...prev, lessons: prev.lessons.map((x, j) => (j === i ? { ...x, ...patch } : x)) }));
@@ -359,7 +376,19 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
                 </div>
               )}
               {pictureProblem?.i === i && <Notice tone="danger">{pictureProblem.text}</Notice>}
-              <Field label={lesson.image_id ? t.form.lessonBodyOptional : t.form.lessonBody}>
+              <Field label={t.form.videoLink} hint={videoLinkOk(i) ? undefined : <span style={{ color: 'var(--danger)' }}>{t.form.videoInvalid}</span>}>
+                <input
+                  dir="ltr"
+                  type="url"
+                  placeholder="https://youtu.be/…"
+                  value={videoLinks[i] ?? ''}
+                  disabled={lessonsLocked}
+                  aria-invalid={!videoLinkOk(i)}
+                  onChange={(e) => setVideoLink(i, e.target.value)}
+                />
+              </Field>
+              {lesson.video_id && <LessonVideo videoId={lesson.video_id} label={fill(t.event.lessonVideo, { title: lesson.title })} />}
+              <Field label={lesson.image_id || lesson.video_id ? t.form.lessonBodyOptional : t.form.lessonBody}>
                 <textarea rows={4} value={lesson.body} maxLength={LESSON_BODY_MAX} disabled={lessonsLocked} onChange={(e) => putLesson(i, { body: e.target.value })} />
               </Field>
             </div>
@@ -371,7 +400,7 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
                 <Button variant="quiet" className="btn-small" disabled={i === v.lessons.length - 1} onClick={() => moveLesson(i, 1)}>
                   {t.form.moveDown}
                 </Button>
-                <Button variant="quiet" className="btn-small" onClick={() => set('lessons', v.lessons.filter((_, j) => j !== i))}>
+                <Button variant="quiet" className="btn-small" onClick={() => removeLesson(i)}>
                   {t.form.remove}
                 </Button>
               </div>
@@ -380,7 +409,7 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
         ))}
         {!lessonsLocked && v.lessons.length < MAX_LESSONS && (
           <div>
-            <Button variant="secondary" onClick={() => set('lessons', [...v.lessons, { title: '', body: '', image_id: null }])}>
+            <Button variant="secondary" onClick={() => set('lessons', [...v.lessons, { title: '', body: '', image_id: null, video_id: null }])}>
               {t.form.addLesson}
             </Button>
           </div>

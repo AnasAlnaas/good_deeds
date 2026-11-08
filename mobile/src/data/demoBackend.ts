@@ -133,7 +133,8 @@ function checkProposal(db: Db, body: EventProposal) {
     rules.lessonComplete(l) &&
     l.title.length <= rules.LESSON_TITLE_MAX &&
     l.body.length <= rules.LESSON_BODY_MAX &&
-    (!l.image_id || db.lesson_images.some((x) => x.id === l.image_id));
+    (!l.image_id || db.lesson_images.some((x) => x.id === l.image_id)) &&
+    (!l.video_id || rules.isYoutubeId(l.video_id));
   if (body.lessons.length > rules.MAX_LESSONS || !body.lessons.every(lessonOk)) throw new BackendError('invalid_request');
 }
 

@@ -55,10 +55,13 @@ export function assertEventEdit(args: {
   if (event.status !== 'draft' && next.organizerCount === 0) throw new AdminError('needs_organizer');
 }
 
-type LessonText = { title: string; body: string; image_id: string | null };
+type LessonText = { title: string; body: string; image_id: string | null; video_id: string | null };
 
 export function lessonsChanged(a: LessonText[], b: LessonText[]) {
-  return a.length !== b.length || a.some((x, i) => x.title !== b[i].title || x.body !== b[i].body || x.image_id !== b[i].image_id);
+  return (
+    a.length !== b.length ||
+    a.some((x, i) => x.title !== b[i].title || x.body !== b[i].body || x.image_id !== b[i].image_id || x.video_id !== b[i].video_id)
+  );
 }
 
 // ---------- publishing and cancelling ----------

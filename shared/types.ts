@@ -151,8 +151,10 @@ export interface EventLesson {
   title: string;
   /** May be empty when the lesson has a picture: an infographic can say it all. */
   body: string;
-  /** A picture shown with the lesson (an infographic, a diagram); null = text only. */
+  /** A picture shown with the lesson (an infographic, a diagram); null = none. */
   image_id: string | null;
+  /** A YouTube video shown with the lesson, by its id (rules.youtubeId); null = none. */
+  video_id: string | null;
   created_at: string;
 }
 

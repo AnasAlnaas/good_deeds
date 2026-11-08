@@ -180,8 +180,10 @@ export interface LessonInput {
   title: string;
   /** May be empty when there is a picture (rules.lessonComplete). */
   body: string;
-  /** A picture sent first to POST /api/lesson-images; null = text only. */
+  /** A picture sent first to POST /api/lesson-images; null = none. */
   image_id: string | null;
+  /** A YouTube video's id (rules.youtubeId reads it from a link); null = none. */
+  video_id: string | null;
 }
 export interface ProposeEventResponse {
   id: string;

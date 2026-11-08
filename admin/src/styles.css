@@ -190,6 +190,9 @@ td.num, th.num { text-align: end; font-variant-numeric: tabular-nums; }
 .lesson-picture { display: block; width: 100%; max-width: 420px; max-height: 480px; object-fit: contain; border-radius: 8px; background: var(--surface-alt); border: 1px solid var(--border); }
 label.btn input[hidden] { display: none; }
 .btn-disabled { pointer-events: none; opacity: 0.6; }
+.lesson-video { position: relative; display: block; width: 100%; max-width: 420px; aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden; background: #000; }
+.lesson-video img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.lesson-video-play { position: absolute; inset: 0; margin: auto; width: 56px; height: 56px; border-radius: 50%; background: var(--primary); color: #fff; display: grid; place-items: center; font-size: 22px; opacity: 0.92; padding-inline-start: 4px; }
 ol.terms { margin: 0; padding-inline-start: 22px; display: grid; gap: 6px; }
 
 /* ---------- sign-in ---------- */

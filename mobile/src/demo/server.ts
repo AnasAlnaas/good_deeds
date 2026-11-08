@@ -182,6 +182,7 @@ function writeLessons(next: Db, eventId: string, input: EventProposal, at: strin
       title: l.title,
       body: l.body,
       image_id: l.image_id,
+      video_id: l.video_id,
       created_at: at,
     }),
   );
