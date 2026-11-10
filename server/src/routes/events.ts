@@ -6,7 +6,7 @@
 // Every change runs in a transaction: the rows are read (and locked), the
 // shared rule decides, and the result is written, or nothing is.
 
-import { and, asc, eq, inArray, isNull, notInArray, or } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, notInArray, or } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
@@ -25,10 +25,11 @@ import type {
   SupervisorsResponse,
   WarningResponse,
 } from '../../../shared/api';
-import { classOf, eventSubtypes } from '../../../shared/classes';
+import { classOfEvent, eventSubtypes } from '../../../shared/classes';
 import { ApiError } from '../../../shared/errors';
-import { BASE_POINTS_BY_SUBTYPE } from '../../../shared/placeholders';
+import { CUSTOM_TAG_BASE_POINTS } from '../../../shared/placeholders';
 import * as rules from '../../../shared/rules';
+import { basePointsOf, promotedTags } from '../../../shared/tags';
 import { type AppEvent, NOTICE_REACTIONS, type NoticeKind, type NoticeReactionKind, type Registration, type User } from '../../../shared/types';
 import { requireUser } from '../auth';
 import type { Database } from '../db/client';
@@ -59,7 +60,7 @@ import * as s from '../db/schema';
 import { type AppEnv, readBody } from '../http';
 import { notifyEventNotice, notifyHoursToConfirm, notifyPlaceOffered, notifySupervisorAdded, notifyWarningGiven } from '../notify';
 import { fillOpenPlaces, waitlistOf } from '../waitlist';
-import { placeOf, proposalInput, removeLessons, writeLessons, writeLinks, writeTerms } from './event-input';
+import { kindOf, placeOf, proposalInput, removeLessons, writeLessons, writeLinks, writeTerms } from './event-input';
 
 // `recorded_at`: the record was made on the phone without a connection, at that time (rules.decideRecordStart).
 const recordTimeBody = z.object({
@@ -113,7 +114,7 @@ async function summarize(db: Database, me: User, events: AppEvent[], now: number
       ...shown,
       status: rules.effectiveStatus(e, now),
       joined_count: counts.get(e.id) ?? 0,
-      event_class: classOf(e.subtype),
+      event_class: classOfEvent(e),
       can_join_category: rules.canUserJoinCategory(me, e),
       my_registration_status: myStatus.get(e.id) ?? null,
       i_organize: iOrganize.has(e.id),
@@ -140,8 +141,15 @@ export const eventRoutes = new Hono<AppEnv>()
     const { db } = c.var.deps;
     const me = c.var.user;
     if (!rules.canCreateEvents(me, await levelOf(db, me.id))) throw new ApiError('cannot_create_events');
+    // Only an event with a class of its own can carry a written tag.
+    const tagged = await db
+      .select({ subtype: s.events.subtype, event_class: s.events.event_class, status: s.events.status })
+      .from(s.events)
+      .where(isNotNull(s.events.event_class));
     return c.json<EventFormMeta>({
       subtypes: eventSubtypes(),
+      tags: promotedTags(tagged),
+      custom_tag_points: CUSTOM_TAG_BASE_POINTS,
       publishes_directly: rules.proposalStatus(me) === 'published',
       waiting: await waitingProposals(db, me.id),
       max_waiting: rules.MAX_WAITING_PROPOSALS,
@@ -169,14 +177,14 @@ export const eventRoutes = new Hono<AppEnv>()
         id,
         title: body.title,
         description: body.description,
-        subtype: body.subtype,
+        ...kindOf(body),
         image_url: null,
         ...placeOf(body),
         starts_at: new Date(body.starts_at),
         ends_at: new Date(body.ends_at),
         capacity: body.capacity,
         gender_category: body.gender_category,
-        base_points: BASE_POINTS_BY_SUBTYPE[body.subtype],
+        base_points: basePointsOf(body.subtype),
         status,
         created_by: me.id,
         created_at: new Date(t),
@@ -219,13 +227,13 @@ export const eventRoutes = new Hono<AppEnv>()
         .set({
           title: body.title,
           description: body.description,
-          subtype: body.subtype,
+          ...kindOf(body),
           ...placeOf(body),
           starts_at: new Date(body.starts_at),
           ends_at: new Date(body.ends_at),
           capacity: body.capacity,
           gender_category: body.gender_category,
-          base_points: BASE_POINTS_BY_SUBTYPE[body.subtype],
+          base_points: basePointsOf(body.subtype),
         })
         .where(eq(s.events.id, id));
       await writeLinks(tx, id, organizers.map((o) => o.user_id));

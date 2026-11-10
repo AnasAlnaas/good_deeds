@@ -137,7 +137,7 @@ export const meRoutes = new Hono<AppEnv>()
   .get('/lessons', async (c) => {
     const { db } = c.var.deps;
     const rows = await db
-      .select({ lesson: s.event_lessons, learned_at: s.lesson_completions.learned_at, event: { id: s.events.id, title: s.events.title, starts_at: s.events.starts_at, subtype: s.events.subtype } })
+      .select({ lesson: s.event_lessons, learned_at: s.lesson_completions.learned_at, event: { id: s.events.id, title: s.events.title, starts_at: s.events.starts_at, subtype: s.events.subtype, event_class: s.events.event_class } })
       .from(s.lesson_completions)
       .innerJoin(s.event_lessons, eq(s.event_lessons.id, s.lesson_completions.lesson_id))
       .innerJoin(s.events, eq(s.events.id, s.event_lessons.event_id))

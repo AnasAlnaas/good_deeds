@@ -3,6 +3,8 @@
 // After changing this file: npm run db:generate (writes a migration in drizzle/).
 
 import { sql } from 'drizzle-orm';
+
+import type { EventClassId } from '../../../shared/classes';
 import {
   boolean,
   check,
@@ -98,7 +100,9 @@ export const events = pgTable(
     id: text('id').primaryKey(),
     title: text('title').notNull(),
     description: text('description').notNull(),
+    // A known type's id, or a tag its proposer wrote; then event_class is the class they chose (shared/tags.ts).
     subtype: text('subtype').notNull(),
+    event_class: text('event_class').$type<EventClassId>(),
     image_url: text('image_url'),
     // In a place: the address and the pin. Online: the platform and the link (shared/rules.ts cleanPlace).
     location_type: locationType('location_type').notNull().default('in_person'),

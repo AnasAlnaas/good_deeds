@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router';
 
-import { classOf, EVENT_CLASSES } from '../../../shared/classes';
+import { classOfEvent, EVENT_CLASSES } from '../../../shared/classes';
 import { api } from '../api';
 import { LessonPicture, LessonVideo } from '../LessonPicture';
 import { fill, ltr, num, range, time } from '../format';
@@ -105,7 +105,7 @@ export function EventPage() {
             )}
             <dt>{t.event.type}</dt>
             <dd>
-              {EVENT_CLASSES.find((k) => k.id === classOf(e.subtype))?.name_ar} · {t.subtype[e.subtype] ?? e.subtype} ·{' '}
+              {EVENT_CLASSES.find((k) => k.id === classOfEvent(e))?.name_ar} · {t.subtype[e.subtype] ?? e.subtype} ·{' '}
               {fill(t.event.points, { n: e.base_points })}
             </dd>
             <dt>{t.events.seats}</dt>

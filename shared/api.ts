@@ -6,6 +6,7 @@
 
 import type { EventClassId } from './classes';
 import type { AdminErrorCode, ApiErrorCode } from './errors';
+import type { EventTag } from './tags';
 import type {
   AppEvent,
   Attendance,
@@ -137,7 +138,7 @@ export interface EventSummary
   /** Computed with the server's clock: published → running → finished. */
   status: EventStatus;
   joined_count: number;
-  /** From the event's type (shared/classes.ts). */
+  /** From the event's type, or chosen with a written tag (classes.classOfEvent). */
   event_class: EventClassId;
   /** The event's men / women / mixed rule allows the signed-in user. */
   can_join_category: boolean;
@@ -155,7 +156,10 @@ export interface EventSummary
 export interface EventProposal {
   title: string;
   description: string;
+  /** A known type's id, or a tag the person wrote (tags.cleanKind). */
   subtype: string;
+  /** The class chosen, needed with a written tag; a known type goes under its own. */
+  event_class?: EventClassId | null;
   /**
    * In a place: `address_text`, `lat` and `lng`. Online: `meeting_platform` and
    * `meeting_url` (https). The other kind's fields are null (rules.cleanPlace).
@@ -197,6 +201,14 @@ export interface ProposeEventResponse {
 export interface EventFormMeta {
   /** Event types, their fixed points (shared/placeholders.ts until Points_And_Levels.md is in) and their class. */
   subtypes: { id: string; base_points: number; event_class: EventClassId }[];
+  /**
+   * Tags people wrote that came into use (tags.promotedTags), offered under their
+   * class like the types. Absent from a server from before written tags: the
+   * form then offers the types only.
+   */
+  tags?: EventTag[];
+  /** What an event with a written tag is worth. */
+  custom_tag_points?: number;
   /** false = the event waits for an admin's approval. */
   publishes_directly: boolean;
   /** The signed-in user's events waiting for approval, and how many may wait at once. */
@@ -316,7 +328,7 @@ export interface LearnLessonResponse {
 /** GET /api/me/lessons: every lesson the person learned, latest first. */
 export interface MyLesson {
   lesson: EventLessonItem;
-  event: Pick<AppEvent, 'id' | 'title' | 'starts_at' | 'subtype'>;
+  event: Pick<AppEvent, 'id' | 'title' | 'starts_at' | 'subtype'> & Partial<Pick<AppEvent, 'event_class'>>;
 }
 
 /** POST /api/events/:id/join, /join/complete, DELETE /join */

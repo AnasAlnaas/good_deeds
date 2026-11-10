@@ -3,6 +3,8 @@
 // schema (server/src/db/schema.ts) has the same tables and column names.
 // Anything marked DEMO-ONLY is not in Data_Model.md and needs a decision.
 
+import type { EventClassId } from './classes';
+
 export type Gender = 'male' | 'female';
 export type GenderCategory = 'male' | 'female' | 'mixed';
 export type Role = 'member' | 'supervisor' | 'admin';
@@ -49,7 +51,14 @@ export interface AppEvent {
   id: string;
   title: string;
   description: string;
+  /** The event's tag: a known type's id, or a tag its proposer wrote (shared/tags.ts). */
   subtype: string;
+  /**
+   * Owner's decision (2026-11-09): a form chooses the class first, then a tag
+   * under it. null = an event from before that: its class is its type's
+   * (classes.classOfEvent).
+   */
+  event_class: EventClassId | null;
   image_url: string | null;
   /** In a place (the address and the map pin are set) or online (the platform and the meeting link are). */
   location_type: LocationType;

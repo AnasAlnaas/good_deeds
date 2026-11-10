@@ -9,7 +9,7 @@ import type { MyLesson } from '@/data/api';
 import { useMyLessons } from '@/data/queries';
 import { day, fmt } from '@/i18n/format';
 import { useApp } from '@/state/app';
-import { classIcon, classOf } from '@/theme/classes';
+import { classIcon, classOfEvent } from '@/theme/classes';
 import { colors, space } from '@/theme/tokens';
 
 // "What I learned": every lesson the person learned in the learning corners of
@@ -45,7 +45,7 @@ export default function MyLessonsScreen() {
       {groups.map(({ event, lessons }) => (
         <View key={event.id} style={styles.group}>
           <View style={styles.eventRow}>
-            <Ionicons name={classIcon(classOf(event.subtype))} size={18} color={colors.primary} />
+            <Ionicons name={classIcon(classOfEvent(event))} size={18} color={colors.primary} />
             <Txt variant="bodyStrong" style={styles.flex} numberOfLines={2}>
               {event.title}
             </Txt>

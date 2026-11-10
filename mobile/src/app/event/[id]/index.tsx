@@ -220,6 +220,8 @@ export default function EventDetail() {
           icon={status === 'running' ? 'radio-button-on' : status === 'draft' ? 'hourglass-outline' : undefined}
         />
         <Badge label={className(event.event_class, lang)} color={colors.primary} icon={classIcon(event.event_class)} />
+        {/* Its tag: a known type by its name, or as its proposer wrote it. */}
+        <Badge label={s.subtype[event.subtype] ?? event.subtype} color={colors.inkMuted} />
         <Badge label={s.category[event.gender_category]} color={colors.inkMuted} />
       </Row>
       <Txt variant="screenTitle">{event.title}</Txt>

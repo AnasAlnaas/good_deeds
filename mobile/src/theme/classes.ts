@@ -1,9 +1,9 @@
 import type { Ionicons } from '@expo/vector-icons';
 
 import type { Lang } from '@/i18n/strings';
-import { classOf, EVENT_CLASSES, type EventClass, type EventClassId } from '../../../shared/classes';
+import { classOf, classOfEvent, EVENT_CLASSES, type EventClass, type EventClassId } from '../../../shared/classes';
 
-export { classOf, EVENT_CLASSES, type EventClass, type EventClassId };
+export { classOf, classOfEvent, EVENT_CLASSES, type EventClass, type EventClassId };
 
 type Icon = keyof typeof Ionicons.glyphMap;
 
