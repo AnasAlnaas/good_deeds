@@ -840,4 +840,26 @@ h.setClock(h.clock() + 25 * 60 * 60_000);
 await call('POST', '/auth/request-code', undefined, { phone: phoneB });
 expectEqual('codes expired over a day ago are cleared', (await conn.db.select().from(s.login_codes).where(eq(s.login_codes.phone, phoneA))).length, 0);
 
+// ---------------------------------------------------------------------------
+console.log('\n— a tag a person writes');
+{
+  const written = (over: Partial<EventProposal> = {}) => proposal({ subtype: 'تنظيف الوديان', event_class: 'environment', ...over });
+  const formTags = async () => ((await call('GET', '/events/form', admin)).body as EventFormMeta).tags;
+  await expectError('a written tag without a class', 'invalid_request', call('POST', '/events', admin, written({ event_class: null })));
+  await expectError('a tag of one letter', 'invalid_request', call('POST', '/events', admin, written({ subtype: 'ت' })));
+  await expectError('a tag of digits only', 'invalid_request', call('POST', '/events', admin, written({ subtype: '2026' })));
+  const tagged = await expectOk('an event with a written tag', call('POST', '/events', admin, written()));
+  const taggedEvent: EventDetail = (await call('GET', `/events/${tagged.id}`, admin)).body;
+  expectEqual('keeps its tag and its class, with the points of a written tag', [taggedEvent.subtype, taggedEvent.event_class, taggedEvent.base_points], ['تنظيف الوديان', 'environment', 20]);
+  const known = await expectOk('a known type sent with another class', call('POST', '/events', admin, proposal({ event_class: 'health' })));
+  expectEqual('goes under its own', ((await call('GET', `/events/${known.id}`, admin)).body as EventDetail).event_class, 'environment');
+  await expectOk('a second event with the tag, spaced differently', call('POST', '/events', admin, written({ subtype: ' تنظيف   الوديان ' })));
+  await expectOk('the same words under another class', call('POST', '/events', admin, written({ event_class: 'community' })));
+  expectEqual('two events of a class do not make it a tag for everyone', await formTags(), []);
+  await expectOk("a member's proposal with it", call('POST', '/events', fatima, written()));
+  expectEqual('nor does one still waiting for approval', await formTags(), []);
+  await expectOk('a third approved event, written with its marks', call('POST', '/events', admin, written({ subtype: 'تَنظيف الوديان' })));
+  expectEqual('now the form offers it under its class, spelled as most wrote it', await formTags(), [{ tag: 'تنظيف الوديان', event_class: 'environment' }]);
+}
+
 await h.done();

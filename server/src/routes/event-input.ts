@@ -5,22 +5,23 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { BASE_POINTS_BY_SUBTYPE } from '../../../shared/placeholders';
 import * as rules from '../../../shared/rules';
 import { LESSON_BODY_MAX, LESSON_TITLE_MAX, MAX_LESSONS } from '../../../shared/rules';
+import { cleanKind } from '../../../shared/tags';
 import type { Database } from '../db/client';
 import { newId } from '../db/queries';
 import * as s from '../db/schema';
 import { HttpError } from '../http';
 import { dropUnusedImages } from '../lesson-images';
 
-const subtypes = Object.keys(BASE_POINTS_BY_SUBTYPE) as [string, ...string[]];
 export const isoTime = z.iso.datetime({ offset: true });
 
 const proposalFields = z.object({
   title: z.string().trim().min(3).max(120),
   description: z.string().trim().min(1).max(4000),
-  subtype: z.enum(subtypes),
+  // Checked together, as tags.cleanKind decides: a known type, or a written tag with its class.
+  subtype: z.string().max(200),
+  event_class: z.string().nullish(),
   // Checked together, as rules.cleanPlace decides: what one kind needs, and the other kind's fields empty.
   location_type: z.enum(['in_person', 'online']).default('in_person'),
   address_text: z.string().max(rules.ADDRESS_MAX).nullish(),
@@ -61,14 +62,18 @@ const proposalFields = z.object({
 
 const endsAfterStart = (v: { starts_at: string; ends_at: string }) => Date.parse(v.ends_at) > Date.parse(v.starts_at);
 
-/** The place fields replaced by their cleaned values; a place that does not hold together is an invalid request. */
-function withPlace<T extends Parameters<typeof rules.cleanPlace>[0]>(v: T, ctx: z.RefinementCtx) {
+/**
+ * The place fields and the tag replaced by their cleaned values; a place that
+ * does not hold together, or a tag that is not one, is an invalid request.
+ */
+function withPlace<T extends Parameters<typeof rules.cleanPlace>[0] & Parameters<typeof cleanKind>[0]>(v: T, ctx: z.RefinementCtx) {
   const place = rules.cleanPlace(v);
-  if (!place) {
-    ctx.addIssue({ code: 'custom', message: 'place' });
+  const kind = cleanKind(v);
+  if (!place || !kind) {
+    ctx.addIssue({ code: 'custom', message: place ? 'tag' : 'place' });
     return z.NEVER;
   }
-  return { ...v, ...place };
+  return { ...v, ...place, ...kind };
 }
 
 /** The app's form (shared/api.ts EventProposal). */
@@ -139,6 +144,11 @@ export async function writeTerms(q: Database, eventId: string, terms: string[], 
       terms.map((text, i) => ({ id: newId(), event_id: eventId, order_index: i + 1, text, created_at: at })),
     );
   }
+}
+
+/** The columns that say what kind of work an event is, from a checked form. */
+export function kindOf(body: Pick<EventInput, 'subtype' | 'event_class'>) {
+  return { subtype: body.subtype, event_class: body.event_class };
 }
 
 /** The columns that say where an event happens, from a checked form. */

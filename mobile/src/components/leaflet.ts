@@ -14,6 +14,26 @@ export interface LatLng {
   lng: number;
 }
 
+/** A place the location picker is pointed at, and how close it looks. */
+export interface MapTarget extends LatLng {
+  zoom: number;
+}
+
+/** Who moved the location picker's map: a finger, or the app pointing it at a place it found. */
+export type MovedBy = 'hand' | 'app';
+
+export interface PickerProps {
+  /** Where the map opens. Read once: afterwards the map itself is the source of the position. */
+  value: LatLng;
+  /** How close the map opens. */
+  zoom?: number;
+  /** A place to fly the map to; a new one flies it again. */
+  target?: MapTarget | null;
+  onChange(next: LatLng, by: MovedBy): void;
+  /** True while a finger is on the map, so the screen can stop scrolling and let the map pan. */
+  onTouching?(touching: boolean): void;
+}
+
 /** The location picker's frame (LocationPicker.tsx and its web version). */
 export const pickerStyles = StyleSheet.create({
   frame: {
@@ -57,15 +77,33 @@ export function leafletPage(script: string, extraCss = '') {
  * The location picker's page: the pin stays in the middle and the map moves
  * under it; a tap moves the map to the tapped point. `post` sends a message out
  * of the page (the WebView's bridge on a phone, the parent window on the web).
+ * Each move is posted with who made it: a finger (`hand`), or the app pointing
+ * the map at a place it found (`app`), which it does with `window.goTo`, or on
+ * the web with a `goodDeedsGoTo` message.
  */
-export function pickerPage(center: { lat: number; lng: number }, post: string) {
+export function pickerPage(center: { lat: number; lng: number }, post: string, zoom = 16) {
   return leafletPage(
     `
   const post = ${post};
-  const map = L.map('map', { zoomControl: true }).setView([${center.lat}, ${center.lng}], 16);
+  const map = L.map('map', { zoomControl: true }).setView([${center.lat}, ${center.lng}], ${zoom});
   tiles(map);
-  map.on('click', (e) => map.panTo(e.latlng));
-  map.on('moveend', () => { const c = map.getCenter(); post({ lat: c.lat, lng: c.lng }); });`,
+  let byApp = false;
+  let settle = 0;
+  const byHand = () => { byApp = false; clearTimeout(settle); };
+  map.on('dragstart', byHand);
+  map.on('click', (e) => { byHand(); map.panTo(e.latlng); });
+  map.on('moveend', () => { const c = map.getCenter(); post({ lat: c.lat, lng: c.lng, by: byApp ? 'app' : 'hand' }); });
+  window.goTo = (lat, lng, zoom) => {
+    byApp = true;
+    clearTimeout(settle);
+    map.flyTo([lat, lng], zoom, { duration: 0.9 });
+    // The flight is over (or was not needed): the next move is a finger's again.
+    settle = setTimeout(() => { byApp = false; }, 1600);
+  };
+  window.addEventListener('message', (e) => {
+    const g = e.data && e.data.goodDeedsGoTo;
+    if (g) window.goTo(g.lat, g.lng, g.zoom);
+  });`,
     `
   /* The pin: its point is the middle of the map. */
   #pin { position: absolute; left: 50%; top: 50%; z-index: 1000; pointer-events: none;

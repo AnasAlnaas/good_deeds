@@ -4,7 +4,7 @@
 // To add a class: add it to EVENT_CLASSES, point event types at it in
 // CLASS_OF_SUBTYPE, and give it an icon in mobile/src/theme/classes.ts (it
 // shows a plain icon until then). Nothing in the database changes: an event's
-// class comes from its type.
+// class comes from its type (or was chosen with a written tag: classOfEvent).
 
 import { BASE_POINTS_BY_SUBTYPE } from './placeholders';
 
@@ -44,6 +44,18 @@ export const CLASS_OF_SUBTYPE: Record<string, EventClassId> = {
 /** A type missing from CLASS_OF_SUBTYPE counts as community work. */
 export function classOf(subtype: string): EventClassId {
   return CLASS_OF_SUBTYPE[subtype] ?? 'community';
+}
+
+export function isEventClass(x: unknown): x is EventClassId {
+  return EVENT_CLASSES.some((c) => c.id === x);
+}
+
+/**
+ * An event's class: its type's, or, when its tag is one a person wrote
+ * (shared/tags.ts), the class they put it under.
+ */
+export function classOfEvent(e: { subtype: string; event_class?: EventClassId | null }): EventClassId {
+  return CLASS_OF_SUBTYPE[e.subtype] ?? e.event_class ?? 'community';
 }
 
 /** The event types a form offers, with their fixed points and their class. */

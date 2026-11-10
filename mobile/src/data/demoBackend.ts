@@ -4,11 +4,12 @@
 
 import type { AppEvent, Attendance, Db, EventNotice, Report, User, Warning } from '@/data/types';
 import { REPORT_CATEGORIES } from '@/data/types';
-import { BASE_POINTS_BY_SUBTYPE } from '@/demo/placeholders';
+import { CUSTOM_TAG_BASE_POINTS } from '@/demo/placeholders';
 import * as server from '@/demo/server';
-import { classOf, eventSubtypes } from '../../../shared/classes';
+import { classOfEvent, eventSubtypes } from '../../../shared/classes';
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
+import { cleanKind, promotedTags } from '../../../shared/tags';
 import type {
   AttendanceItem,
   EventDetail,
@@ -62,7 +63,7 @@ function summary(db: Db, me: User, e: AppEvent, now: number): EventSummary {
     ...shown,
     status: server.effectiveStatus(e, now),
     joined_count: server.joinedUsers(db, e.id).length,
-    event_class: classOf(e.subtype),
+    event_class: classOfEvent(e),
     can_join_category: server.canUserJoinCategory(me, e),
     my_registration_status: server.registrationOf(db, e.id, me.id)?.status ?? null,
     i_organize: server.isOrganizer(db, e.id, me.id),
@@ -125,7 +126,7 @@ function reportableEvents(db: Db, me: User): ReportFormMeta['events'] {
 
 /** The server's request checks on an event form (server/src/routes/event-input.ts), briefly. */
 function checkProposal(db: Db, body: EventProposal) {
-  if (!(body.subtype in BASE_POINTS_BY_SUBTYPE) || rules.toMs(body.ends_at) <= rules.toMs(body.starts_at)) {
+  if (!cleanKind(body) || rules.toMs(body.ends_at) <= rules.toMs(body.starts_at)) {
     throw new BackendError('invalid_request');
   }
   // The same limits as the server's form (server/src/routes/event-input.ts); a picture must have been sent.
@@ -225,6 +226,8 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
         if (!server.canCreateEvents(db, me)) throw new ApiError('cannot_create_events');
         return {
           subtypes: eventSubtypes(),
+          tags: promotedTags(db.events),
+          custom_tag_points: CUSTOM_TAG_BASE_POINTS,
           publishes_directly: rules.proposalStatus(me) === 'published',
           waiting: server.waitingProposals(db, me.id),
           max_waiting: rules.MAX_WAITING_PROPOSALS,
@@ -284,7 +287,7 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
             const e = db.events.find((x) => x.id === lesson.event_id)!;
             return {
               lesson: { ...lesson, image: imageRef(db, lesson.image_id), learned_at: c.learned_at },
-              event: { id: e.id, title: e.title, starts_at: e.starts_at, subtype: e.subtype },
+              event: { id: e.id, title: e.title, starts_at: e.starts_at, subtype: e.subtype, event_class: e.event_class },
             };
           });
       }),

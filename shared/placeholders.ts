@@ -22,6 +22,10 @@ export const BASE_POINTS_BY_SUBTYPE: Record<string, number> = {
   water_coolers: 30,
 };
 
+// What an event is worth when its tag is one a person wrote (shared/tags.ts),
+// so not in the table above. A stand-in like the rest: the owner decides it.
+export const CUSTOM_TAG_BASE_POINTS = 20;
+
 // Levels by total points. Level 5 unlocks creating events (master file).
 export const LEVELS: Level[] = [
   { level: 1, min_points: 0, can_create_events: false, can_report: true },

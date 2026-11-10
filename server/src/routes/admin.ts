@@ -23,8 +23,8 @@ import type {
 import * as adminRules from '../../../shared/admin-rules';
 import { eventSubtypes } from '../../../shared/classes';
 import { AdminError, ApiError } from '../../../shared/errors';
-import { BASE_POINTS_BY_SUBTYPE } from '../../../shared/placeholders';
 import * as rules from '../../../shared/rules';
+import { basePointsOf } from '../../../shared/tags';
 import { type AppEvent, type Attendance } from '../../../shared/types';
 import { requireUser } from '../auth';
 import type { Database } from '../db/client';
@@ -44,7 +44,7 @@ import {
 } from '../notify';
 import { issueResetCode } from './auth';
 import { fillOpenPlaces } from '../waitlist';
-import { assertIdsExist, createEventInput, eventInput, isoTime, placeOf, writeLessons, writeLinks, writeTerms } from './event-input';
+import { assertIdsExist, createEventInput, eventInput, isoTime, kindOf, placeOf, writeLessons, writeLinks, writeTerms } from './event-input';
 
 const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
   if (c.var.user.role !== 'admin') throw new AdminError('forbidden');
@@ -397,14 +397,14 @@ export const adminRoutes = new Hono<AppEnv>()
         id,
         title: body.title,
         description: body.description,
-        subtype: body.subtype,
+        ...kindOf(body),
         image_url: null,
         ...placeOf(body),
         starts_at: new Date(body.starts_at),
         ends_at: new Date(body.ends_at),
         capacity: body.capacity,
         gender_category: body.gender_category,
-        base_points: BASE_POINTS_BY_SUBTYPE[body.subtype],
+        base_points: basePointsOf(body.subtype),
         status: body.publish ? 'published' : 'draft',
         created_by: me.id,
         created_at: t,
@@ -450,9 +450,9 @@ export const adminRoutes = new Hono<AppEnv>()
         .set({
           title: body.title,
           description: body.description,
-          subtype: body.subtype,
+          ...kindOf(body),
           // An event keeps its points unless its type changes.
-          base_points: body.subtype === event.subtype ? event.base_points : BASE_POINTS_BY_SUBTYPE[body.subtype],
+          base_points: body.subtype === event.subtype ? event.base_points : basePointsOf(body.subtype),
           ...placeOf(body),
           starts_at: new Date(body.starts_at),
           ends_at: new Date(body.ends_at),

@@ -6,6 +6,7 @@
 // these are realistic stand-ins until those are collected.
 
 import type { AppEvent, Attendance, Db, GenderCategory, MeetingPlatform, User } from './types';
+import { classOf } from './classes';
 import { BASE_POINTS_BY_SUBTYPE, LEVELS } from './placeholders';
 import { pointsForAttendance } from './rules';
 
@@ -306,6 +307,7 @@ export function buildSeed(nowMs: number): Db {
       title: s.title,
       description: s.description,
       subtype: s.subtype,
+      event_class: classOf(s.subtype),
       image_url: null,
       location_type: s.online ? 'online' : 'in_person',
       lat: s.lat ?? null,

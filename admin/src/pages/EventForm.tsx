@@ -56,6 +56,8 @@ function initial(existing: AdminEventDetail | undefined): EventInput {
     title: e.title,
     description: e.description,
     subtype: e.subtype,
+    // Kept for a tag its proposer wrote: the class they put it under (shared/tags.ts).
+    event_class: e.event_class,
     location_type: e.location_type,
     address_text: e.address_text,
     lat: e.lat,
@@ -120,7 +122,9 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
   const lessonsLocked = !!existing?.lessons.some((l) => l.learned_count > 0);
   const categoryLocked = (existing?.joined_count ?? 0) > 0;
   const timesLocked = !!existing?.participants.some((p) => p.attendance);
-  const points = meta.subtypes.find((x) => x.id === v.subtype)?.base_points ?? 0;
+  // A tag its proposer wrote is not among the types: it stays offered while this event has it.
+  const writtenTag = existing && !meta.subtypes.some((x) => x.id === existing.event.subtype) ? existing.event.subtype : null;
+  const points = meta.subtypes.find((x) => x.id === v.subtype)?.base_points ?? existing?.event.base_points ?? 0;
 
   const valid =
     v.title.trim().length >= 3 &&
@@ -221,6 +225,7 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
         </Field>
         <Field label={t.form.type} hint={timesLocked ? t.form.lockedTimes : fill(t.form.typePoints, { n: points })}>
           <select value={v.subtype} disabled={timesLocked} onChange={(e) => set('subtype', e.target.value)}>
+            {writtenTag && <option value={writtenTag}>{writtenTag}</option>}
             {meta.subtypes.map((x) => (
               <option key={x.id} value={x.id}>
                 {t.subtype[x.id] ?? x.id}

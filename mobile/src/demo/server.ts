@@ -6,9 +6,9 @@
 import type { EventProposal, ProfileEdit, ReportBody } from '@/data/api';
 import type { AppEvent, Attendance, Db, EventLesson, EventNotice, EventStatus, EventTerm, NoticeKind, NoticeReactionKind, Registration, Report, User, Warning } from '@/data/types';
 import { NOTICE_REACTIONS } from '@/data/types';
-import { BASE_POINTS_BY_SUBTYPE } from './placeholders';
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
+import { basePointsOf, cleanKind } from '../../../shared/tags';
 
 export { ApiError } from '../../../shared/errors';
 export type { ApiErrorCode } from '../../../shared/errors';
@@ -157,14 +157,14 @@ export function proposeEvent(db: Db, userId: string, input: EventProposal, now: 
     id: newId('ev'),
     title: input.title,
     description: input.description,
-    subtype: input.subtype,
+    ...kindOf(input),
     image_url: null,
     ...placeOf(input),
     starts_at: input.starts_at,
     ends_at: input.ends_at,
     capacity: input.capacity,
     gender_category: input.gender_category,
-    base_points: BASE_POINTS_BY_SUBTYPE[input.subtype],
+    base_points: basePointsOf(input.subtype),
     status: rules.proposalStatus(user),
     terms_locked_at: null,
     created_by: userId,
@@ -226,6 +226,13 @@ export function addLessonImage(db: Db, userId: string, image: { data_url: string
   return { db: next, id };
 }
 
+/** The event's tag and class, as the server checks them (the form only sends a tag that is one). */
+function kindOf(input: EventProposal) {
+  const kind = cleanKind(input);
+  if (!kind) throw new Error('The event form sent a tag that is not one.');
+  return kind;
+}
+
 /** Where the event happens, as the server checks it (the form only sends a place that holds together). */
 function placeOf(input: EventProposal) {
   const place = rules.cleanPlace(input);
@@ -260,13 +267,13 @@ export function editProposal(db: Db, userId: string, eventId: string, input: Eve
   Object.assign(next.events.find((e) => e.id === eventId)!, {
     title: input.title,
     description: input.description,
-    subtype: input.subtype,
+    ...kindOf(input),
     ...placeOf(input),
     starts_at: input.starts_at,
     ends_at: input.ends_at,
     capacity: input.capacity,
     gender_category: input.gender_category,
-    base_points: BASE_POINTS_BY_SUBTYPE[input.subtype],
+    base_points: basePointsOf(input.subtype),
   });
   writeTerms(next, eventId, input, new Date(now).toISOString());
   writeLessons(next, eventId, input, new Date(now).toISOString());

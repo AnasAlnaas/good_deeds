@@ -10,8 +10,9 @@ import { rosterWithQueued } from '../src/data/queuedRoster';
 import type { Db } from '../src/data/types';
 import { buildSeed } from '../src/demo/seed';
 import * as server from '../src/demo/server';
-import { cityName, LIBYAN_CITIES } from '../../shared/cities';
+import { cityInText, cityName, LIBYAN_CITIES } from '../../shared/cities';
 import * as rules from '../../shared/rules';
+import { cleanKind, promotedTags } from '../../shared/tags';
 
 const NOW = new Date('2026-10-21T12:00:00').getTime();
 let failed = 0;
@@ -522,6 +523,24 @@ console.log('\n— online events');
     'an online proposal in the demo',
     server.proposeEvent(db, 'u_khaled', proposal({ location_type: 'online', address_text: null, lat: null, lng: null, meeting_platform: 'teams', meeting_url: 'https://teams.microsoft.com/l/x' }), NOW).event.meeting_url,
     'https://teams.microsoft.com/l/x',
+  );
+}
+
+console.log('\n— a written tag, and the city in an address');
+{
+  const { event } = server.proposeEvent(db, 'u_khaled', proposal({ subtype: ' سقيا  الطيور ', event_class: 'environment' }), NOW);
+  expectEqual('a proposal with a written tag keeps it tidied, with its class', [event.subtype, event.event_class, event.base_points], ['سقيا الطيور', 'environment', 20]);
+  expectEqual('a known type goes under its own class', server.proposeEvent(db, 'u_khaled', proposal({ event_class: 'health' }), NOW).event.event_class, 'environment');
+  expectEqual('what is not a tag', [cleanKind({ subtype: 'سقيا الطيور' }), cleanKind({ subtype: 'x', event_class: 'health' }), cleanKind({ subtype: '123', event_class: 'health' })], [null, null, null]);
+  const used = (subtype: string, status: 'published' | 'draft' = 'published') => ({ subtype, event_class: 'environment' as const, status });
+  expectEqual('three approved events make a tag everyone is offered', promotedTags([used('سقيا الطيور'), used('سقيا الطّيور'), used('سقيا الطيور'), used('tree_planting')]), [
+    { tag: 'سقيا الطيور', event_class: 'environment' },
+  ]);
+  expectEqual('a waiting one does not count', promotedTags([used('سقيا الطيور'), used('سقيا الطيور'), used('سقيا الطيور', 'draft')]), []);
+  expectEqual(
+    'the city named in an address',
+    [cityInText('حديقة الحي، طرابلس')?.en, cityInText('ميدان الشهداء بطرابلس')?.en, cityInText('Corniche road, Bani Walid')?.en, cityInText('شارع البيضاء القديم، بنغازي')?.en, cityInText('قرب المسجد') ?? null],
+    ['Tripoli', 'Tripoli', 'Bani Walid', 'Bayda', null],
   );
 }
 
