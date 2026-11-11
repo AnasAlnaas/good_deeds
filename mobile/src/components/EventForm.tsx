@@ -10,10 +10,11 @@ import { type LatLng, LocationPicker, type MapTarget, type MovedBy } from '@/com
 import { Reveal } from '@/components/Reveal';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
+import { CopyEvent, LessonLibrary } from '@/components/CopyEvent';
 import { Card, Chip, Field, Row, SectionTitle } from '@/components/ui';
 import { LessonPicture } from '@/components/LessonPicture';
 import { LessonVideo } from '@/components/LessonVideo';
-import type { EventDetail, EventFormMeta, EventProposal, LessonImageRef, LessonInput, ProposeEventResponse } from '@/data/api';
+import type { EventDetail, EventFormMeta, EventProposal, LessonImageRef, LessonInput, LessonLibraryItem, ProposeEventResponse } from '@/data/api';
 import { type GenderCategory, type LocationType, MEETING_PLATFORMS, type MeetingPlatform } from '@/data/types';
 import { count, fmt } from '@/i18n/format';
 import { cityTarget, findPlace } from '@/lib/geocode';
@@ -32,6 +33,7 @@ import {
   lessonComplete,
   MAX_LESSONS,
   MEETING_URL_MAX,
+  repeatTimes,
   youtubeId,
   youtubeWatchUrl,
 } from '../../../shared/rules';
@@ -47,6 +49,11 @@ import { cleanTag, TAG_MAX, tagKey } from '../../../shared/tags';
 // sensible values already. Inside a section, what a choice needs appears with
 // the choice: a class's tags, the map once the address is known, the meeting
 // link for an online event. An event being edited shows everything at once.
+//
+// A new event may start from an earlier one (CopyEvent: its name, place,
+// lessons and terms, at the same hour in a week to come), and a lesson may be
+// added from an earlier event (LessonLibrary). Either way the new event is
+// sent and reviewed like any other.
 
 const HOUR = 3_600_000;
 /** The address is looked up on the map once typing has paused this long (lib/geocode.ts says why). */
@@ -113,6 +120,23 @@ function blank(home: LatLng): Values {
   };
 }
 
+/** A lesson of the library, as the form keeps it: a copy, with the same picture and video. */
+function libraryLesson(l: LessonLibraryItem): FormLesson {
+  return {
+    title: l.title,
+    body: l.body,
+    image_id: l.image?.id ?? null,
+    image: l.image,
+    video_id: l.video_id,
+    video_link: l.video_id ? youtubeWatchUrl(l.video_id) : '',
+  };
+}
+
+/** A new event from an earlier one: all of it, at the same hour in a week to come (rules.repeatTimes). */
+function copied(e: EventDetail, home: LatLng, now: number): Values {
+  return { ...valuesOf(e, home), ...repeatTimes(e, now) };
+}
+
 function valuesOf(e: EventDetail, home: LatLng): Values {
   return {
     title: e.title,
@@ -142,14 +166,28 @@ function valuesOf(e: EventDetail, home: LatLng): Values {
   };
 }
 
-export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: EventDetail }) {
+export function EventForm({
+  meta,
+  editing,
+  copyFrom = null,
+  onCopy,
+}: {
+  meta: EventFormMeta;
+  editing?: EventDetail;
+  /** A new event filled in from an earlier one (CopyEvent); the screen keys the form by it, so the form starts again from it. */
+  copyFrom?: EventDetail | null;
+  /** Start from this earlier event (its id), or from a blank form again (null). Only for a new event. */
+  onCopy?: (id: string | null) => void;
+}) {
   const { s, lang, now } = useApp();
   const me = useMe();
   const { run, busy } = useAction();
   // The person's own city: where the pin starts, and where the map opens when the address is not found.
   const [home] = useState(() => cityTarget(LIBYAN_CITIES.find((c) => c.ar === me.city) ?? LIBYAN_CITIES[0]));
-  const [v, setV] = useState(() => (editing ? valuesOf(editing, home) : blank(home)));
-  const [capacity, setCapacity] = useState(String(editing?.capacity ?? 20));
+  // What the form starts from: the event being edited, or the earlier one being copied.
+  const init = editing ?? copyFrom ?? undefined;
+  const [v, setV] = useState(() => (editing ? valuesOf(editing, home) : copyFrom ? copied(copyFrom, home, now) : blank(home)));
+  const [capacity, setCapacity] = useState(String(init?.capacity ?? 20));
   const [invalid, setInvalid] = useState(false);
   const [mapTouched, setMapTouched] = useState(false);
   const [done, setDone] = useState<ProposeEventResponse | null>(null);
@@ -169,8 +207,8 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
   ];
   const options = v.event_class ? tagsOf(v.event_class) : [];
   // Writing a tag of their own. An event being edited opens that way when its tag is not among those offered.
-  const [writing, setWriting] = useState(() => !!editing && !tagsOf(classOfEvent(editing)).some((o) => o.id === editing.subtype));
-  const [ownTag, setOwnTag] = useState(writing && editing ? editing.subtype : '');
+  const [writing, setWriting] = useState(() => !!init && !tagsOf(classOfEvent(init)).some((o) => o.id === init.subtype));
+  const [ownTag, setOwnTag] = useState(writing && init ? init.subtype : '');
   // The keyboard opens on the field when they choose to write, not when an edit opens on it.
   const [focusOwnTag, setFocusOwnTag] = useState(false);
   const typed = cleanTag(ownTag);
@@ -195,7 +233,7 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
 
   // ---------- the place on the map ----------
 
-  const hadPin = editing?.location_type === 'in_person';
+  const hadPin = init?.location_type === 'in_person';
   // The map appears once the form knows where to open it: at the address, at its city, or (an edit) at the event's pin.
   const [mapShown, setMapShown] = useState(hadPin);
   // The last place the form pointed the map at. A new one flies the map there.
@@ -206,7 +244,7 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
   const [moved, setMoved] = useState(hadPin);
   const [confirmed, setConfirmed] = useState(hadPin);
   // The address as last looked up, so the same one is not looked up twice.
-  const [looked, setLooked] = useState(oneLine(editing?.address_text ?? ''));
+  const [looked, setLooked] = useState(oneLine(init?.address_text ?? ''));
   // The same facts for what runs after a wait (a lookup's answer): the screen may have moved on meanwhile.
   const live = useRef({ moved: hadPin, mapShown: hadPin, lookups: 0, city: null as string | null });
 
@@ -302,7 +340,7 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
   const placeDone = place !== null && (online || confirmed);
   const step = !aboutDone ? 0 : !kindDone ? 1 : !placeDone ? 2 : 3;
   // How far the form has opened. It never closes again: clearing a field leaves what is below it in place.
-  const [reached, setReached] = useState(editing ? 3 : 0);
+  const [reached, setReached] = useState(init ? 3 : 0);
   if (step > reached) setReached(step);
   // What to do for the next section to appear.
   const next =
@@ -436,6 +474,7 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
       <Card style={styles.intro}>
         <Txt>{editing ? s.newEvent.editIntro : direct ? s.newEvent.introAdmin : s.newEvent.intro}</Txt>
       </Card>
+      {!editing && onCopy && <CopyEvent copied={copyFrom} onCopy={onCopy} />}
       {full && (
         <Card style={styles.warning}>
           <Txt color={colors.warning}>{fmt(s.newEvent.waitingFull, { n: meta.waiting })}</Txt>
@@ -665,7 +704,14 @@ export function EventForm({ meta, editing }: { meta: EventFormMeta; editing?: Ev
           );
         })}
         {v.lessons.length < MAX_LESSONS && (
-          <Button variant="secondary" icon="add" label={s.newEvent.addLesson} onPress={() => set('lessons', [...v.lessons, NEW_LESSON])} />
+          <>
+            <Button variant="secondary" icon="add" label={s.newEvent.addLesson} onPress={() => set('lessons', [...v.lessons, NEW_LESSON])} />
+            <LessonLibrary
+              library={meta.lesson_library ?? []}
+              inForm={v.lessons}
+              onAdd={(l) => setV((prev) => ({ ...prev, lessons: [...prev.lessons, libraryLesson(l)].slice(0, MAX_LESSONS) }))}
+            />
+          </>
         )}
       </Reveal>
 

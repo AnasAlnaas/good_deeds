@@ -16,6 +16,7 @@ import type {
   EventDetail,
   EventFormMeta,
   EventSummary,
+  LessonLibraryItem,
   EventSupervisor,
   LearnLessonResponse,
   NoticeResponse,
@@ -29,6 +30,7 @@ import { classOfEvent, eventSubtypes } from '../../../shared/classes';
 import { ApiError } from '../../../shared/errors';
 import { CUSTOM_TAG_BASE_POINTS } from '../../../shared/placeholders';
 import * as rules from '../../../shared/rules';
+import { inLessonLibrary, lessonLibrary } from '../../../shared/lesson-library';
 import { basePointsOf, promotedTags } from '../../../shared/tags';
 import { type AppEvent, NOTICE_REACTIONS, type NoticeKind, type NoticeReactionKind, type Registration, type User } from '../../../shared/types';
 import { requireUser } from '../auth';
@@ -42,6 +44,7 @@ import {
   joinedCounts,
   joinedUsers,
   learnedAt,
+  lessonImageRefs,
   lessonItems,
   lessonsOf,
   levelOf,
@@ -90,6 +93,40 @@ const noticeBody = z.object({ body: z.string().max(rules.NOTICE_MAX), kind: z.st
 
 async function supervisorsFor(db: Database, me: User, eventId: string): Promise<EventSupervisor[]> {
   return (await supervisorsOf(db, eventId)).map(({ added_by, ...u }) => ({ ...shownTo(me, u), added_in_app: added_by !== null }));
+}
+
+/** The lessons of earlier events this person's form offers (shared/lesson-library.ts). */
+async function lessonLibraryFor(db: Database, me: User): Promise<LessonLibraryItem[]> {
+  const events = await db
+    .select({ id: s.events.id, title: s.events.title, status: s.events.status, created_by: s.events.created_by, starts_at: s.events.starts_at })
+    .from(s.events)
+    .where(or(notInArray(s.events.status, ['draft', 'rejected']), eq(s.events.created_by, me.id)));
+  const shown = events.map((e) => ({ ...e, starts_at: e.starts_at.toISOString() })).filter((e) => inLessonLibrary(me.id, e));
+  if (shown.length === 0) return [];
+  const lessons = await db
+    .select({
+      id: s.event_lessons.id,
+      event_id: s.event_lessons.event_id,
+      order_index: s.event_lessons.order_index,
+      title: s.event_lessons.title,
+      body: s.event_lessons.body,
+      image_id: s.event_lessons.image_id,
+      video_id: s.event_lessons.video_id,
+    })
+    .from(s.event_lessons)
+    .where(inArray(s.event_lessons.event_id, shown.map((e) => e.id)));
+  const entries = lessonLibrary(me.id, shown, lessons);
+  const images = await lessonImageRefs(db, entries.map((x) => x.lesson));
+  return entries.map(({ lesson, event, mine }) => ({
+    id: lesson.id,
+    title: lesson.title,
+    body: lesson.body,
+    image: (lesson.image_id && images.get(lesson.image_id)) || null,
+    video_id: lesson.video_id ?? null,
+    event_id: event.id,
+    event_title: event.title,
+    mine,
+  }));
 }
 
 async function summarize(db: Database, me: User, events: AppEvent[], now: number): Promise<EventSummary[]> {
@@ -153,6 +190,7 @@ export const eventRoutes = new Hono<AppEnv>()
       publishes_directly: rules.proposalStatus(me) === 'published',
       waiting: await waitingProposals(db, me.id),
       max_waiting: rules.MAX_WAITING_PROPOSALS,
+      lesson_library: await lessonLibraryFor(db, me),
     });
   })
 

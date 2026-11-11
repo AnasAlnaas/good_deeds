@@ -131,6 +131,16 @@ export default function EventDetail() {
       },
     });
 
+  // Its proposer or a supervisor starts a new event from this one (event/new.tsx ?copy=), if they may propose events.
+  const repeat = (event.i_created || organizer) && summary.data?.can_create_events && (
+    <Button
+      variant="quiet"
+      icon="copy-outline"
+      label={s.copyEvent.repeat}
+      onPress={() => router.push({ pathname: '/event/new', params: { copy: event.id } })}
+    />
+  );
+
   let footer;
   if (status === 'draft') {
     // Only its creator sees an event that is not published, and may change it until an admin decides.
@@ -145,13 +155,17 @@ export default function EventDetail() {
             <Button variant="danger" icon="trash-outline" label={s.event.withdraw} disabled={busy} onPress={withdraw} />
           </>
         )}
+        {repeat}
       </>
     );
   } else if (status === 'rejected') {
     footer = (
-      <Txt color={colors.danger} align="center">
-        {s.event.rejected}
-      </Txt>
+      <>
+        <Txt color={colors.danger} align="center">
+          {s.event.rejected}
+        </Txt>
+        {repeat}
+      </>
     );
   } else if (organizer) {
     footer = (
@@ -160,6 +174,7 @@ export default function EventDetail() {
           {s.event.supervisor}
         </Txt>
         <Button icon="clipboard-outline" label={s.event.roster} onPress={() => router.push(`/event/${event.id}/roster`)} />
+        {repeat}
       </>
     );
   } else if (reg?.status === 'joined') {

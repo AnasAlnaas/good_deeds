@@ -960,3 +960,20 @@ export const DELETED_NAME = 'حساب محذوف';
 export function erasedProfile(): Pick<User, 'full_name' | 'phone' | 'email' | 'city' | 'avatar_url'> {
   return { full_name: DELETED_NAME, phone: '', email: null, city: '', avatar_url: null };
 }
+
+// ---------- repeating an event ----------
+
+const WEEK_MS = 7 * 24 * 3_600_000;
+
+/**
+ * A new event copied from an earlier one (the app's CopyEvent) is set for the
+ * same day of the week and hour, a whole number of weeks later: the first such
+ * time after both the earlier event and `now`. Its length stays the same.
+ */
+export function repeatTimes(e: { starts_at: string; ends_at: string }, now: number) {
+  const start = Date.parse(e.starts_at);
+  const length = Date.parse(e.ends_at) - start;
+  const weeks = Math.max(1, Math.floor((now - start) / WEEK_MS) + 1);
+  const next = start + weeks * WEEK_MS;
+  return { starts_at: new Date(next).toISOString(), ends_at: new Date(next + length).toISOString() };
+}

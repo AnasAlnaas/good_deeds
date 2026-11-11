@@ -622,6 +622,24 @@ const videoed: EventDetail = (await call('GET', `/events/${withVideo.id}`, khale
 expectEqual('the event shows the video with its lesson', videoed.lessons.map((l) => l.video_id), ['dQw4w9WgXcQ']);
 await expectOk('he withdraws it', call('DELETE', `/events/${withVideo.id}`, khaled));
 
+console.log('\n— the lesson library, and starting from an earlier event');
+const library = async (token: string) => ((await call('GET', '/events/form', token)).body as EventFormMeta).lesson_library ?? [];
+const safety = (await upload(khaled, picture(1080, 1350))).body.image;
+const safetyLessons = [{ title: 'السلامة أولاً', body: 'القفازات طوال العمل.', image_id: safety.id, video_id: null }];
+const first = await expectOk('he proposes an event with a lesson', call('POST', '/events', khaled, proposal({ lessons: safetyLessons })));
+const offered = (await library(khaled)).filter((l) => l.title === 'السلامة أولاً');
+expectEqual('his form offers its lesson as his, with the picture', offered.map((l) => [l.event_id, l.mine, l.image?.id]), [[first.id, true, safety.id]]);
+expectEqual('it also offers lessons of approved events', (await library(khaled)).some((l) => !l.mine), true);
+expectEqual('nobody else is offered a lesson still waiting for approval', (await library(admin)).some((l) => l.event_id === first.id), false);
+const copyOfIt = await expectOk('a new event with that lesson copied, its picture reused', call('POST', '/events', khaled, proposal({ lessons: safetyLessons })));
+expectEqual('the same lesson is offered once', (await library(khaled)).filter((l) => l.title === 'السلامة أولاً').length, 1);
+await expectOk('he withdraws the first', call('DELETE', `/events/${first.id}`, khaled));
+const copiedEvent: EventDetail = (await call('GET', `/events/${copyOfIt.id}`, khaled)).body;
+expectEqual('the copy keeps the picture', [copiedEvent.lessons[0]?.image?.id, (await h.raw(safety.url, khaled)).status], [safety.id, 200]);
+await expectOk('he withdraws the copy', call('DELETE', `/events/${copyOfIt.id}`, khaled));
+expectEqual('then the picture goes', (await h.raw(safety.url, khaled)).status, 404);
+expectEqual("nor is a withdrawn event's lesson offered", (await library(khaled)).some((l) => l.title === 'السلامة أولاً'), false);
+
 // ---------------------------------------------------------------------------
 console.log('\n— editing the profile');
 const editMe = (body: object) => call('PATCH', '/me', ahmad, body);

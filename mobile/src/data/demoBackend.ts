@@ -9,12 +9,14 @@ import * as server from '@/demo/server';
 import { classOfEvent, eventSubtypes } from '../../../shared/classes';
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
+import { lessonLibrary } from '../../../shared/lesson-library';
 import { cleanKind, promotedTags } from '../../../shared/tags';
 import type {
   AttendanceItem,
   EventDetail,
   EventLessonItem,
   LessonImageRef,
+  LessonLibraryItem,
   EventNoticeItem,
   EventProposal,
   EventSummary,
@@ -153,6 +155,20 @@ function lessonItems(db: Db, meId: string, eventId: string): EventLessonItem[] {
     .map(({ created_at, ...l }) => ({ ...l, image: imageRef(db, l.image_id), learned_at: learned.get(l.id) ?? null }));
 }
 
+/** The lessons of earlier events the form offers, as the server builds them. */
+function libraryItems(db: Db, meId: string): LessonLibraryItem[] {
+  return lessonLibrary(meId, db.events, db.event_lessons).map(({ lesson, event, mine }) => ({
+    id: lesson.id,
+    title: lesson.title,
+    body: lesson.body,
+    image: imageRef(db, lesson.image_id),
+    video_id: lesson.video_id ?? null,
+    event_id: event.id,
+    event_title: event.title,
+    mine,
+  }));
+}
+
 export function createDemoBackend(store: DemoStore, meId: string): Backend {
   // Like the server, the scheduled auto-close runs before every call.
   const read = () => {
@@ -231,6 +247,7 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
           publishes_directly: rules.proposalStatus(me) === 'published',
           waiting: server.waitingProposals(db, me.id),
           max_waiting: rules.MAX_WAITING_PROPOSALS,
+          lesson_library: libraryItems(db, me.id),
         };
       }),
 

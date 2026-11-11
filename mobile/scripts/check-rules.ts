@@ -12,6 +12,7 @@ import { buildSeed } from '../src/demo/seed';
 import * as server from '../src/demo/server';
 import { cityInText, cityName, LIBYAN_CITIES } from '../../shared/cities';
 import * as rules from '../../shared/rules';
+import { lessonLibrary } from '../../shared/lesson-library';
 import { cleanKind, promotedTags } from '../../shared/tags';
 
 const NOW = new Date('2026-10-21T12:00:00').getTime();
@@ -542,6 +543,37 @@ console.log('\n— a written tag, and the city in an address');
     [cityInText('حديقة الحي، طرابلس')?.en, cityInText('ميدان الشهداء بطرابلس')?.en, cityInText('Corniche road, Bani Walid')?.en, cityInText('شارع البيضاء القديم، بنغازي')?.en, cityInText('قرب المسجد') ?? null],
     ['Tripoli', 'Tripoli', 'Bani Walid', 'Bayda', null],
   );
+}
+
+console.log('\n— repeating an event, and the lesson library');
+{
+  const at = (iso: string) => ({ starts_at: new Date(iso).toISOString(), ends_at: new Date(Date.parse(iso) + 3 * 3_600_000).toISOString() });
+  const week = (iso: string) => new Date(Date.parse(iso) + 7 * 24 * 3_600_000).toISOString();
+  expectEqual('a past event repeats on its weekday and hour, the next week to come', rules.repeatTimes(at('2026-10-01T09:00:00'), NOW).starts_at, new Date('2026-10-22T09:00:00').toISOString());
+  expectEqual('an event still to come repeats a week after it', rules.repeatTimes(at('2026-10-25T09:00:00'), NOW).starts_at, week('2026-10-25T09:00:00'));
+  expectEqual('earlier today: next week', rules.repeatTimes(at('2026-10-21T09:00:00'), NOW).starts_at, week('2026-10-21T09:00:00'));
+  const r = rules.repeatTimes(at('2026-10-01T09:00:00'), NOW);
+  expectEqual('it keeps its length', Date.parse(r.ends_at) - Date.parse(r.starts_at), 3 * 3_600_000);
+
+  type St = 'published' | 'draft' | 'rejected';
+  const ev = (id: string, status: St, created_by: string, starts_at: string) => ({ id, title: id, status, created_by, starts_at });
+  const ls = (id: string, event_id: string, title: string, order_index = 1) => ({ id, event_id, order_index, title, body: 'نص', image_id: null, video_id: null });
+  const lib = lessonLibrary(
+    'u_me',
+    [
+      ev('mine_old', 'published', 'u_me', '2026-01-01T09:00:00Z'),
+      ev('mine_draft', 'draft', 'u_me', '2026-11-01T09:00:00Z'),
+      ev('theirs', 'published', 'u_x', '2026-12-01T09:00:00Z'),
+      ev('their_draft', 'draft', 'u_x', '2026-12-01T09:00:00Z'),
+      ev('turned_down', 'rejected', 'u_x', '2026-12-01T09:00:00Z'),
+    ],
+    [ls('a', 'mine_old', 'السلامة'), ls('b', 'mine_draft', 'الفرز', 1), ls('c', 'mine_draft', 'الماء', 2), ls('d', 'theirs', 'السلامة'), ls('e', 'theirs', 'الإسعاف'), ls('f', 'their_draft', 'سرّ'), ls('g', 'turned_down', 'مرفوض')],
+  );
+  expectEqual("his own first (latest first, in order), then approved ones; the same lesson once; nobody else's draft or refusal", lib.map((x) => x.lesson.id), ['b', 'c', 'a', 'e']);
+  expectEqual('his are marked his', lib.map((x) => x.mine), [true, true, true, false]);
+  expectEqual('at most so many', lessonLibrary('u_me', [ev('theirs', 'published', 'u_x', '2026-12-01T09:00:00Z')], [ls('1', 'theirs', 'أ'), ls('2', 'theirs', 'ب'), ls('3', 'theirs', 'ج')], 2).length, 2);
+  const demoLib = lessonLibrary('u_khaled', db.events, db.event_lessons);
+  expectEqual('the demo offers lessons of its approved events', demoLib.length > 0 && demoLib.every((x) => x.event.status !== 'draft' || x.mine), true);
 }
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');
