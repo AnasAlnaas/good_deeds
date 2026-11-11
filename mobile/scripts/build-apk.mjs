@@ -63,6 +63,14 @@ if (!existsSync(envStampFile) || readFileSync(envStampFile, 'utf8') !== envStamp
   rmSync(join(root, 'android/app/build/generated/assets'), { recursive: true, force: true });
 }
 
+// The APK's own update (expo-updates' app.manifest: an id and the time it was
+// made) is made again for every APK. Gradle would otherwise reuse the first
+// one, since nothing it watches changes, and every later APK would say it was
+// made then: a phone that downloaded an update after that time would keep
+// running the update instead of the new APK's code, until its data was
+// cleared (expo-updates runs the newest of the two).
+rmSync(join(root, 'android/app/build/generated/assets/createReleaseUpdatesResources'), { recursive: true, force: true });
+
 const abis = emulator ? 'x86_64' : all ? 'arm64-v8a,armeabi-v7a' : 'arm64-v8a';
 // The full path: Windows may be set not to look in the current folder for programs.
 const gradlew = join(root, 'android', process.platform === 'win32' ? 'gradlew.bat' : 'gradlew');
