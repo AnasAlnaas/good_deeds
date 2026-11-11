@@ -50,12 +50,12 @@ export const persistOptions: Omit<PersistQueryClientOptions, 'queryClient'> = {
 
 type Fetch<T> = (b: Backend) => Promise<T>;
 
-function useBackendQuery<T>(key: unknown[], fetch: Fetch<T>) {
+function useBackendQuery<T>(key: unknown[], fetch: Fetch<T>, enabled = true) {
   const { backend, sessionKey } = useApp();
   return useQuery({
     queryKey: [sessionKey, ...key],
     queryFn: () => fetch(backend!),
-    enabled: !!backend,
+    enabled: !!backend && enabled,
   });
 }
 
@@ -71,7 +71,8 @@ const KEYS = {
 };
 
 export const useEvents = () => useBackendQuery(KEYS.events(), (b) => b.listEvents());
-export const useEvent = (id: string) => useBackendQuery(KEYS.event(id), (b) => b.event(id));
+/** `id` empty = no event (the query waits): a screen that reads one only sometimes (event/new.tsx's copy). */
+export const useEvent = (id: string) => useBackendQuery(KEYS.event(id), (b) => b.event(id), !!id);
 export const useEventForm = () => useBackendQuery(['eventForm'], (b) => b.eventForm());
 export const useRoster = (eventId: string) => useBackendQuery(KEYS.roster(eventId), (b) => b.roster(eventId));
 export const useMyAttendance = () => useBackendQuery(KEYS.myAttendance(), (b) => b.myAttendance());

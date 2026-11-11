@@ -214,6 +214,25 @@ export interface EventFormMeta {
   /** The signed-in user's events waiting for approval, and how many may wait at once. */
   waiting: number;
   max_waiting: number;
+  /**
+   * Lessons of earlier events the form offers to add (shared/lesson-library.ts).
+   * Absent from a server from before the lesson library: the form offers none.
+   */
+  lesson_library?: LessonLibraryItem[];
+}
+
+/** A lesson of an earlier event, offered to a new event's form. Added as a copy: the new event has its own. */
+export interface LessonLibraryItem {
+  /** The lesson it was in that event (only to tell the items apart). */
+  id: string;
+  title: string;
+  body: string;
+  image: LessonImageRef | null;
+  video_id: string | null;
+  event_id: string;
+  event_title: string;
+  /** One of the person's own events. */
+  mine: boolean;
 }
 
 /** GET /api/events/:id */
