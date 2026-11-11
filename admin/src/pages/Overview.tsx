@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 
 import { api } from '../api';
+import { Icon, IconCircle, type IconName } from '../icons';
 import { t } from '../strings';
 import { PageHeader, QueryState } from '../ui';
 
@@ -15,6 +16,7 @@ export function Overview() {
         title={t.overview.title}
         actions={
           <Link className="btn btn-primary" to="/events/new">
+            <Icon name="add" />
             {t.overview.newEvent}
           </Link>
         }
@@ -24,15 +26,15 @@ export function Overview() {
       ) : (
         <>
           <div className="stats">
-            <Stat n={o.open_disputes} label={t.overview.disputes} alert={o.open_disputes > 0} to="/disputes" />
-            <Stat n={o.proposals_waiting} label={t.overview.proposals} alert={o.proposals_waiting > 0} to="/events?status=draft" />
-            <Stat n={o.open_reports} label={t.overview.reports} alert={o.open_reports > 0} to="/reports" />
-            <Stat n={o.appealed_warnings} label={t.overview.appeals} alert={o.appealed_warnings > 0} to="/warnings?status=appealed" />
-            <Stat n={o.running_events} label={t.overview.running} to="/events" />
-            <Stat n={o.upcoming_events} label={t.overview.upcoming} to="/events" />
-            <Stat n={o.draft_events} label={t.overview.drafts} to="/events" />
-            <Stat n={o.awaiting_confirmation} label={t.overview.awaiting} />
-            <Stat n={o.users} label={t.overview.users} to="/users" />
+            <Stat n={o.open_disputes} icon="scale" label={t.overview.disputes} alert={o.open_disputes > 0} to="/disputes" />
+            <Stat n={o.proposals_waiting} icon="hourglass" label={t.overview.proposals} alert={o.proposals_waiting > 0} to="/events?status=draft" />
+            <Stat n={o.open_reports} icon="flag" label={t.overview.reports} alert={o.open_reports > 0} to="/reports" />
+            <Stat n={o.appealed_warnings} icon="warning" label={t.overview.appeals} alert={o.appealed_warnings > 0} to="/warnings?status=appealed" />
+            <Stat n={o.running_events} icon="time" label={t.overview.running} to="/events" />
+            <Stat n={o.upcoming_events} icon="calendar" label={t.overview.upcoming} to="/events" />
+            <Stat n={o.draft_events} icon="list" label={t.overview.drafts} to="/events" />
+            <Stat n={o.awaiting_confirmation} icon="check" label={t.overview.awaiting} />
+            <Stat n={o.users} icon="people" label={t.overview.users} to="/users" />
           </div>
           {(o.open_disputes > 0 || o.proposals_waiting > 0 || o.open_reports > 0 || o.appealed_warnings > 0) && (
             <div className="actions">
@@ -64,15 +66,16 @@ export function Overview() {
   );
 }
 
-function Stat({ n, label, alert, to }: { n: number; label: string; alert?: boolean; to?: string }) {
+function Stat({ n, icon, label, alert, to }: { n: number; icon: IconName; label: string; alert?: boolean; to?: string }) {
   const body = (
     <>
       <strong>{n}</strong>
+      <IconCircle name={icon} />
       <span className="muted">{label}</span>
     </>
   );
   return to ? (
-    <Link to={to} className={`stat${alert ? ' alert' : ''}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+    <Link to={to} className={`stat${alert ? ' alert' : ''}`}>
       {body}
     </Link>
   ) : (

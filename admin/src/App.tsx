@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes } from 'react-r
 
 import { api } from './api';
 import { useAuth } from './auth';
+import { Icon, type IconName } from './icons';
 import { Audit } from './pages/Audit';
 import { Disputes } from './pages/Disputes';
 import { EventForm } from './pages/EventForm';
@@ -50,8 +51,9 @@ function Shell() {
   const reports = overview.data?.open_reports ?? 0;
   const appeals = overview.data?.appealed_warnings ?? 0;
 
-  const link = (to: string, label: string, count = 0) => (
+  const link = (to: string, icon: IconName, label: string, count = 0) => (
     <NavLink to={to} end={to === '/'} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+      <Icon name={icon} />
       <span>{label}</span>
       {count > 0 && <span className="nav-count tabular">{count}</span>}
     </NavLink>
@@ -67,17 +69,23 @@ function Shell() {
             <span>{t.panel}</span>
           </div>
         </div>
-        {link('/', t.nav.overview)}
-        {link('/events', t.nav.events)}
-        {link('/disputes', t.nav.disputes, disputes)}
-        {link('/reports', t.nav.reports, reports)}
-        {link('/warnings', t.nav.warnings, appeals)}
-        {link('/users', t.nav.users)}
-        {link('/report', t.nav.report)}
-        {link('/audit', t.nav.audit)}
+        {link('/', 'overview', t.nav.overview)}
+        {link('/events', 'calendar', t.nav.events)}
+        {link('/disputes', 'scale', t.nav.disputes, disputes)}
+        {link('/reports', 'flag', t.nav.reports, reports)}
+        {link('/warnings', 'warning', t.nav.warnings, appeals)}
+        {link('/users', 'people', t.nav.users)}
+        {link('/report', 'time', t.nav.report)}
+        {link('/audit', 'list', t.nav.audit)}
         <div className="sidebar-foot">
-          <span className="small">{session.user.full_name}</span>
+          <div className="who small">
+            <span className="avatar" aria-hidden="true">
+              {session.user.full_name.charAt(0)}
+            </span>
+            <span>{session.user.full_name}</span>
+          </div>
           <Button variant="secondary" className="btn-small" onClick={signOut}>
+            <Icon name="logout" size={18} />
             {t.signOut}
           </Button>
         </div>

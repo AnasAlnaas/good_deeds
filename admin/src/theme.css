@@ -1,0 +1,71 @@
+/*
+ * The panel's design tokens: the same values as the app's
+ * mobile/src/theme/tokens.ts. Change a value there first, then here.
+ * Pages and components use these variables only (styles.css); no colour,
+ * radius or shadow is written anywhere else.
+ *
+ * The palette follows the logo: a forest-green tree in a sage ring on paper.
+ * Forest leads, cream is the page, and a muted gold marks only what is earned
+ * (points, levels). Keep gold rare.
+ */
+:root {
+  /* colours */
+  --primary: #1e5e3b; /* forest: buttons, active state, titles on cream */
+  --primary-pressed: #164a2e;
+  --primary-soft: #e5ede4; /* sage tint: quiet fills, hover, disabled */
+
+  --accent: #cda650; /* gold: points and levels only */
+  --accent-pressed: #b8913e;
+  --accent-soft: #f7eed6;
+  --accent-ink: #3a2b08; /* text on gold, never white */
+
+  --slate: #3d5146;
+  --link: #1f6e8c; /* links and info only */
+  --brand-sage: #9bb896; /* decoration only, never text */
+
+  --ink: #17231d;
+  --ink-muted: #4d5a52; /* the lightest text colour allowed */
+  --surface: #fffdf8; /* cards: warm white */
+  --surface-alt: #f4f0e6; /* the page: the logo's paper */
+  --border: #e4ddcb;
+
+  --success: #1f7a45;
+  --warning: #a85a06;
+  --danger: #b42318;
+  /* Soft fills behind status text: the status colour at low strength on the card. */
+  --success-soft: color-mix(in srgb, var(--success) 9%, var(--surface));
+  --warning-soft: color-mix(in srgb, var(--warning) 9%, var(--surface));
+  --danger-soft: color-mix(in srgb, var(--danger) 8%, var(--surface));
+
+  /* type: Readex Pro for titles and numbers, IBM Plex Sans Arabic for text */
+  --font-body: 'IBM Plex Sans Arabic', system-ui, sans-serif;
+  --font-heading: 'Readex Pro', var(--font-body);
+  --type-screen-title: 700 26px/36px var(--font-heading);
+  --type-section-title: 600 19px/28px var(--font-heading);
+  --type-body: 400 16px/26px var(--font-body);
+  --type-caption: 400 14px/22px var(--font-body);
+  --type-metric: 700 34px/40px var(--font-heading);
+
+  /* spacing, radii */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-xxl: 48px;
+  --radius-card: 24px;
+  --radius-input: 16px;
+  --radius-pill: 999px;
+
+  /* The app's touch target is 48; on a desk a pointer needs a little less. */
+  --control: 44px;
+  --control-small: 34px;
+
+  /* shadows: a barely-there lift for cards, a soft one for what floats */
+  --shadow-card: 0 4px 12px rgba(43, 36, 20, 0.06);
+  --shadow-float: 0 8px 18px rgba(43, 36, 20, 0.14);
+
+  --focus: var(--link);
+
+  color-scheme: light;
+}

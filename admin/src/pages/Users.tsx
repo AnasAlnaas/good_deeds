@@ -119,7 +119,9 @@ export function Users() {
                         ))}
                       </select>
                     </td>
-                    <td className="num">{u.level}</td>
+                    <td className="num">
+                      <span className="level">{u.level}</span>
+                    </td>
                     <td className="num">{num(u.total_points)}</td>
                     <td className="num">{num(u.confirmed_hours)}</td>
                     <td className="num">
