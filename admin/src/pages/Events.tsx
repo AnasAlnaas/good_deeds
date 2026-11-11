@@ -2,9 +2,11 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 
+import { classOfEvent, EVENT_CLASSES } from '../../../shared/classes';
 import type { EventStatus } from '../../../shared/types';
 import { api } from '../api';
 import { fill, range } from '../format';
+import { ClassIcon, Icon } from '../icons';
 import { t } from '../strings';
 import { PageHeader, QueryState, StatusBadge } from '../ui';
 
@@ -24,6 +26,7 @@ export function Events() {
         title={t.events.title}
         actions={
           <Link className="btn btn-primary" to="/events/new">
+            <Icon name="add" />
             {t.events.new}
           </Link>
         }
@@ -53,11 +56,19 @@ export function Events() {
               {rows.map(({ event: e, effective_status, joined_count, organizers, creator }) => (
                 <tr key={e.id} className="clickable" onClick={() => navigate(`/events/${e.id}`)}>
                   <td>
-                    <Link to={`/events/${e.id}`}>{e.title}</Link>
-                    <div className="small muted">
-                      {e.location_type === 'online' ? `${t.online} · ${t.platforms[e.meeting_platform ?? 'other']}` : e.address_text}
+                    <div className="event-cell">
+                      <ClassIcon id={classOfEvent(e)} />
+                      <div>
+                        <Link className="title-link" to={`/events/${e.id}`}>
+                          {e.title}
+                        </Link>
+                        <span className="small muted">
+                          {EVENT_CLASSES.find((k) => k.id === classOfEvent(e))?.name_ar} ·{' '}
+                          {e.location_type === 'online' ? `${t.online} · ${t.platforms[e.meeting_platform ?? 'other']}` : e.address_text}
+                        </span>
+                        {creator && creator.role !== 'admin' && <span className="small">{fill(t.events.proposedBy, { name: creator.full_name })}</span>}
+                      </div>
                     </div>
-                    {creator && creator.role !== 'admin' && <div className="small">{fill(t.events.proposedBy, { name: creator.full_name })}</div>}
                   </td>
                   <td className="small">{range(e.starts_at, e.ends_at)}</td>
                   <td>

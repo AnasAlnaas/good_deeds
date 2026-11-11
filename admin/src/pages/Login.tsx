@@ -73,19 +73,19 @@ export function Login() {
 
   return (
     <div className="login">
+      <div className="login-head">
+        <img src="/logo-mark.svg" alt="" />
+        <strong>{t.appName}</strong>
+        <span>
+          {t.association} · {t.panel}
+        </span>
+      </div>
       <form
         className="card"
         onSubmit={(e) => {
           e.preventDefault();
           submit();
         }}>
-        <div className="brand">
-          <img src="/logo-mark.svg" alt="" />
-          <div>
-            <strong>{t.appName}</strong>
-            <span className="muted">{t.association}</span>
-          </div>
-        </div>
         <h1>{step === 'signIn' ? t.login.title : t.login.resetTitle}</h1>
         <p className="muted">{step === 'signIn' ? t.login.body : notSet ? t.login.notSetBody : t.login.resetBody}</p>
         <Field label={step === 'signIn' ? t.login.phoneOrEmail : t.login.phone}>
@@ -116,14 +116,13 @@ export function Login() {
           </Field>
         )}
         <Field label={step === 'signIn' ? t.login.password : t.login.newPassword}>
-          <div className="row">
+          <div className="password-row">
             <input
               type={shown ? 'text' : 'password'}
               autoComplete={step === 'signIn' ? 'current-password' : 'new-password'}
               value={password}
               maxLength={PASSWORD_MAX}
               onChange={(e) => setPassword(e.target.value)}
-              style={{ flex: 1 }}
             />
             <Button variant="quiet" className="btn-small" onClick={() => setShown(!shown)}>
               {shown ? t.login.hidePassword : t.login.showPassword}

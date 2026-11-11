@@ -5,6 +5,7 @@ import { classOfEvent, EVENT_CLASSES } from '../../../shared/classes';
 import { api } from '../api';
 import { LessonPicture, LessonVideo } from '../LessonPicture';
 import { fill, ltr, num, range, time } from '../format';
+import { ClassIcon } from '../icons';
 import { t } from '../strings';
 import { Badge, Button, ErrorNote, Notice, PageHeader, QueryState, StatusBadge, useAction } from '../ui';
 
@@ -79,7 +80,13 @@ export function EventPage() {
 
       <div className="grid-2">
         <section className="card">
-          <h2>{t.event.details}</h2>
+          <div className="event-cell">
+            <ClassIcon id={classOfEvent(e)} size={48} />
+            <div>
+              <span className="small muted">{EVENT_CLASSES.find((k) => k.id === classOfEvent(e))?.name_ar}</span>
+              <h2>{t.event.details}</h2>
+            </div>
+          </div>
           <p>{e.description}</p>
           <dl className="facts">
             <dt>{t.event.when}</dt>

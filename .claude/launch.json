@@ -20,6 +20,12 @@
       "port": 3000
     },
     {
+      "name": "server-pglite",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["-e", "require('child_process').spawn('npm', ['--prefix', 'server', 'run', 'dev'], { stdio: 'inherit', shell: true, env: { ...process.env, DATABASE_URL: '' } }).on('exit', (c) => process.exit(c ?? 0))"],
+      "port": 3000
+    },
+    {
       "name": "admin",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "admin", "run", "dev"],
