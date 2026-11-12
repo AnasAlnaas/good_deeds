@@ -1,8 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 
 import type { AdminEventDetail, AdminMeta, EventInput } from '../../../shared/admin-api';
+import { LIBYAN_CITIES, placeInCity, splitAddress } from '../../../shared/cities';
+import { classOfEvent, EVENT_CLASSES, type EventClassId } from '../../../shared/classes';
+import { cityTarget, locateInCity, type MapTarget } from '../../../shared/geocode';
+import { nameExample } from '../../../shared/name-examples';
+import { cleanTag, TAG_MAX, tagKey } from '../../../shared/tags';
 import { ADDRESS_MAX, cleanPlace, MEETING_URL_MAX } from '../../../shared/rules';
 import { type GenderCategory, type LocationType, MEETING_PLATFORMS, type MeetingPlatform } from '../../../shared/types';
 import { api } from '../api';
@@ -10,10 +15,14 @@ import { fill, fromLocalInput, toLocalInput } from '../format';
 import type { LessonImageRef } from '../../../shared/api';
 import { LESSON_BODY_MAX, LESSON_TITLE_MAX, lessonComplete, MAX_LESSONS, youtubeId, youtubeWatchUrl } from '../../../shared/rules';
 import { LessonPicture, LessonVideo, lessonJpeg } from '../LessonPicture';
+import { MapPicker, type MovedBy } from '../MapPicker';
 import { t } from '../strings';
 import { Button, ErrorNote, Field, Notice, PageHeader, QueryState, useAction } from '../ui';
 
 const TRIPOLI = { lat: 32.8872, lng: 13.1913 };
+/** The place is looked up on the map once typing has paused this long (shared/geocode.ts says why). */
+const PAUSE_MS = 1500;
+const oneLine = (text: string) => text.replace(/\s+/g, ' ').trim();
 
 /** Create (/events/new) or edit (/events/:id/edit). The server re-checks every rule. */
 export function EventForm() {
@@ -35,7 +44,7 @@ function initial(existing: AdminEventDetail | undefined): EventInput {
     return {
       title: '',
       description: '',
-      subtype: 'street_cleanup',
+      subtype: '',
       location_type: 'in_person',
       address_text: null,
       lat: null,
@@ -77,7 +86,10 @@ function initial(existing: AdminEventDetail | undefined): EventInput {
 /** The form keeps both kinds of place while one is chosen; rules.cleanPlace sends only the chosen one's. */
 interface PlaceDraft {
   location_type: LocationType;
+  /** The place in the city, as written; the address sent is it and the city (cities.placeInCity). */
   address_text: string;
+  /** The city chosen from the list (its Arabic name), or '' before a choice. */
+  city: string;
   lat: number;
   lng: number;
   meeting_platform: MeetingPlatform;
@@ -85,9 +97,11 @@ interface PlaceDraft {
 }
 
 function placeDraft(v: EventInput): PlaceDraft {
+  const { place, city } = splitAddress(v.address_text ?? '');
   return {
     location_type: v.location_type,
-    address_text: v.address_text ?? '',
+    address_text: place,
+    city: city?.ar ?? '',
     lat: v.lat ?? TRIPOLI.lat,
     lng: v.lng ?? TRIPOLI.lng,
     meeting_platform: v.meeting_platform ?? 'zoom',
@@ -101,7 +115,85 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
   const [v, setV] = useState<EventInput>(() => initial(existing));
   const [place, setPlace] = useState<PlaceDraft>(() => placeDraft(initial(existing)));
   const setPlaceField = <K extends keyof PlaceDraft>(key: K, value: PlaceDraft[K]) => setPlace((prev) => ({ ...prev, [key]: value }));
-  const cleaned = cleanPlace(place);
+  const inPerson = place.location_type === 'in_person';
+  const city = LIBYAN_CITIES.find((c) => c.ar === place.city) ?? null;
+  const placeText = oneLine(place.address_text);
+  // In a place, the address sent is the place and its city; it counts once both are there.
+  const address = city && placeText.length >= 2 ? placeInCity(placeText, city.ar) : '';
+  const cleaned = cleanPlace({ ...place, address_text: address });
+
+  // ---------- the class and its tag, as the app's form ----------
+
+  const typesOf = (c: EventClassId) => [
+    ...meta.subtypes.filter((x) => x.event_class === c).map((x) => ({ id: x.id, label: t.subtype[x.id] ?? x.id, points: x.base_points })),
+    ...(meta.tags ?? []).filter((x) => x.event_class === c).map((x) => ({ id: x.tag, label: x.tag, points: meta.custom_tag_points ?? 0 })),
+  ];
+  const [eventClass, setEventClass] = useState<EventClassId | null>(() => (existing ? classOfEvent(existing.event) : null));
+  const options = eventClass ? typesOf(eventClass) : [];
+  // An event whose tag is not among those offered (one its proposer wrote) opens with it written.
+  const [writing, setWriting] = useState(() => !!existing && !typesOf(classOfEvent(existing.event)).some((o) => o.id === existing.event.subtype));
+  const [ownTag, setOwnTag] = useState(() => (writing && existing ? existing.event.subtype : ''));
+  const typed = cleanTag(ownTag);
+  const same = writing && typed ? options.find((o) => tagKey(o.label) === tagKey(typed) || tagKey(o.id) === tagKey(typed)) : undefined;
+  const subtype = writing ? (same?.id ?? typed ?? '') : v.subtype;
+  const points = options.find((o) => o.id === subtype)?.points ?? (writing ? (meta.custom_tag_points ?? 0) : (existing?.event.base_points ?? 0));
+  const chooseClass = (c: EventClassId) => {
+    if (c === eventClass) return;
+    setEventClass(c);
+    set('subtype', '');
+    setWriting(false);
+  };
+
+  // ---------- the place on the map, as the app's form ----------
+
+  const hadPin = !!existing && existing.event.location_type === 'in_person';
+  const [target, setTarget] = useState<MapTarget | null>(null);
+  const [mapShown, setMapShown] = useState(hadPin);
+  const [spot, setSpot] = useState<'place' | 'city' | null>(null);
+  const [looking, setLooking] = useState(false);
+  // The pin was put by hand: from then on the place no longer moves the map by itself.
+  const [moved, setMoved] = useState(hadPin);
+  const [looked, setLooked] = useState(() => `${placeText}|${place.city}`);
+  const lookups = useRef(0);
+  const pointAt = (to: MapTarget) => {
+    setTarget(to);
+    setPlace((prev) => ({ ...prev, lat: to.lat, lng: to.lng }));
+    setMapShown(true);
+  };
+  const onPin = (p: { lat: number; lng: number }, by: MovedBy) => {
+    setPlace((prev) => ({ ...prev, lat: p.lat, lng: p.lng }));
+    if (by === 'hand') setMoved(true);
+  };
+  const chooseCity = (c: string) => {
+    setPlaceField('city', c);
+    setMoved(false);
+    const next = LIBYAN_CITIES.find((x) => x.ar === c);
+    if (next && mapShown) {
+      pointAt(cityTarget(next));
+      setSpot('city');
+    }
+  };
+  /** The place in its city on the map, or the city when it is not found there. `asked`: even from a pin put by hand. */
+  const lookUp = async (asked = false) => {
+    if (!inPerson || !city || placeText.length < 2) return;
+    const key = `${placeText}|${city.ar}`;
+    if (!asked && (moved || key === looked)) return;
+    setLooked(key);
+    if (asked) setMoved(false);
+    const mine = ++lookups.current;
+    setLooking(true);
+    const found = await locateInCity(placeText, city, 'ar');
+    if (mine !== lookups.current) return;
+    setLooking(false);
+    pointAt(found.target);
+    setSpot(found.kind);
+  };
+  const lookUpLater = useRef(lookUp);
+  lookUpLater.current = lookUp;
+  useEffect(() => {
+    const timer = setTimeout(() => void lookUpLater.current(), PAUSE_MS);
+    return () => clearTimeout(timer);
+  }, [place.address_text, place.city, place.location_type]);
   const [peopleFilter, setPeopleFilter] = useState('');
   const [invalid, setInvalid] = useState(false);
   // The lessons' pictures, to show them; the form itself names each by its id.
@@ -123,10 +215,10 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
   const categoryLocked = (existing?.joined_count ?? 0) > 0;
   const timesLocked = !!existing?.participants.some((p) => p.attendance);
   // A tag its proposer wrote is not among the types: it stays offered while this event has it.
-  const writtenTag = existing && !meta.subtypes.some((x) => x.id === existing.event.subtype) ? existing.event.subtype : null;
-  const points = meta.subtypes.find((x) => x.id === v.subtype)?.base_points ?? existing?.event.base_points ?? 0;
 
   const valid =
+    !!eventClass &&
+    !!subtype &&
     v.title.trim().length >= 3 &&
     v.description.trim().length > 0 &&
     cleaned !== null &&
@@ -146,6 +238,8 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
     setInvalid(false);
     const body = {
       ...v,
+      subtype,
+      event_class: eventClass,
       ...cleaned,
       terms: v.terms.map((x) => x.trim()),
       lessons: v.lessons.map((l) => ({ title: l.title.trim(), body: l.body.trim(), image_id: l.image_id, video_id: l.video_id })),
@@ -216,22 +310,61 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
       {existing && existing.event.status !== 'draft' && <Notice tone="primary">{t.form.notifies}</Notice>}
 
       <section className="card">
+        <h2>{t.form.type}</h2>
+        {timesLocked && <Notice tone="warning">{t.form.lockedTimes}</Notice>}
+        <Field label={t.form.classLabel}>
+          <div className="chips" role="group" aria-label={t.form.classLabel}>
+            {EVENT_CLASSES.map((c) => (
+              <button key={c.id} type="button" className="chip" aria-pressed={eventClass === c.id} disabled={timesLocked} onClick={() => chooseClass(c.id)}>
+                {c.name_ar}
+              </button>
+            ))}
+          </div>
+        </Field>
+        {eventClass && (
+          <Field label={t.form.tagLabel} hint={subtype ? fill(t.form.typePoints, { n: points }) : undefined}>
+            <div className="chips" role="group" aria-label={t.form.tagLabel}>
+              {options.map((o) => (
+                <button
+                  key={o.id}
+                  type="button"
+                  className="chip"
+                  aria-pressed={subtype === o.id}
+                  disabled={timesLocked}
+                  onClick={() => {
+                    set('subtype', o.id);
+                    setWriting(false);
+                  }}>
+                  {o.label}
+                </button>
+              ))}
+              {meta.tags !== undefined && (
+                <button type="button" className="chip" aria-pressed={writing} disabled={timesLocked} onClick={() => setWriting(true)}>
+                  {t.form.writeTag}
+                </button>
+              )}
+            </div>
+          </Field>
+        )}
+        {eventClass && writing && (
+          <Field label={t.form.ownTag} hint={same ? fill(t.form.ownTagExists, { tag: same.label }) : t.form.ownTagHint}>
+            <input value={ownTag} maxLength={TAG_MAX} placeholder={t.form.ownTagPlaceholder} disabled={timesLocked} onChange={(e) => setOwnTag(e.target.value)} />
+          </Field>
+        )}
+      </section>
+
+      <section className="card">
         <h2>{t.form.basics}</h2>
         <Field label={t.form.title}>
-          <input value={v.title} maxLength={120} onChange={(e) => set('title', e.target.value)} />
+          <input
+            value={v.title}
+            maxLength={120}
+            placeholder={nameExample('ar', subtype, eventClass) ?? t.form.titlePlaceholder}
+            onChange={(e) => set('title', e.target.value)}
+          />
         </Field>
         <Field label={t.form.description}>
-          <textarea value={v.description} maxLength={4000} onChange={(e) => set('description', e.target.value)} />
-        </Field>
-        <Field label={t.form.type} hint={timesLocked ? t.form.lockedTimes : fill(t.form.typePoints, { n: points })}>
-          <select value={v.subtype} disabled={timesLocked} onChange={(e) => set('subtype', e.target.value)}>
-            {writtenTag && <option value={writtenTag}>{writtenTag}</option>}
-            {meta.subtypes.map((x) => (
-              <option key={x.id} value={x.id}>
-                {t.subtype[x.id] ?? x.id}
-              </option>
-            ))}
-          </select>
+          <textarea value={v.description} maxLength={4000} placeholder={t.form.descriptionPlaceholder} onChange={(e) => set('description', e.target.value)} />
         </Field>
       </section>
 
@@ -245,25 +378,50 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
             </label>
           ))}
         </div>
-        {place.location_type === 'in_person' ? (
+        {inPerson ? (
           <>
-            <Field label={t.form.address}>
-              <input value={place.address_text} maxLength={ADDRESS_MAX} onChange={(e) => setPlaceField('address_text', e.target.value)} />
+            <Field label={t.form.city}>
+              <select value={place.city} onChange={(e) => chooseCity(e.target.value)}>
+                <option value="" disabled>
+                  {t.form.chooseCity}
+                </option>
+                {LIBYAN_CITIES.map((c) => (
+                  <option key={c.ar} value={c.ar}>
+                    {c.ar}
+                  </option>
+                ))}
+              </select>
             </Field>
-            <div className="fields-2">
-              <Field label={t.form.lat}>
-                <input type="number" step="any" dir="ltr" value={place.lat} onChange={(e) => setPlaceField('lat', Number(e.target.value))} />
+            {city && (
+              <Field label={t.form.address} hint={looking ? t.form.looking : t.form.addressHint}>
+                <input
+                  value={place.address_text}
+                  maxLength={ADDRESS_MAX - city.ar.length - 2}
+                  placeholder={t.form.addressPlaceholder}
+                  onChange={(e) => setPlaceField('address_text', e.target.value)}
+                  onBlur={() => void lookUp()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      void lookUp();
+                    }
+                  }}
+                />
               </Field>
-              <Field label={t.form.lng}>
-                <input type="number" step="any" dir="ltr" value={place.lng} onChange={(e) => setPlaceField('lng', Number(e.target.value))} />
-              </Field>
-            </div>
-            <p className="small muted">
-              {t.form.placeHint}{' '}
-              <a href={`https://www.openstreetmap.org/?mlat=${place.lat}&mlon=${place.lng}#map=17/${place.lat}/${place.lng}`} target="_blank" rel="noreferrer">
-                {t.event.openMap}
-              </a>
-            </p>
+            )}
+            {city && mapShown && (
+              <>
+                <p className="small muted" aria-live="polite">
+                  {spot === 'place' ? t.form.mapAtPlace : spot === 'city' ? fill(t.form.mapAtCity, { city: city.ar }) : t.form.mapHint}
+                </p>
+                <MapPicker value={place} target={target} onChange={onPin} label={t.form.mapLabel} />
+                {moved && placeText.length >= 2 && `${placeText}|${city.ar}` !== looked && (
+                  <Button variant="quiet" className="btn-small" disabled={looking} onClick={() => void lookUp(true)}>
+                    {t.form.showOnMap}
+                  </Button>
+                )}
+              </>
+            )}
           </>
         ) : (
           <>
