@@ -18,7 +18,7 @@ import { LessonVideo } from '@/components/LessonVideo';
 import type { EventDetail, EventFormMeta, EventProposal, LessonImageRef, LessonInput, LessonLibraryItem, ProposeEventResponse } from '@/data/api';
 import { type GenderCategory, type LocationType, MEETING_PLATFORMS, type MeetingPlatform } from '@/data/types';
 import { count, fmt } from '@/i18n/format';
-import { cityTarget, findPlace } from '@/lib/geocode';
+import { cityTarget, locateInCity } from '@/lib/geocode';
 import { goBack } from '@/lib/goBack';
 import { pickLessonPicture } from '@/lib/photo';
 import { useApp, useMe } from '@/state/app';
@@ -38,6 +38,7 @@ import {
   youtubeId,
   youtubeWatchUrl,
 } from '../../../shared/rules';
+import { nameExample as nameExampleFor } from '../../../shared/name-examples';
 import { cleanTag, TAG_MAX, tagKey } from '../../../shared/tags';
 
 // The event form of the app: proposing an event (level 5, or a supervisor),
@@ -131,20 +132,6 @@ function blank(home: LatLng, city: string): Values {
 function placeAndCity(address: string) {
   const { place, city } = splitAddress(address);
   return { address_text: place, city: city?.ar ?? '' };
-}
-
-/** What a place's lookup asks the map: the place and its city, written in the same script. */
-function query(place: string, city: City) {
-  return `${place}، ${/[؀-ۿ]/.test(place) ? city.ar : city.en}`;
-}
-
-/** Farther than this from its city's centre, a place found is not the one meant (another city's street of that name). */
-const CITY_RADIUS_KM = 40;
-function distanceKm(a: LatLng, b: LatLng) {
-  const rad = Math.PI / 180;
-  const x = (b.lng - a.lng) * rad * Math.cos(((a.lat + b.lat) / 2) * rad);
-  const y = (b.lat - a.lat) * rad;
-  return Math.sqrt(x * x + y * y) * 6371;
 }
 
 /** A lesson of the library, as the form keeps it: a copy, with the same picture and video. */
@@ -324,18 +311,13 @@ export function EventForm({
       setConfirmed(false);
     }
     setLooking(true);
-    const found = await findPlace(query(text, city), lang);
+    const found = await locateInCity(text, city, lang);
     // A later lookup took over, or they put the pin themselves while this one was away.
     if (mine !== live.current.lookups) return;
     setLooking(false);
     if (live.current.moved) return;
-    if (found && distanceKm(found, city) <= CITY_RADIUS_KM) {
-      pointAt(found);
-      setSpot({ kind: 'place' });
-    } else {
-      pointAt(cityTarget(city));
-      setSpot({ kind: 'city', city });
-    }
+    pointAt(found.target);
+    setSpot(found.kind === 'place' ? { kind: 'place' } : { kind: 'city', city });
   };
   const onPause = useEffectEvent(() => {
     void lookUp();
@@ -390,8 +372,7 @@ export function EventForm({
                 ? s.newEvent.next.pin
                 : s.newEvent.next.address;
   // The name's example fits the tag chosen above it, else its class.
-  const nameExample =
-    s.newEvent.nameExamples[subtype] ?? (v.event_class ? s.newEvent.nameExampleClass[v.event_class] : s.newEvent.namePlaceholder);
+  const nameExample = nameExampleFor(lang, subtype, v.event_class) ?? s.newEvent.namePlaceholder;
 
   const valid =
     aboutDone &&

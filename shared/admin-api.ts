@@ -4,6 +4,7 @@
 
 import type { EventProposal, LessonImageRef, PublicUser } from './api';
 import type { EventClassId } from './classes';
+import type { EventTag } from './tags';
 import type {
   AppEvent,
   Attendance,
@@ -38,6 +39,10 @@ export interface AdminOverview {
 export interface AdminMeta {
   /** Event types, their fixed points (shared/placeholders.ts until Points_And_Levels.md is in) and their class. */
   subtypes: { id: string; base_points: number; event_class: EventClassId }[];
+  /** Tags people wrote that came into use (tags.promotedTags), offered under their class like the types; absent from an older server. */
+  tags?: EventTag[];
+  /** What an event with a written tag is worth. */
+  custom_tag_points?: number;
   /** Everyone who can be named a supervisor of an event. */
   people: (PublicUser & Pick<User, 'role' | 'phone'>)[];
 }

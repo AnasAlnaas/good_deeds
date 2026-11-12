@@ -24,7 +24,8 @@ import * as adminRules from '../../../shared/admin-rules';
 import { eventSubtypes } from '../../../shared/classes';
 import { AdminError, ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
-import { basePointsOf } from '../../../shared/tags';
+import { CUSTOM_TAG_BASE_POINTS } from '../../../shared/placeholders';
+import { basePointsOf, promotedTags } from '../../../shared/tags';
 import { type AppEvent, type Attendance } from '../../../shared/types';
 import { requireUser } from '../auth';
 import type { Database } from '../db/client';
@@ -212,8 +213,15 @@ export const adminRoutes = new Hono<AppEnv>()
       .from(s.users)
       .where(isNull(s.users.deleted_at))
       .orderBy(asc(s.users.full_name));
+    // Only an event with a class of its own can carry a written tag (as the app's form, routes/events.ts).
+    const tagged = await db
+      .select({ subtype: s.events.subtype, event_class: s.events.event_class, status: s.events.status })
+      .from(s.events)
+      .where(isNotNull(s.events.event_class));
     return c.json<AdminMeta>({
       subtypes: eventSubtypes(),
+      tags: promotedTags(tagged),
+      custom_tag_points: CUSTOM_TAG_BASE_POINTS,
       people,
     });
   })

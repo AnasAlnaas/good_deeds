@@ -327,3 +327,15 @@ ol.terms li::marker { color: var(--primary); font-family: var(--font-heading); f
 
 /* A reset code an admin reads out to a member: big enough to read over the phone. */
 .reset-code { font: var(--type-metric); font-size: 2rem; letter-spacing: 0.3em; margin: var(--space-sm) 0; color: var(--ink); }
+
+/* ---------- the event form's map: the pin stays in the middle (MapPicker.tsx, as the app's) ---------- */
+.map-picker { position: relative; height: 320px; border-radius: var(--radius-input); overflow: hidden; border: 1px solid var(--primary-soft); }
+.map-picker-map { position: absolute; inset: 0; }
+.map-picker-pin {
+  position: absolute; left: 50%; top: 50%; z-index: 1000; pointer-events: none;
+  width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%;
+  background: var(--primary); border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+.map-picker-pin::after { content: ''; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: #fff; }
+/* Leaflet lays its map out left to right, whatever the page's direction. */
+.map-picker .leaflet-container { direction: ltr; font: inherit; }
