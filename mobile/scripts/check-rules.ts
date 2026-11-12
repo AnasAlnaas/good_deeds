@@ -10,7 +10,7 @@ import { rosterWithQueued } from '../src/data/queuedRoster';
 import type { Db } from '../src/data/types';
 import { buildSeed } from '../src/demo/seed';
 import * as server from '../src/demo/server';
-import { cityInText, cityName, LIBYAN_CITIES } from '../../shared/cities';
+import { cityInText, cityName, LIBYAN_CITIES, placeInCity, splitAddress } from '../../shared/cities';
 import * as rules from '../../shared/rules';
 import { lessonLibrary } from '../../shared/lesson-library';
 import { cleanKind, promotedTags } from '../../shared/tags';
@@ -574,6 +574,20 @@ console.log('\n— repeating an event, and the lesson library');
   expectEqual('at most so many', lessonLibrary('u_me', [ev('theirs', 'published', 'u_x', '2026-12-01T09:00:00Z')], [ls('1', 'theirs', 'أ'), ls('2', 'theirs', 'ب'), ls('3', 'theirs', 'ج')], 2).length, 2);
   const demoLib = lessonLibrary('u_khaled', db.events, db.event_lessons);
   expectEqual('the demo offers lessons of its approved events', demoLib.length > 0 && demoLib.every((x) => x.event.status !== 'draft' || x.mine), true);
+}
+
+console.log('\n— an address: the place, then its city');
+{
+  expectEqual('the form writes the place, then the city', [placeInCity('  حديقة  الحي ', 'طرابلس'), placeInCity('', 'مصراتة')], ['حديقة الحي، طرابلس', 'مصراتة']);
+  const split = (a: string) => {
+    const { place, city } = splitAddress(a);
+    return [place, city?.en ?? null];
+  };
+  expectEqual('and reads them back', split(placeInCity('حديقة الحي، الأندلس', 'طرابلس')), ['حديقة الحي، الأندلس', 'Tripoli']);
+  expectEqual('an older address, with its city at the end', split('الهضبة، طرابلس'), ['الهضبة', 'Tripoli']);
+  expectEqual('in English', split('Corniche road, Bani Walid'), ['Corniche road', 'Bani Walid']);
+  expectEqual('a city named in the middle stays in the place', split('ميدان الشهداء بطرابلس، قرب البحر'), ['ميدان الشهداء بطرابلس، قرب البحر', 'Tripoli']);
+  expectEqual('no city at all', split('قرب المسجد'), ['قرب المسجد', null]);
 }
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');
