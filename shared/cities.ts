@@ -101,3 +101,33 @@ export function cityInText(text: string): City | null {
   }
   return found?.city ?? null;
 }
+
+// ---------- an event's address: the place, then its city ----------
+
+/**
+ * An event's address as the app's form writes it: the place in the city as
+ * written, then the city chosen from the list (Owner's decision 2026-11-13: the
+ * form asks for the city first, then the place in it).
+ */
+export function placeInCity(place: string, cityAr: string): string {
+  const p = place.replace(/\s+/g, ' ').trim();
+  return p ? `${p}، ${cityAr}` : cityAr;
+}
+
+/**
+ * The reverse, for an event being edited or copied: the city named at the end
+ * of the address, and the place before it. An older address may name its city
+ * elsewhere (then the place is all of it) or not at all (no city).
+ */
+export function splitAddress(address: string): { place: string; city: City | null } {
+  const text = address.replace(/\s+/g, ' ').trim();
+  for (const city of LIBYAN_CITIES) {
+    for (const name of [city.ar, city.en]) {
+      if (text === name) return { place: '', city };
+      for (const sep of ['، ', '،', ', ', ',', ' ']) {
+        if (text.endsWith(sep + name)) return { place: text.slice(0, -(sep + name).length).trim(), city };
+      }
+    }
+  }
+  return { place: text, city: cityInText(text) };
+}

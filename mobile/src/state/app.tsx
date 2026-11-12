@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { focusManager, useQueryClient } from '@tanstack/react-query';
-import { getLocales } from 'expo-localization';
 import { router } from 'expo-router';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AppState as NativeAppState } from 'react-native';
@@ -84,10 +83,6 @@ interface AppState {
 
 const Ctx = createContext<AppState | null>(null);
 
-function deviceLang(): Lang {
-  return getLocales()[0]?.languageCode === 'en' ? 'en' : 'ar';
-}
-
 export function AppProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [ready, setReady] = useState(false);
@@ -130,7 +125,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         load(KEYS.apiUser),
         tokenStore.getToken(),
       ]);
-      setLangState(l === 'ar' || l === 'en' ? l : deviceLang());
+      // Owner's decision (2026-11-13): Arabic, whatever the phone's language, until the person chooses English in the settings.
+      setLangState(l === 'en' ? 'en' : 'ar');
       setOnboarded(o === '1');
       setModeState(API_URL && (m === 'api' || !DEMO_AVAILABLE) ? 'api' : 'demo');
       setSessionId(sess);

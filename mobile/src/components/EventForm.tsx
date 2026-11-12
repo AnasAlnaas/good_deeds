@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
 import { Button } from '@/components/Button';
+import { CityPicker } from '@/components/CityPicker';
 import { DateTimeField } from '@/components/DateTimeField';
 import { type LatLng, LocationPicker, type MapTarget, type MovedBy } from '@/components/LocationPicker';
 import { Reveal } from '@/components/Reveal';
@@ -24,7 +25,7 @@ import { useApp, useMe } from '@/state/app';
 import { useAction } from '@/state/useAction';
 import { classIcon, className, classOfEvent, EVENT_CLASSES, type EventClassId } from '@/theme/classes';
 import { colors, radius, space, touch } from '@/theme/tokens';
-import { type City, cityInText, LIBYAN_CITIES } from '../../../shared/cities';
+import { type City, LIBYAN_CITIES, placeInCity, splitAddress } from '../../../shared/cities';
 import {
   ADDRESS_MAX,
   cleanPlace,
@@ -44,9 +45,11 @@ import { cleanTag, TAG_MAX, tagKey } from '../../../shared/tags';
 // admin approves it before it is published; the server re-checks every rule.
 //
 // Owner's decision (2026-11-09): a new event is filled in step by step. Each
-// section appears once the one before it is filled in (Reveal), and stays:
-// about the event → its class and tag → its place → the rest, which has
-// sensible values already. Inside a section, what a choice needs appears with
+// section appears once the one before it is filled in (Reveal), and stays.
+// The order (2026-11-13): its class and tag → its name (an example that fits
+// the tag) and description → its place: the city from the list, then the
+// place in the city, which the map then shows (or the closest it finds) →
+// the rest, which has sensible values already. Inside a section, what a choice needs appears with
 // the choice: a class's tags, the map once the address is known, the meeting
 // link for an online event. An event being edited shows everything at once.
 //
@@ -56,7 +59,7 @@ import { cleanTag, TAG_MAX, tagKey } from '../../../shared/tags';
 // sent and reviewed like any other.
 
 const HOUR = 3_600_000;
-/** The address is looked up on the map once typing has paused this long (lib/geocode.ts says why). */
+/** The place is looked up on the map once typing has paused this long (lib/geocode.ts says why). */
 const PAUSE_MS = 1500;
 /** Sections that appear together follow one another by this much. */
 const STAGGER_MS = 110;
@@ -87,7 +90,10 @@ type Values = Omit<
   /** null until chosen: a new event starts with neither. */
   event_class: EventClassId | null;
   location_type: LocationType | null;
+  /** The place in the city, as written; the address sent is it and the city (cities.placeInCity). */
   address_text: string;
+  /** The city chosen from the list (its Arabic name), or '' before a choice. */
+  city: string;
   lat: number;
   lng: number;
   meeting_platform: MeetingPlatform;
@@ -97,7 +103,7 @@ type Values = Omit<
 
 const NEW_LESSON: FormLesson = { title: '', body: '', image_id: null, image: null, video_id: null, video_link: '' };
 
-function blank(home: LatLng): Values {
+function blank(home: LatLng, city: string): Values {
   const start = new Date();
   start.setDate(start.getDate() + 1);
   start.setHours(9, 0, 0, 0);
@@ -108,6 +114,7 @@ function blank(home: LatLng): Values {
     event_class: null,
     location_type: null,
     address_text: '',
+    city,
     lat: home.lat,
     lng: home.lng,
     meeting_platform: 'zoom',
@@ -118,6 +125,26 @@ function blank(home: LatLng): Values {
     terms: [],
     lessons: [],
   };
+}
+
+/** An address split into the form's two fields: the city of the list it ends with, and the place before it. */
+function placeAndCity(address: string) {
+  const { place, city } = splitAddress(address);
+  return { address_text: place, city: city?.ar ?? '' };
+}
+
+/** What a place's lookup asks the map: the place and its city, written in the same script. */
+function query(place: string, city: City) {
+  return `${place}، ${/[؀-ۿ]/.test(place) ? city.ar : city.en}`;
+}
+
+/** Farther than this from its city's centre, a place found is not the one meant (another city's street of that name). */
+const CITY_RADIUS_KM = 40;
+function distanceKm(a: LatLng, b: LatLng) {
+  const rad = Math.PI / 180;
+  const x = (b.lng - a.lng) * rad * Math.cos(((a.lat + b.lat) / 2) * rad);
+  const y = (b.lat - a.lat) * rad;
+  return Math.sqrt(x * x + y * y) * 6371;
 }
 
 /** A lesson of the library, as the form keeps it: a copy, with the same picture and video. */
@@ -144,7 +171,7 @@ function valuesOf(e: EventDetail, home: LatLng): Values {
     subtype: e.subtype,
     event_class: classOfEvent(e),
     location_type: e.location_type,
-    address_text: e.address_text ?? '',
+    ...placeAndCity(e.address_text ?? ''),
     lat: e.lat ?? home.lat,
     lng: e.lng ?? home.lng,
     meeting_platform: e.meeting_platform ?? 'zoom',
@@ -183,10 +210,11 @@ export function EventForm({
   const me = useMe();
   const { run, busy } = useAction();
   // The person's own city: where the pin starts, and where the map opens when the address is not found.
-  const [home] = useState(() => cityTarget(LIBYAN_CITIES.find((c) => c.ar === me.city) ?? LIBYAN_CITIES[0]));
+  const myCity = LIBYAN_CITIES.find((c) => c.ar === me.city);
+  const [home] = useState(() => cityTarget(myCity ?? LIBYAN_CITIES[0]));
   // What the form starts from: the event being edited, or the earlier one being copied.
   const init = editing ?? copyFrom ?? undefined;
-  const [v, setV] = useState(() => (editing ? valuesOf(editing, home) : copyFrom ? copied(copyFrom, home, now) : blank(home)));
+  const [v, setV] = useState(() => (editing ? valuesOf(editing, home) : copyFrom ? copied(copyFrom, home, now) : blank(home, myCity?.ar ?? '')));
   const [capacity, setCapacity] = useState(String(init?.capacity ?? 20));
   const [invalid, setInvalid] = useState(false);
   const [mapTouched, setMapTouched] = useState(false);
@@ -243,10 +271,11 @@ export function EventForm({
   // The pin was put by hand: from then on the address no longer moves the map by itself.
   const [moved, setMoved] = useState(hadPin);
   const [confirmed, setConfirmed] = useState(hadPin);
-  // The address as last looked up, so the same one is not looked up twice.
-  const [looked, setLooked] = useState(oneLine(init?.address_text ?? ''));
+  // The place and city as last looked up, so the same are not looked up twice.
+  const [looked, setLooked] = useState(() => `${oneLine(v.address_text)}|${v.city}`);
   // The same facts for what runs after a wait (a lookup's answer): the screen may have moved on meanwhile.
-  const live = useRef({ moved: hadPin, mapShown: hadPin, lookups: 0, city: null as string | null });
+  const live = useRef({ moved: hadPin, mapShown: hadPin, lookups: 0 });
+  const city = LIBYAN_CITIES.find((c) => c.ar === v.city) ?? null;
 
   const pointAt = (place: MapTarget) => {
     live.current.mapShown = true;
@@ -262,27 +291,32 @@ export function EventForm({
     }
   }, []);
 
-  // A city of the list named in the address opens the map on it at once, as they type.
-  const onAddress = (text: string) => {
-    set('address_text', text);
-    if (live.current.moved) return;
-    const city = cityInText(text);
-    if (!city || city.ar === live.current.city) return;
-    live.current.city = city.ar;
-    pointAt(cityTarget(city));
-    setSpot({ kind: 'city', city });
+  // Another city: the pin no longer stands for the event's place, and the place is looked up again in it.
+  const chooseCity = (c: string) => {
+    if (c === v.city) return;
+    set('city', c);
+    live.current.moved = false;
+    setMoved(false);
+    setConfirmed(false);
+    // A map already shown goes to the new city at once; the place, once looked up there, moves it on.
+    const next = LIBYAN_CITIES.find((x) => x.ar === c);
+    if (next && live.current.mapShown) {
+      pointAt(cityTarget(next));
+      setSpot({ kind: 'city', city: next });
+    }
   };
 
   /**
-   * Finds the address on the map and points the map at it, or at the closest it
-   * gets: the address's area, else its city, else the person's own city.
+   * Finds the place in the city on the map and points the map at it, or, when
+   * it is not found there, at the city: the closest the map gets to it.
    * `asked`: they pressed the button, so the map moves even from a pin put by hand.
    */
   const lookUp = async (asked = false) => {
     const text = oneLine(v.address_text);
-    if (v.location_type !== 'in_person' || text.length < 3) return;
-    if (!asked && (live.current.moved || text === looked)) return;
-    setLooked(text);
+    if (v.location_type !== 'in_person' || !city || text.length < 2) return;
+    const key = `${text}|${city.ar}`;
+    if (!asked && (live.current.moved || key === looked)) return;
+    setLooked(key);
     const mine = ++live.current.lookups;
     if (asked) {
       live.current.moved = false;
@@ -290,23 +324,17 @@ export function EventForm({
       setConfirmed(false);
     }
     setLooking(true);
-    const place = await findPlace(text, lang);
+    const found = await findPlace(query(text, city), lang);
     // A later lookup took over, or they put the pin themselves while this one was away.
     if (mine !== live.current.lookups) return;
     setLooking(false);
     if (live.current.moved) return;
-    const city = cityInText(text);
-    if (place) {
-      live.current.city = city?.ar ?? null;
-      pointAt(place);
+    if (found && distanceKm(found, city) <= CITY_RADIUS_KM) {
+      pointAt(found);
       setSpot({ kind: 'place' });
-    } else if (city) {
-      if (asked || live.current.city !== city.ar) pointAt(cityTarget(city));
-      live.current.city = city.ar;
-      setSpot({ kind: 'city', city });
     } else {
-      if (!live.current.mapShown) pointAt(home);
-      setSpot({ kind: 'none' });
+      pointAt(cityTarget(city));
+      setSpot({ kind: 'city', city });
     }
   };
   const onPause = useEffectEvent(() => {
@@ -315,7 +343,7 @@ export function EventForm({
   useEffect(() => {
     const timer = setTimeout(onPause, PAUSE_MS);
     return () => clearTimeout(timer);
-  }, [v.address_text, v.location_type]);
+  }, [v.address_text, v.city, v.location_type]);
 
   // Only a waiting proposal is edited, so an edit never publishes; and it is one of those waiting, not one more.
   const direct = !editing && meta.publishes_directly;
@@ -329,7 +357,9 @@ export function EventForm({
 
   const inPerson = v.location_type === 'in_person';
   const online = v.location_type === 'online';
-  const place = cleanPlace({ ...v, location_type: v.location_type ?? '' });
+  // In a place, the address sent is the place and its city; it counts once both are there.
+  const address = v.city && oneLine(v.address_text).length >= 2 ? placeInCity(v.address_text, v.city) : '';
+  const place = cleanPlace({ ...v, address_text: address, location_type: v.location_type ?? '' });
   const lessonsIncomplete = !v.lessons.every((l) => lessonComplete(l) && videoLinkOk(l));
 
   // ---------- the steps ----------
@@ -338,25 +368,30 @@ export function EventForm({
   const kindDone = !!v.event_class && !!subtype;
   // In a place, the pin is confirmed on the map: an address alone does not say where.
   const placeDone = place !== null && (online || confirmed);
-  const step = !aboutDone ? 0 : !kindDone ? 1 : !placeDone ? 2 : 3;
+  const step = !kindDone ? 0 : !aboutDone ? 1 : !placeDone ? 2 : 3;
   // How far the form has opened. It never closes again: clearing a field leaves what is below it in place.
   const [reached, setReached] = useState(init ? 3 : 0);
   if (step > reached) setReached(step);
   // What to do for the next section to appear.
   const next =
     reached === 0
-      ? s.newEvent.next.about
+      ? v.event_class
+        ? s.newEvent.next.tag
+        : s.newEvent.next.eventClass
       : reached === 1
-        ? v.event_class
-          ? s.newEvent.next.tag
-          : s.newEvent.next.eventClass
+        ? s.newEvent.next.about
         : !v.location_type
           ? s.newEvent.next.where
           : online
             ? s.newEvent.next.link
-            : mapShown
-              ? s.newEvent.next.pin
-              : s.newEvent.next.address;
+            : !v.city
+              ? s.newEvent.next.city
+              : mapShown
+                ? s.newEvent.next.pin
+                : s.newEvent.next.address;
+  // The name's example fits the tag chosen above it, else its class.
+  const nameExample =
+    s.newEvent.nameExamples[subtype] ?? (v.event_class ? s.newEvent.nameExampleClass[v.event_class] : s.newEvent.namePlaceholder);
 
   const valid =
     aboutDone &&
@@ -481,19 +516,8 @@ export function EventForm({
         </Card>
       )}
 
-      <SectionTitle>{s.newEvent.about}</SectionTitle>
-      <Field label={s.newEvent.name} placeholder={s.newEvent.namePlaceholder} value={v.title} maxLength={120} onChangeText={(t) => set('title', t)} />
-      <Field
-        label={s.newEvent.description}
-        placeholder={s.newEvent.descriptionPlaceholder}
-        value={v.description}
-        maxLength={4000}
-        multiline
-        onChangeText={(t) => set('description', t)}
-      />
-
-      <Reveal show={reached >= 1}>
-        <SectionTitle>{s.newEvent.type}</SectionTitle>
+      <SectionTitle>{s.newEvent.type}</SectionTitle>
+      <View style={styles.group}>
         <Txt variant="caption" color={colors.inkMuted}>
           {s.newEvent.classLabel}
         </Txt>
@@ -502,8 +526,8 @@ export function EventForm({
             <Chip key={c.id} label={className(c.id, lang)} icon={classIcon(c.id)} selected={v.event_class === c.id} onPress={() => chooseClass(c.id)} />
           ))}
         </Row>
-      </Reveal>
-      <Reveal show={reached >= 1 && !!v.event_class}>
+      </View>
+      <Reveal show={!!v.event_class}>
         <Txt variant="caption" color={colors.inkMuted}>
           {s.newEvent.tagLabel}
         </Txt>
@@ -517,7 +541,7 @@ export function EventForm({
           </Row>
         </Animated.View>
       </Reveal>
-      <Reveal show={reached >= 1 && !!v.event_class && writing}>
+      <Reveal show={!!v.event_class && writing}>
         <Field
           label={s.newEvent.ownTag}
           placeholder={s.newEvent.ownTagPlaceholder}
@@ -530,10 +554,23 @@ export function EventForm({
           {same ? fmt(s.newEvent.ownTagExists, { tag: same.label }) : s.newEvent.ownTagHint}
         </Txt>
       </Reveal>
-      <Reveal show={reached >= 1 && kindDone}>
+      <Reveal show={kindDone}>
         <Txt variant="caption" color={colors.inkMuted}>
           {fmt(s.newEvent.typePoints, { points: count(points, s.units.point) })}
         </Txt>
+      </Reveal>
+
+      <Reveal show={reached >= 1}>
+        <SectionTitle>{s.newEvent.about}</SectionTitle>
+        <Field label={s.newEvent.name} placeholder={nameExample} value={v.title} maxLength={120} onChangeText={(t) => set('title', t)} />
+        <Field
+          label={s.newEvent.description}
+          placeholder={s.newEvent.descriptionPlaceholder}
+          value={v.description}
+          maxLength={4000}
+          multiline
+          onChangeText={(t) => set('description', t)}
+        />
       </Reveal>
 
       <Reveal show={reached >= 2}>
@@ -547,13 +584,16 @@ export function EventForm({
         </Row>
       </Reveal>
       <Reveal show={reached >= 2 && inPerson}>
+        <CityPicker label={s.newEvent.city} value={v.city} onChange={chooseCity} />
+      </Reveal>
+      <Reveal show={reached >= 2 && inPerson && !!v.city}>
         <Field
           label={s.newEvent.address}
           placeholder={s.newEvent.addressPlaceholder}
           value={v.address_text}
-          maxLength={ADDRESS_MAX}
+          maxLength={ADDRESS_MAX - v.city.length - 2}
           returnKeyType="search"
-          onChangeText={onAddress}
+          onChangeText={(text) => set('address_text', text)}
           onBlur={() => lookUp()}
           onSubmitEditing={() => lookUp()}
         />
@@ -571,7 +611,7 @@ export function EventForm({
         {/* It opens where the pin is; the form then points it at each place it finds. */}
         <LocationPicker value={v} zoom={moved ? 16 : (target?.zoom ?? 16)} target={target} onChange={onPlace} onTouching={setMapTouched} />
         {/* The pin was put by hand and the address then changed: the map follows only when asked. */}
-        {moved && addressNow.length >= 3 && addressNow !== looked && (
+        {moved && city && addressNow.length >= 2 && `${addressNow}|${city.ar}` !== looked && (
           <Button variant="quiet" icon="navigate-outline" label={s.newEvent.showOnMap} disabled={looking} onPress={() => lookUp(true)} />
         )}
         {confirmed ? (
@@ -776,6 +816,7 @@ const styles = StyleSheet.create({
   warning: { borderColor: colors.warning },
   term: { flexDirection: 'row', alignItems: 'flex-end', gap: space.sm },
   flex: { flex: 1 },
+  group: { gap: space.md },
   remove: { width: touch, height: touch, alignItems: 'center', justifyContent: 'center' },
   done: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.md, padding: space.lg },
 });
