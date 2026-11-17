@@ -271,6 +271,14 @@ export default function EventDetail() {
         <Badge label={s.category[event.gender_category]} color={colors.inkMuted} />
       </Row>
       <Txt variant="screenTitle">{event.title}</Txt>
+      {event.institution && (
+        <View style={styles.organizer}>
+          <Ionicons name="business" size={18} color={colors.primary} />
+          <Txt variant="bodyStrong" color={colors.primary} style={styles.flex}>
+            {fmt(s.institutions.organizedBy, { name: event.institution.name })}
+          </Txt>
+        </View>
+      )}
       <Txt>{event.description}</Txt>
 
       <Card>
@@ -403,6 +411,7 @@ export default function EventDetail() {
 
 const styles = StyleSheet.create({
   people: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  organizer: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
   person: { flexDirection: 'row', alignItems: 'center', gap: space.xs, paddingEnd: space.sm },
   notice: { borderStartWidth: 4, borderStartColor: colors.accent },
   question: { borderStartColor: colors.primary },

@@ -127,6 +127,13 @@
       "when": 1794256428084,
       "tag": "0017_event_class",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794912413952,
+      "tag": "0018_institutions",
+      "breakpoints": true
     }
   ]
 }

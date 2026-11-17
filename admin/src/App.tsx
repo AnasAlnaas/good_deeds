@@ -10,6 +10,7 @@ import { EventForm } from './pages/EventForm';
 import { EventPage } from './pages/EventPage';
 import { Events } from './pages/Events';
 import { Login } from './pages/Login';
+import { Institutions } from './pages/Institutions';
 import { Overview } from './pages/Overview';
 import { Report } from './pages/Report';
 import { Reports } from './pages/Reports';
@@ -33,6 +34,7 @@ export function App() {
           <Route path="reports" element={<Reports />} />
           <Route path="warnings" element={<Warnings />} />
           <Route path="users" element={<Users />} />
+          <Route path="institutions" element={<Institutions />} />
           <Route path="report" element={<Report />} />
           <Route path="audit" element={<Audit />} />
           <Route path="*" element={<Navigate to="/" replace />} />
@@ -50,6 +52,7 @@ function Shell() {
   const disputes = overview.data?.open_disputes ?? 0;
   const reports = overview.data?.open_reports ?? 0;
   const appeals = overview.data?.appealed_warnings ?? 0;
+  const institutions = overview.data?.institutions_waiting ?? 0;
 
   const link = (to: string, icon: IconName, label: string, count = 0) => (
     <NavLink to={to} end={to === '/'} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
@@ -75,6 +78,7 @@ function Shell() {
         {link('/reports', 'flag', t.nav.reports, reports)}
         {link('/warnings', 'warning', t.nav.warnings, appeals)}
         {link('/users', 'people', t.nav.users)}
+        {link('/institutions', 'building', t.nav.institutions, institutions)}
         {link('/report', 'time', t.nav.report)}
         {link('/audit', 'list', t.nav.audit)}
         <div className="sidebar-foot">

@@ -590,5 +590,42 @@ console.log('\n— an address: the place, then its city');
   expectEqual('no city at all', split('قرب المسجد'), ['قرب المسجد', null]);
 }
 
+console.log('\n— institutions (the demo, as the server: server/scripts/check-institutions.ts)');
+{
+  const inst = 'inst_saraj';
+  const event = (institution_id: string | null): EventProposal => ({
+    title: 'حملة تنظيف',
+    description: 'ننظّف الحي.',
+    subtype: 'street_cleanup',
+    location_type: 'in_person',
+    address_text: 'حي الأندلس، طرابلس',
+    lat: 32.87,
+    lng: 13.13,
+    meeting_platform: null,
+    meeting_url: null,
+    starts_at: new Date(NOW + 5 * 86_400_000).toISOString(),
+    ends_at: new Date(NOW + 5 * 86_400_000 + 7_200_000).toISOString(),
+    capacity: 10,
+    gender_category: 'mixed',
+    terms: [],
+    lessons: [],
+    institution_id,
+  });
+  expectError("a member proposes in an institution's name", 'not_representative', () => server.proposeEvent(db, 'u_ahmad', event(inst), NOW));
+  const proposed = server.proposeEvent(db, 'u_khaled', event(inst), NOW);
+  expectEqual('its representative may; one approved event: it waits', [proposed.event.institution_id, proposed.event.status], [inst, 'draft']);
+  expectError('the same name spelled otherwise', 'institution_exists', () =>
+    server.requestInstitution(db, 'u_mariam', { name: 'فريق شباب السراج التطوعى', kind: 'team' }, NOW),
+  );
+  const asked = server.requestInstitution(db, 'u_mariam', { name: 'مدرسة الأمل', kind: 'school' }, NOW);
+  expectError('nobody belongs to one still waiting', 'not_found', () => server.askToJoinInstitution(asked.db, 'u_f2', asked.id, NOW));
+  expectError('its representative cannot leave it', 'representative_cannot_leave', () => server.leaveInstitution(asked.db, 'u_mariam', asked.id));
+  expectError('nor a member confirm a request', 'not_representative', () => server.confirmMember(db, 'u_ahmad', inst, 'u_f1', NOW));
+  const confirmed = server.confirmMember(db, 'u_khaled', inst, 'u_f1', NOW);
+  expectEqual('its representative confirms it', server.membershipOf(confirmed, inst, 'u_f1')?.status, 'confirmed');
+  expectError('a request twice', 'already_member', () => server.askToJoinInstitution(confirmed, 'u_f1', inst, NOW));
+  expectEqual('three approved, then at once', [rules.proposalStatus({ role: 'member' }, 2), rules.proposalStatus({ role: 'member' }, 3)], ['draft', 'published']);
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');
 process.exit(failed ? 1 : 0);

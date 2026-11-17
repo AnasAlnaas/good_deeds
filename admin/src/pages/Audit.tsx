@@ -97,6 +97,21 @@ function Details({ entry: e }: { entry: AuditEntry }) {
           {str('reporter') && ` · ${fill(t.reports.from, { name: str('reporter') })}`} · «{str('note')}»
         </>
       );
+    case 'approve_institution':
+    case 'reject_institution':
+      return (
+        <>
+          <Link to="/institutions">{str('name')}</Link>
+          {str('note') && ` · «${str('note')}»`}
+        </>
+      );
+    case 'add_representative':
+    case 'remove_representative':
+      return (
+        <>
+          <Link to="/institutions">{str('name')}</Link> · {str('person')}
+        </>
+      );
     case 'uphold_warning':
     case 'withdraw_warning':
       return (

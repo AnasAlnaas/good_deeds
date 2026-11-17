@@ -39,13 +39,17 @@ export default function HoursRecordScreen() {
   const first = confirmed[0]?.attendance.started_at;
   const last = confirmed[confirmed.length - 1]?.attendance.started_at;
   const place = (x: AttendanceItem) => (x.event.location_type === 'online' ? s.hoursRecord.online : (x.event.address_text ?? ''));
+  // The institution that organised it, when not the association: a school or employer may ask.
+  const organiser = (x: AttendanceItem) => (x.event.institution ? fmt(s.institutions.organizedBy, { name: x.event.institution.name }) : '');
 
   const text = [
     `${s.hoursRecord.title}: ${me.full_name}`,
     s.association,
     fmt(s.hoursRecord.summary, { hours: count(total, s.units.hour), events: num(events) }),
     '',
-    ...confirmed.map((x) => `• ${date(x.attendance.started_at, s)}: ${x.event.title} (${count(x.attendance.hours ?? 0, s.units.hour)})`),
+    ...confirmed.map(
+      (x) => `• ${date(x.attendance.started_at, s)}: ${x.event.title}${organiser(x) ? ` · ${organiser(x)}` : ''} (${count(x.attendance.hours ?? 0, s.units.hour)})`,
+    ),
     '',
     fmt(s.hoursRecord.preparedOn, { day: date(now, s) }),
   ].join('\n');
@@ -124,6 +128,11 @@ export default function HoursRecordScreen() {
               {date(x.attendance.started_at, s)}
               {place(x) ? ` · ${place(x)}` : ''}
             </Txt>
+            {!!organiser(x) && (
+              <Txt variant="caption" color={colors.primary} numberOfLines={1}>
+                {organiser(x)}
+              </Txt>
+            )}
             {x.recorded_by && (
               <Txt variant="caption" color={colors.inkMuted}>
                 {fmt(s.hoursRecord.recordedBy, { name: x.recorded_by.full_name })}

@@ -34,6 +34,8 @@ const proposalFields = z.object({
   capacity: z.number().int().min(1).max(10_000),
   gender_category: z.enum(['male', 'female', 'mixed']),
   terms: z.array(z.string().trim().min(1).max(1000)).max(30),
+  // In an institution's name (the proposer must represent it: rules.assertCanProposeEvent). An older app sends none.
+  institution_id: z.string().min(1).nullish(),
   // Absent from a form sent by an app from before the learning corner: no lessons.
   // A lesson has text, a picture (POST /lesson-images), or both; an older app sends no picture.
   lessons: z

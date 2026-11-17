@@ -4,6 +4,7 @@
 import type {
   AdminEventDetail,
   AdminEventRow,
+  AdminInstitutionRow,
   AdminMeta,
   AdminOverview,
   AdminReportRow,
@@ -108,6 +109,12 @@ export const api = {
   },
   decideWarning: (id: string, body: DecideWarningBody) => call<void>('POST', `/admin/warnings/${enc(id)}/decide`, body),
 
-  hoursReport: (from: string, to: string) => call<HoursReportRow[]>('GET', `/admin/reports/hours?from=${enc(from)}&to=${enc(to)}`),
+  /** `institution`: an institution's id, `association` for the association's own events, empty for all. */
+  hoursReport: (from: string, to: string, institution = '') =>
+    call<HoursReportRow[]>('GET', `/admin/reports/hours?from=${enc(from)}&to=${enc(to)}${institution ? `&institution_id=${enc(institution)}` : ''}`),
+  institutions: (status?: 'pending' | 'approved' | 'rejected') => call<AdminInstitutionRow[]>('GET', `/admin/institutions${status ? `?status=${status}` : ''}`),
+  decideInstitution: (id: string, action: 'approve' | 'reject', note?: string) => call<void>('POST', `/admin/institutions/${enc(id)}/${action}`, { note }),
+  addRepresentative: (id: string, phone: string) => call<void>('POST', `/admin/institutions/${enc(id)}/representatives`, { phone }),
+  removeRepresentative: (id: string, userId: string) => call<void>('DELETE', `/admin/institutions/${enc(id)}/representatives/${enc(userId)}`),
   audit: () => call<AuditEntry[]>('GET', '/admin/audit'),
 };

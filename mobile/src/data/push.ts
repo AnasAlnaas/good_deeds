@@ -87,6 +87,12 @@ export function screenFor(data: Record<string, unknown> | undefined): string | n
       return str('warning_id') ? `/warnings/${str('warning_id')}` : null;
     case 'report_handled':
       return '/reports';
+    case 'institution_join_request':
+      return str('institution_id') ? `/institutions/${str('institution_id')}` : '/institutions';
+    case 'institution_decided':
+    case 'institution_representative':
+    case 'institution_member_confirmed':
+      return '/institutions';
     default:
       return null;
   }

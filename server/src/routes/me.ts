@@ -24,7 +24,20 @@ import * as rules from '../../../shared/rules';
 import type { Attendance, User } from '../../../shared/types';
 import { requireUser } from '../auth';
 import type { Database } from '../db/client';
-import { allLevels, attendanceById, creditPoints, findEvent, findUser, lessonImageRefs, ledgerOf, publicUser, shownTo } from '../db/queries';
+import {
+  allLevels,
+  attendanceById,
+  creditPoints,
+  findEvent,
+  findUser,
+  institutionRefs,
+  lessonImageRefs,
+  ledgerOf,
+  publicUser,
+  representedInstitutions,
+  requestsForRepresentative,
+  shownTo,
+} from '../db/queries';
 import { iso } from '../db/rows';
 import * as s from '../db/schema';
 import { EMAIL_CODE_MINUTES, sendEmailCode, takeEmailCode } from '../email-codes';
@@ -85,11 +98,22 @@ async function toItems(db: Database, viewer: User, records: Attendance[]): Promi
     .where(inArray(s.users.id, [...new Set(records.map((a) => a.recorded_by))]));
   const eventById = new Map(events.map((e) => [e.id, iso(e)]));
   const recorderById = new Map(recorders.map((u) => [u.id, u]));
+  const institutions = await institutionRefs(db, events.map((e) => e.institution_id));
   return records.map((a) => {
     const e = eventById.get(a.event_id)!;
     return {
       attendance: a,
-      event: { id: e.id, title: e.title, location_type: e.location_type, address_text: e.address_text, meeting_platform: e.meeting_platform, starts_at: e.starts_at, ends_at: e.ends_at, base_points: e.base_points },
+      event: {
+        id: e.id,
+        title: e.title,
+        location_type: e.location_type,
+        address_text: e.address_text,
+        meeting_platform: e.meeting_platform,
+        starts_at: e.starts_at,
+        ends_at: e.ends_at,
+        base_points: e.base_points,
+        institution: (e.institution_id && institutions.get(e.institution_id)) || null,
+      },
       recorded_by: recorderById.has(a.recorded_by) ? shownTo(viewer, recorderById.get(a.recorded_by)!) : null,
       points: rules.pointsForAttendance(e, a.hours),
     };
@@ -116,10 +140,12 @@ export const meRoutes = new Hono<AppEnv>()
       level,
       next_level: rules.nextLevel(levels, total) ?? null,
       confirmed_hours: rules.round2(confirmed.reduce((sum, r) => sum + (r.hours ?? 0), 0)),
-      can_create_events: rules.canCreateEvents(user, level),
+      // Representatives of institutions open the form too, for events in their institutions' names.
+      can_create_events: rules.mayProposeEvents(user, level, (await representedInstitutions(db, user.id)).length > 0),
       create_events_level: levels.find((l) => l.can_create_events)?.level ?? null,
       can_report: rules.canReport(user, level),
       warnings: warnings.n,
+      institution_requests: await requestsForRepresentative(db, user.id),
     });
   })
 
@@ -246,6 +272,8 @@ export const meRoutes = new Hono<AppEnv>()
         .set({ ...rules.erasedProfile(), deleted_at: new Date(now()) })
         .where(eq(s.users.id, userId));
       await tx.update(s.registrations).set({ status: 'cancelled' }).where(eq(s.registrations.user_id, userId));
+      // They no longer belong to any institution (one they asked for keeps its record of who asked).
+      await tx.delete(s.institution_members).where(eq(s.institution_members.user_id, userId));
       await tx.delete(s.push_tokens).where(eq(s.push_tokens.user_id, userId));
       await tx.delete(s.user_photos).where(eq(s.user_photos.user_id, userId));
       await tx.delete(s.login_codes).where(eq(s.login_codes.phone, phone));

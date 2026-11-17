@@ -21,6 +21,9 @@ import type {
   EventProposal,
   EventSummary,
   EventSupervisor,
+  InstitutionMembersResponse,
+  InstitutionRef,
+  MyInstitution,
   MyReport,
   MyWarning,
   PublicUser,
@@ -58,6 +61,43 @@ function noticeItem(db: Db, me: User, n: EventNotice): EventNoticeItem {
   };
 }
 
+/** An institution as events and hours show it. */
+function institutionRef(db: Db, id: string | null): InstitutionRef | null {
+  const i = server.institutionOf(db, id);
+  return i ? { id: i.id, name: i.name, kind: i.kind } : null;
+}
+
+/** The person's institutions, as the server lists them (server/src/routes/institutions.ts). */
+function myInstitutions(db: Db, meId: string): MyInstitution[] {
+  return db.institution_members
+    .filter((m) => m.user_id === meId)
+    .map((m) => {
+      const i = server.institutionOf(db, m.institution_id)!;
+      return {
+        institution: { id: i.id, name: i.name, kind: i.kind, status: i.status, decision_note: i.decision_note },
+        role: m.role,
+        status: m.status,
+        pending_members: rules.isRepresentative(m) ? db.institution_members.filter((x) => x.institution_id === i.id && x.status === 'pending').length : 0,
+      };
+    })
+    .sort((a, b) => a.institution.name.localeCompare(b.institution.name, 'ar'));
+}
+
+/** Who belongs to the institution, for its representatives. */
+function membersOf(db: Db, me: User, id: string): InstitutionMembersResponse {
+  const i = server.institutionOf(db, id)!;
+  const rows = db.institution_members
+    .filter((m) => m.institution_id === id)
+    .map((m) => ({ m, u: server.getUser(db, m.user_id)! }))
+    .filter((x) => x.u && !x.u.deleted_at);
+  const order = (x: (typeof rows)[number]) => (x.m.status === 'pending' ? 0 : 1);
+  rows.sort((a, b) => order(a) - order(b) || (order(a) === 0 ? rules.toMs(a.m.created_at) - rules.toMs(b.m.created_at) : a.u.full_name.localeCompare(b.u.full_name, 'ar')));
+  return {
+    institution: { id: i.id, name: i.name, kind: i.kind, status: i.status },
+    members: rows.map(({ m, u }) => ({ user: publicUser(me, u), role: m.role, status: m.status, created_at: m.created_at })),
+  };
+}
+
 function summary(db: Db, me: User, e: AppEvent, now: number): EventSummary {
   // The meeting link stays off the list, as on the server.
   const { description, status, terms_locked_at, created_by, created_at, meeting_url, ...shown } = e;
@@ -70,6 +110,7 @@ function summary(db: Db, me: User, e: AppEvent, now: number): EventSummary {
     my_registration_status: server.registrationOf(db, e.id, me.id)?.status ?? null,
     i_organize: server.isOrganizer(db, e.id, me.id),
     i_created: e.created_by === me.id,
+    institution: institutionRef(db, e.institution_id),
   };
 }
 
@@ -78,7 +119,17 @@ function item(db: Db, me: User, a: Attendance): AttendanceItem {
   const recorder = server.getUser(db, a.recorded_by);
   return {
     attendance: a,
-    event: { id: e.id, title: e.title, location_type: e.location_type, address_text: e.address_text, meeting_platform: e.meeting_platform, starts_at: e.starts_at, ends_at: e.ends_at, base_points: e.base_points },
+    event: {
+      id: e.id,
+      title: e.title,
+      location_type: e.location_type,
+      address_text: e.address_text,
+      meeting_platform: e.meeting_platform,
+      starts_at: e.starts_at,
+      ends_at: e.ends_at,
+      base_points: e.base_points,
+      institution: institutionRef(db, e.institution_id),
+    },
     recorded_by: recorder ? publicUser(me, recorder) : null,
     points: server.pointsForAttendance(db, a),
   };
@@ -239,7 +290,7 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
     eventForm: () =>
       async(() => {
         const { db, me } = read();
-        if (!server.canCreateEvents(db, me)) throw new ApiError('cannot_create_events');
+        if (!server.mayProposeEvents(db, me)) throw new ApiError('cannot_create_events');
         return {
           subtypes: eventSubtypes(),
           tags: promotedTags(db.events),
@@ -248,6 +299,13 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
           waiting: server.waitingProposals(db, me.id),
           max_waiting: rules.MAX_WAITING_PROPOSALS,
           lesson_library: libraryItems(db, me.id),
+          own_events: server.canCreateEvents(db, me),
+          institutions: server.representedInstitutions(db, me.id).map((i) => ({
+            id: i.id,
+            name: i.name,
+            kind: i.kind,
+            publishes_directly: rules.proposalStatus({ role: 'member' }, rules.institutionApprovedEvents(db.events, i.id)) === 'published',
+          })),
         };
       }),
 
@@ -493,10 +551,11 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
           level,
           next_level: server.nextLevel(db, total) ?? null,
           confirmed_hours: server.confirmedHours(db, me.id),
-          can_create_events: rules.canCreateEvents(me, level),
+          can_create_events: server.mayProposeEvents(db, me),
           create_events_level: db.levels.find((l) => l.can_create_events)?.level ?? null,
           can_report: rules.canReport(me, level),
           warnings: db.warnings.filter((w) => w.user_id === me.id).length,
+          institution_requests: server.requestsForRepresentative(db, me.id),
         };
       }),
 
@@ -540,6 +599,61 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
     // The demo has no server to send notifications.
     registerPushToken: async () => {},
     unregisterPushToken: async () => {},
+
+    institutions: () =>
+      async(() => {
+        const { db, me } = read();
+        return {
+          mine: myInstitutions(db, me.id),
+          directory: db.institutions
+            .filter((i) => i.status === 'approved')
+            .map((i) => ({ id: i.id, name: i.name, kind: i.kind }))
+            .sort((a, b) => a.name.localeCompare(b.name, 'ar')),
+          waiting_requests: db.institutions.filter((i) => i.requested_by === me.id && i.status === 'pending').length,
+          max_waiting_requests: rules.MAX_INSTITUTION_REQUESTS,
+        };
+      }),
+
+    requestInstitution: (body) =>
+      async(() => {
+        let id = '';
+        const { db } = change((d, t) => {
+          const result = server.requestInstitution(d, meId, body, t);
+          id = result.id;
+          return result.db;
+        });
+        return myInstitutions(db, meId).find((x) => x.institution.id === id)!;
+      }),
+
+    joinInstitution: (id) =>
+      async(() => {
+        const { db } = change((d, t) => server.askToJoinInstitution(d, meId, id, t));
+        return myInstitutions(db, meId).find((x) => x.institution.id === id)!;
+      }),
+
+    leaveInstitution: (id) =>
+      async(() => {
+        change((d) => server.leaveInstitution(d, meId, id));
+      }),
+
+    institutionMembers: (id) =>
+      async(() => {
+        const { db, me } = read();
+        server.assertMayManageInstitution(db, me, id);
+        return membersOf(db, me, id);
+      }),
+
+    confirmMember: (id, userId) =>
+      async(() => {
+        const { db, me } = change((d, t) => server.confirmMember(d, meId, id, userId, t));
+        return membersOf(db, me, id);
+      }),
+
+    removeMember: (id, userId) =>
+      async(() => {
+        const { db, me } = change((d) => server.removeMember(d, meId, id, userId));
+        return membersOf(db, me, id);
+      }),
 
     updateProfile: (edit) =>
       async(() => {

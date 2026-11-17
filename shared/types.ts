@@ -80,6 +80,52 @@ export interface AppEvent {
   terms_locked_at: string | null;
   created_by: string;
   created_at: string;
+  /**
+   * Owner's decision (2026-11-17): an event may be in an institution's name
+   * (one of its representatives proposed it). null = the association's own.
+   */
+  institution_id: string | null;
+}
+
+// ---------- institutions (جمعية، مؤسسة، مدرسة…) ----------
+// Owner's decisions (2026-11-17): a member asks to add an institution and an
+// admin approves it; whoever asked becomes its first representative, and only
+// admins add or remove others. Its representatives propose events in its name.
+// Volunteers ask to belong to institutions (several), and a representative
+// confirms each one. The hours reports show the institutions.
+
+export const INSTITUTION_KINDS = ['association', 'foundation', 'school', 'university', 'mosque', 'company', 'team', 'other'] as const;
+export type InstitutionKind = (typeof INSTITUTION_KINDS)[number];
+export type InstitutionStatus = 'pending' | 'approved' | 'rejected';
+
+export interface Institution {
+  id: string;
+  name: string;
+  kind: InstitutionKind;
+  status: InstitutionStatus;
+  /** The member who asked for it: its first representative. */
+  requested_by: string;
+  created_at: string;
+  decided_by: string | null;
+  decided_at: string | null;
+  /** The admin's reason, when it is turned down; shown to whoever asked. */
+  decision_note: string | null;
+}
+
+/** A representative may propose events in its name and confirms who belongs to it; a member belongs to it. */
+export type InstitutionRole = 'representative' | 'member';
+/** A member's request waits for a representative; a representative is always confirmed. */
+export type MembershipStatus = 'pending' | 'confirmed';
+
+export interface InstitutionMember {
+  institution_id: string;
+  user_id: string;
+  role: InstitutionRole;
+  status: MembershipStatus;
+  created_at: string;
+  /** The representative (or admin) who confirmed it; null while it waits, and for the first representative. */
+  confirmed_by: string | null;
+  confirmed_at: string | null;
 }
 
 // DEMO-ONLY: Data_Model says "recorded_by = a supervisor of THIS event"
@@ -330,4 +376,6 @@ export interface Db {
   levels: Level[];
   reports: Report[];
   warnings: Warning[];
+  institutions: Institution[];
+  institution_members: InstitutionMember[];
 }

@@ -2,7 +2,7 @@
 // builds these and the admin panel (admin/) reads them. Only users whose role
 // is `admin` may call them; anyone else gets 403 `forbidden`.
 
-import type { EventProposal, LessonImageRef, PublicUser } from './api';
+import type { EventProposal, InstitutionRef, LessonImageRef, PublicUser } from './api';
 import type { EventClassId } from './classes';
 import type { EventTag } from './tags';
 import type {
@@ -11,6 +11,7 @@ import type {
   EventLesson,
   EventStatus,
   EventTerm,
+  Institution,
   Registration,
   Report,
   Role,
@@ -33,6 +34,8 @@ export interface AdminOverview {
   open_reports: number;
   /** Warnings the member appealed, waiting for an admin to keep or withdraw them. */
   appealed_warnings: number;
+  /** Institutions members asked to add, waiting for an admin. */
+  institutions_waiting: number;
 }
 
 /** GET /api/admin/meta: what the event form offers. */
@@ -90,6 +93,8 @@ export interface AdminEventRow {
   organizers: PublicUser[];
   /** Who made it. Not an admin = proposed in the app. */
   creator: (PublicUser & Pick<User, 'role' | 'level'>) | null;
+  /** The institution it is in the name of; null = the association's own. */
+  institution: InstitutionRef | null;
 }
 
 /**
@@ -134,13 +139,46 @@ export interface ResolveDisputeBody {
 
 // ---------- hours report ----------
 
-/** GET /api/admin/reports/hours?from=YYYY-MM-DD&to=YYYY-MM-DD: confirmed hours, by person, for activity in [from, to]. */
+/**
+ * GET /api/admin/reports/hours?from=…&to=…[&institution_id=…]: confirmed hours, by person, for activity in [from, to].
+ * `institution_id`: only events organised in that institution's name; `association` = only the association's own.
+ */
 export interface HoursReportRow extends Pick<User, 'full_name' | 'phone' | 'city' | 'gender'> {
   user_id: string;
   events: number;
   hours: number;
   total_points: number;
+  /** The institutions the person belongs to (confirmed), by name. */
+  institutions: string[];
 }
+
+// ---------- institutions (جمعية، مؤسسة، مدرسة…) ----------
+
+/** GET /api/admin/institutions?status=pending|approved|rejected (waiting first, then by name) */
+export interface AdminInstitutionRow {
+  institution: Institution;
+  requested_by: (PublicUser & Pick<User, 'phone'>) | null;
+  representatives: (PublicUser & Pick<User, 'phone'>)[];
+  /** Confirmed members (representatives not counted), and requests waiting for a representative. */
+  members: number;
+  pending_members: number;
+  /** Its events an admin approved (rules.institutionApprovedEvents): from rules.INSTITUTION_REVIEWED_EVENTS on, they go out at once. */
+  approved_events: number;
+}
+
+/**
+ * POST /api/admin/institutions/:id/approve | reject. `note` (reject only) is
+ * shown to whoever asked. Approving makes them its first representative.
+ */
+export interface InstitutionDecisionBody {
+  note?: string;
+}
+
+/** POST /api/admin/institutions/:id/representatives: by the person's phone number. */
+export interface AddRepresentativeBody {
+  phone: string;
+}
+// DELETE /api/admin/institutions/:id/representatives/:userId: they stay a member.
 
 // ---------- members' reports (بلاغ) ----------
 // (Not to be confused with the hours report above: /reports/hours.)
@@ -198,7 +236,11 @@ export type AdminAction =
   | 'handle_report'
   | 'uphold_warning'
   | 'withdraw_warning'
-  | 'issue_reset_code';
+  | 'issue_reset_code'
+  | 'approve_institution'
+  | 'reject_institution'
+  | 'add_representative'
+  | 'remove_representative';
 
 /** POST /api/admin/users/:id/reset-code: shown to the admin once, to give the person (by phone or in person). */
 export interface ResetCodeResponse {

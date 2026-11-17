@@ -14,6 +14,7 @@ import { closeDueAndNotify } from './notify';
 import { adminRoutes } from './routes/admin';
 import { authRoutes } from './routes/auth';
 import { eventRoutes } from './routes/events';
+import { institutionRoutes } from './routes/institutions';
 import { attendanceRoutes, meRoutes, userRoutes } from './routes/me';
 import { lessonImageRoutes } from './routes/lesson-images';
 import { reportRoutes, warningRoutes } from './routes/reports';
@@ -39,6 +40,7 @@ export function createApp(deps: AppDeps) {
 
   app.route('/auth', authRoutes);
   app.route('/events', eventRoutes);
+  app.route('/institutions', institutionRoutes);
   app.route('/me', meRoutes);
   app.route('/attendance', attendanceRoutes);
   app.route('/users', userRoutes);

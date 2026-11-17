@@ -30,13 +30,14 @@ export function Overview() {
             <Stat n={o.proposals_waiting} icon="hourglass" label={t.overview.proposals} alert={o.proposals_waiting > 0} to="/events?status=draft" />
             <Stat n={o.open_reports} icon="flag" label={t.overview.reports} alert={o.open_reports > 0} to="/reports" />
             <Stat n={o.appealed_warnings} icon="warning" label={t.overview.appeals} alert={o.appealed_warnings > 0} to="/warnings?status=appealed" />
+            <Stat n={o.institutions_waiting} icon="building" label={t.overview.institutions} alert={o.institutions_waiting > 0} to="/institutions?status=pending" />
             <Stat n={o.running_events} icon="time" label={t.overview.running} to="/events?status=running" />
             <Stat n={o.upcoming_events} icon="calendar" label={t.overview.upcoming} to="/events?status=published" />
             <Stat n={o.draft_events} icon="list" label={t.overview.drafts} to="/events?status=draft" />
             <Stat n={o.awaiting_confirmation} icon="check" label={t.overview.awaiting} />
             <Stat n={o.users} icon="people" label={t.overview.users} to="/users" />
           </div>
-          {(o.open_disputes > 0 || o.proposals_waiting > 0 || o.open_reports > 0 || o.appealed_warnings > 0) && (
+          {(o.open_disputes > 0 || o.proposals_waiting > 0 || o.open_reports > 0 || o.appealed_warnings > 0 || o.institutions_waiting > 0) && (
             <div className="actions">
               {o.open_disputes > 0 && (
                 <Link className="btn btn-secondary" to="/disputes">
@@ -56,6 +57,11 @@ export function Overview() {
               {o.appealed_warnings > 0 && (
                 <Link className="btn btn-secondary" to="/warnings?status=appealed">
                   {t.overview.reviewAppeals}
+                </Link>
+              )}
+              {o.institutions_waiting > 0 && (
+                <Link className="btn btn-secondary" to="/institutions?status=pending">
+                  {t.overview.reviewInstitutions}
                 </Link>
               )}
             </div>

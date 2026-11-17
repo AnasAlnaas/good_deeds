@@ -10,6 +10,7 @@ import { z } from 'zod';
 import type {
   AdminEventDetail,
   AdminEventRow,
+  AdminInstitutionRow,
   AdminMeta,
   AdminOverview,
   AdminReportRow,
@@ -29,7 +30,18 @@ import { basePointsOf, promotedTags } from '../../../shared/tags';
 import { type AppEvent, type Attendance } from '../../../shared/types';
 import { requireUser } from '../auth';
 import type { Database } from '../db/client';
-import { creditPoints, joinedCounts, lessonImageRefs, newId, publicUser, warningById } from '../db/queries';
+import {
+  creditPoints,
+  findInstitution,
+  institutionApproved,
+  institutionRefs,
+  joinedCounts,
+  lessonImageRefs,
+  membershipOf,
+  newId,
+  publicUser,
+  warningById,
+} from '../db/queries';
 import { iso } from '../db/rows';
 import * as s from '../db/schema';
 import { type AppEnv, HttpError, readBody } from '../http';
@@ -37,7 +49,9 @@ import {
   notifyDisputeSettled,
   notifyEventCancelled,
   notifyEventChanged,
+  notifyInstitutionDecided,
   notifyPlaceOffered,
+  notifyRepresentativeAdded,
   notifyPhotoRemoved,
   notifyProposalDecided,
   notifyReportHandled,
@@ -64,6 +78,8 @@ const resolveBody = z.object({
 const handleReportBody = z.object({ note: z.string().trim().min(1).max(500) });
 const decideWarningBody = z.object({ decision: z.enum(['uphold', 'withdraw']), note: z.string().trim().min(1).max(500) });
 const reportQuery = z.object({ status: z.enum(['open', 'handled']).optional() });
+const institutionQuery = z.object({ status: z.enum(['pending', 'approved', 'rejected']).optional() });
+const addRepresentativeBody = z.object({ phone: z.string().max(40) });
 const warningQuery = z.object({ status: z.enum(['active', 'appealed', 'upheld', 'withdrawn']).optional(), user_id: z.string().min(1).optional() });
 
 // ---------- helpers ----------
@@ -115,6 +131,13 @@ async function creatorsOf(q: Database, events: Pick<AppEvent, 'created_by'>[]) {
     ? await q.select({ ...publicUser, role: s.users.role, level: s.users.level }).from(s.users).where(inArray(s.users.id, ids))
     : [];
   return new Map(rows.map((r) => [r.id, { ...toPublic(r), role: r.role, level: r.level }]));
+}
+
+/** An event is put in an institution's name only if an admin approved the institution. */
+async function assertInstitutionApproved(q: Database, institutionId: string | null | undefined) {
+  if (!institutionId) return;
+  const institution = await findInstitution(q, institutionId);
+  if (!institution || institution.status !== 'approved') throw new AdminError('institution_not_approved');
 }
 
 async function hasAttendance(q: Database, eventId: string) {
@@ -193,6 +216,7 @@ export const adminRoutes = new Hono<AppEnv>()
       .where(and(eq(s.events.status, 'draft'), ne(s.users.role, 'admin')));
     const [reports] = await db.select({ n: count() }).from(s.reports).where(eq(s.reports.status, 'open'));
     const [appeals] = await db.select({ n: count() }).from(s.warnings).where(eq(s.warnings.status, 'appealed'));
+    const [institutionsWaiting] = await db.select({ n: count() }).from(s.institutions).where(eq(s.institutions.status, 'pending'));
     return c.json<AdminOverview>({
       users: users.n,
       upcoming_events: statuses.filter((x) => x === 'published').length,
@@ -203,6 +227,7 @@ export const adminRoutes = new Hono<AppEnv>()
       proposals_waiting: proposals.n,
       open_reports: reports.n,
       appealed_warnings: appeals.n,
+      institutions_waiting: institutionsWaiting.n,
     });
   })
 
@@ -336,6 +361,7 @@ export const adminRoutes = new Hono<AppEnv>()
     const counts = await joinedCounts(db, ids);
     const organizers = await organizersOf(db, ids);
     const creators = await creatorsOf(db, events);
+    const institutions = await institutionRefs(db, events.map((e) => e.institution_id));
     return c.json<AdminEventRow[]>(
       events.map((event) => ({
         event,
@@ -343,6 +369,7 @@ export const adminRoutes = new Hono<AppEnv>()
         joined_count: counts.get(event.id) ?? 0,
         organizers: organizers.get(event.id) ?? [],
         creator: creators.get(event.created_by) ?? null,
+        institution: (event.institution_id && institutions.get(event.institution_id)) || null,
       })),
     );
   })
@@ -374,6 +401,7 @@ export const adminRoutes = new Hono<AppEnv>()
       joined_count: (await joinedCounts(db, [id])).get(id) ?? 0,
       organizers: (await organizersOf(db, [id])).get(id) ?? [],
       creator: (await creatorsOf(db, [event])).get(event.created_by) ?? null,
+      institution: (event.institution_id && (await institutionRefs(db, [event.institution_id])).get(event.institution_id)) || null,
       terms: terms.map(iso),
       lessons: await lessonsWithCounts(db, id),
       participants: registrations.map((r) => {
@@ -401,6 +429,7 @@ export const adminRoutes = new Hono<AppEnv>()
     await db.transaction(async (tx) => {
       const { organizerIds } = await assertIdsExist(tx, body);
       if (body.publish && organizerIds.length === 0) throw new AdminError('needs_organizer');
+      await assertInstitutionApproved(tx, body.institution_id);
       await tx.insert(s.events).values({
         id,
         title: body.title,
@@ -416,6 +445,7 @@ export const adminRoutes = new Hono<AppEnv>()
         status: body.publish ? 'published' : 'draft',
         created_by: me.id,
         created_at: t,
+        institution_id: body.institution_id ?? null,
       });
       await writeLinks(tx, id, organizerIds);
       await writeTerms(tx, id, body.terms, t);
@@ -435,6 +465,9 @@ export const adminRoutes = new Hono<AppEnv>()
       // Locking the event makes joins wait, so the joined count below stays true.
       const event = await anyEvent(tx, id, true);
       const { organizerIds } = await assertIdsExist(tx, body);
+      // A form that does not send it (the panel's, so far) leaves the event's institution as it is.
+      const institutionId = body.institution_id === undefined ? event.institution_id : body.institution_id;
+      if (institutionId !== event.institution_id) await assertInstitutionApproved(tx, institutionId);
       const currentTerms = await termTexts(tx, id);
       const currentLessons = await lessonsWithCounts(tx, id);
       adminRules.assertEventEdit({
@@ -466,8 +499,10 @@ export const adminRoutes = new Hono<AppEnv>()
           ends_at: new Date(body.ends_at),
           capacity: body.capacity,
           gender_category: body.gender_category,
+          institution_id: institutionId ?? null,
         })
         .where(eq(s.events.id, id));
+      if (institutionId !== event.institution_id) changed.push('institution');
       await writeLinks(tx, id, organizerIds);
       const termsChanged = body.terms.length !== currentTerms.length || body.terms.some((x, i) => x !== currentTerms[i]);
       if (termsChanged) await writeTerms(tx, id, body.terms, new Date(t));
@@ -696,23 +731,42 @@ export const adminRoutes = new Hono<AppEnv>()
 
   .get('/reports/hours', async (c) => {
     const { db } = c.var.deps;
-    const range = z.object({ from: isoTime, to: isoTime }).safeParse(c.req.query());
+    // institution_id: only the events in that institution's name; `association`: only the association's own.
+    const range = z.object({ from: isoTime, to: isoTime, institution_id: z.string().min(1).optional() }).safeParse(c.req.query());
     if (!range.success || Date.parse(range.data.to) <= Date.parse(range.data.from)) throw new HttpError(400, 'invalid_request');
+    const organiser = range.data.institution_id;
     const rows = await db
       .select({ a: s.attendance, user: s.users })
       .from(s.attendance)
       .innerJoin(s.users, eq(s.users.id, s.attendance.user_id))
+      .innerJoin(s.events, eq(s.events.id, s.attendance.event_id))
       .where(
         and(
           eq(s.attendance.participant_status, 'confirmed'),
           gte(s.attendance.started_at, new Date(range.data.from)),
           lt(s.attendance.started_at, new Date(range.data.to)),
           isNull(s.users.deleted_at),
+          organiser === 'association' ? isNull(s.events.institution_id) : organiser ? eq(s.events.institution_id, organiser) : undefined,
         ),
       );
     const userIds = [...new Set(rows.map((r) => r.a.user_id))];
     const ledger = userIds.length
       ? await db.select().from(s.points_ledger).where(inArray(s.points_ledger.user_id, userIds))
+      : [];
+    // The institutions each person belongs to (confirmed), by name.
+    const belongs = userIds.length
+      ? await db
+          .select({ user_id: s.institution_members.user_id, name: s.institutions.name })
+          .from(s.institution_members)
+          .innerJoin(s.institutions, eq(s.institutions.id, s.institution_members.institution_id))
+          .where(
+            and(
+              inArray(s.institution_members.user_id, userIds),
+              eq(s.institution_members.status, 'confirmed'),
+              eq(s.institutions.status, 'approved'),
+            ),
+          )
+          .orderBy(asc(s.institutions.name))
       : [];
     const report = new Map<string, HoursReportRow>();
     for (const { a, user } of rows) {
@@ -725,6 +779,7 @@ export const adminRoutes = new Hono<AppEnv>()
         events: 0,
         hours: 0,
         total_points: 0,
+        institutions: belongs.filter((b) => b.user_id === user.id).map((b) => b.name),
       };
       entry.events += 1;
       entry.hours = rules.round2(entry.hours + (a.hours ?? 0));
@@ -734,6 +789,149 @@ export const adminRoutes = new Hono<AppEnv>()
       report.set(user.id, entry);
     }
     return c.json<HoursReportRow[]>([...report.values()].sort((x, y) => y.hours - x.hours));
+  })
+
+  // ---------- institutions (جمعية، مؤسسة، مدرسة…) ----------
+
+  .get('/institutions', async (c) => {
+    const { db } = c.var.deps;
+    const query = institutionQuery.safeParse(c.req.query());
+    if (!query.success) throw new HttpError(400, 'invalid_request');
+    const status = query.data.status;
+    const rows = (
+      await db
+        .select()
+        .from(s.institutions)
+        .where(status ? eq(s.institutions.status, status) : undefined)
+        .orderBy(asc(s.institutions.name))
+    ).map(iso);
+    const ids = rows.map((r) => r.id);
+    const members = ids.length
+      ? await db
+          .select({ m: s.institution_members, ...publicUser, phone: s.users.phone })
+          .from(s.institution_members)
+          .innerJoin(s.users, eq(s.users.id, s.institution_members.user_id))
+          .where(and(inArray(s.institution_members.institution_id, ids), isNull(s.users.deleted_at)))
+          .orderBy(asc(s.users.full_name))
+      : [];
+    const events = ids.length
+      ? await db.select({ institution_id: s.events.institution_id, status: s.events.status }).from(s.events).where(inArray(s.events.institution_id, ids))
+      : [];
+    const found = await lookup(db, rows.map((r) => r.requested_by), []);
+    // Those waiting for a decision first, then by name.
+    const waitingFirst = (r: (typeof rows)[number]) => (r.status === 'pending' ? 0 : 1);
+    rows.sort((a, b) => waitingFirst(a) - waitingFirst(b));
+    return c.json<AdminInstitutionRow[]>(
+      rows.map((institution) => {
+        const own = members.filter((x) => x.m.institution_id === institution.id);
+        return {
+          institution,
+          requested_by: found.withPhone(institution.requested_by),
+          representatives: own.filter((x) => rules.isRepresentative(x.m)).map((x) => ({ ...toPublic(x), phone: x.phone })),
+          members: own.filter((x) => x.m.role === 'member' && x.m.status === 'confirmed').length,
+          pending_members: own.filter((x) => x.m.status === 'pending').length,
+          approved_events: rules.institutionApprovedEvents(events, institution.id),
+        };
+      }),
+    );
+  })
+
+  // Whoever asked is its first representative already (from the request); turning it down tells them why.
+  .post('/institutions/:id/:action{approve|reject}', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    const action = c.req.param('action') as 'approve' | 'reject';
+    const note = (await readBody(c, statusBody)).note || undefined;
+    const t = new Date(now());
+    const institution = await db.transaction(async (tx) => {
+      const institution = await findInstitution(tx, id, { lock: true });
+      if (!institution) throw new ApiError('not_found');
+      if (institution.status !== 'pending') throw new AdminError('institution_not_waiting');
+      await tx
+        .update(s.institutions)
+        .set({
+          status: action === 'approve' ? 'approved' : 'rejected',
+          decided_by: me.id,
+          decided_at: t,
+          decision_note: action === 'reject' ? (note ?? null) : null,
+        })
+        .where(eq(s.institutions.id, id));
+      await audit(tx, {
+        actorId: me.id,
+        action: action === 'approve' ? 'approve_institution' : 'reject_institution',
+        targetId: id,
+        details: { name: institution.name, ...(action === 'reject' ? { note: note ?? null } : {}) },
+        at: t,
+      });
+      return institution;
+    });
+    notifyInstitutionDecided(c.var.deps, id, institution.requested_by, action === 'approve' ? 'approved' : 'rejected', note);
+    return c.body(null, 204);
+  })
+
+  // By phone number. Someone who belongs to it, or asked to, becomes its representative.
+  .post('/institutions/:id/representatives', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    const phone = rules.libyanMobile((await readBody(c, addRepresentativeBody)).phone);
+    const t = new Date(now());
+    const added = await db.transaction(async (tx) => {
+      const institution = await findInstitution(tx, id, { lock: true });
+      if (!institution) throw new ApiError('not_found');
+      if (institution.status !== 'approved') throw new AdminError('institution_not_approved');
+      const [user] = phone ? await tx.select().from(s.users).where(and(eq(s.users.phone, phone), isNull(s.users.deleted_at))) : [];
+      if (!user) throw new AdminError('no_such_user');
+      const current = await membershipOf(tx, id, user.id, { lock: true });
+      if (rules.isRepresentative(current)) throw new AdminError('already_representative');
+      const values = { role: 'representative' as const, status: 'confirmed' as const, confirmed_by: me.id, confirmed_at: t };
+      if (current) {
+        await tx
+          .update(s.institution_members)
+          .set(values)
+          .where(and(eq(s.institution_members.institution_id, id), eq(s.institution_members.user_id, user.id)));
+      } else {
+        await tx.insert(s.institution_members).values({ institution_id: id, user_id: user.id, created_at: t, ...values });
+      }
+      await audit(tx, {
+        actorId: me.id,
+        action: 'add_representative',
+        targetId: id,
+        details: { name: institution.name, user_id: user.id, person: user.full_name },
+        at: t,
+      });
+      return user.id;
+    });
+    notifyRepresentativeAdded(c.var.deps, id, added);
+    return c.body(null, 204);
+  })
+
+  // They stay a (confirmed) member.
+  .delete('/institutions/:id/representatives/:userId', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    const userId = c.req.param('userId');
+    const t = new Date(now());
+    await db.transaction(async (tx) => {
+      const institution = await findInstitution(tx, id, { lock: true });
+      const current = await membershipOf(tx, id, userId, { lock: true });
+      if (!institution || !rules.isRepresentative(current)) throw new ApiError('not_found');
+      await tx
+        .update(s.institution_members)
+        .set({ role: 'member' })
+        .where(and(eq(s.institution_members.institution_id, id), eq(s.institution_members.user_id, userId)));
+      const [user] = await tx.select({ full_name: s.users.full_name }).from(s.users).where(eq(s.users.id, userId));
+      await audit(tx, {
+        actorId: me.id,
+        action: 'remove_representative',
+        targetId: id,
+        details: { name: institution.name, user_id: userId, person: user?.full_name ?? '' },
+        at: t,
+      });
+    });
+    return c.body(null, 204);
   })
 
   // ---------- audit log ----------

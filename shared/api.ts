@@ -15,9 +15,12 @@ import type {
   EventTerm,
   Gender,
   GenderCategory,
+  Institution,
+  InstitutionRole,
   Level,
   LocationType,
   MeetingPlatform,
+  MembershipStatus,
   NoticeKind,
   NoticeReactionKind,
   Registration,
@@ -147,6 +150,8 @@ export interface EventSummary
   i_organize: boolean;
   /** The signed-in user created it. Their own drafts and turned-down drafts are listed for them only. */
   i_created: boolean;
+  /** The institution it is in the name of ("تنظّمها …"); null = the association's own. Absent from an older server. */
+  institution?: InstitutionRef | null;
 }
 
 /**
@@ -178,6 +183,11 @@ export interface EventProposal {
   terms: string[];
   /** The event's learning corner (ركن التعلم), in order: read before joining, approved with the event. */
   lessons: LessonInput[];
+  /**
+   * In an institution's name: one the proposer represents (EventFormMeta.institutions).
+   * Absent or null = their own name. Not sent by an older app.
+   */
+  institution_id?: string | null;
 }
 
 export interface LessonInput {
@@ -209,8 +219,15 @@ export interface EventFormMeta {
   tags?: EventTag[];
   /** What an event with a written tag is worth. */
   custom_tag_points?: number;
-  /** false = the event waits for an admin's approval. */
+  /** false = the event waits for an admin's approval (in the proposer's own name; an institution's says so itself). */
   publishes_directly: boolean;
+  /**
+   * May propose in their own name (by level or role). false = a representative
+   * who may propose only in their institutions' names. Absent from an older server: true.
+   */
+  own_events?: boolean;
+  /** The approved institutions the proposer represents, which events may be in the name of. */
+  institutions?: FormInstitution[];
   /** The signed-in user's events waiting for approval, and how many may wait at once. */
   waiting: number;
   max_waiting: number;
@@ -219,6 +236,11 @@ export interface EventFormMeta {
    * Absent from a server from before the lesson library: the form offers none.
    */
   lesson_library?: LessonLibraryItem[];
+}
+
+export interface FormInstitution extends InstitutionRef {
+  /** Its first approved events are behind it (rules.INSTITUTION_REVIEWED_EVENTS): its events go out at once. */
+  publishes_directly: boolean;
 }
 
 /** A lesson of an earlier event, offered to a new event's form. Added as a copy: the new event has its own. */
@@ -391,7 +413,10 @@ export interface AttendanceResponse {
 /** GET /api/me/attendance (a list), GET /api/attendance/:id */
 export interface AttendanceItem {
   attendance: Attendance;
-  event: Pick<AppEvent, 'id' | 'title' | 'location_type' | 'address_text' | 'meeting_platform' | 'starts_at' | 'ends_at' | 'base_points'>;
+  event: Pick<AppEvent, 'id' | 'title' | 'location_type' | 'address_text' | 'meeting_platform' | 'starts_at' | 'ends_at' | 'base_points'> & {
+    /** The institution that organised it; null = the association. Absent from an older server. */
+    institution?: InstitutionRef | null;
+  };
   recorded_by: PublicUser | null;
   /** What these hours are worth by the points formula: earned once confirmed. */
   points: number;
@@ -426,6 +451,8 @@ export interface MeResponse {
   can_report: boolean;
   /** How many warnings the person was given, withdrawn ones included, so the profile shows the way to them. */
   warnings: number;
+  /** Requests to belong to the institutions this person represents, waiting for them. Absent from an older server. */
+  institution_requests?: number;
 }
 
 /**
@@ -529,3 +556,48 @@ export interface MyWarning {
 export interface AppealBody {
   reason: string;
 }
+
+// ---------- institutions (جمعية، مؤسسة، مدرسة…) ----------
+// Owner's decisions (2026-11-17): shared/types.ts Institution.
+
+/** An institution as events and hours show it. */
+export type InstitutionRef = Pick<Institution, 'id' | 'name' | 'kind'>;
+
+/** One of the person's institutions: one they belong to, represent, asked to belong to, or asked to add. */
+export interface MyInstitution {
+  institution: InstitutionRef & Pick<Institution, 'status' | 'decision_note'>;
+  role: InstitutionRole;
+  status: MembershipStatus;
+  /** A representative's: requests to belong waiting for them. 0 for a member. */
+  pending_members: number;
+}
+
+/** GET /api/institutions */
+export interface InstitutionsResponse {
+  mine: MyInstitution[];
+  /** Every approved institution, by name: what one may ask to belong to. */
+  directory: InstitutionRef[];
+  /** This person's requests for new institutions still waiting, and how many may wait at once. */
+  waiting_requests: number;
+  max_waiting_requests: number;
+}
+
+/** POST /api/institutions: ask for a new one (it waits for an admin). Answers with the MyInstitution. */
+export interface RequestInstitutionBody {
+  name: string;
+  kind: string;
+}
+
+// POST /api/institutions/:id/join: ask to belong (a representative confirms). Answers with the MyInstitution.
+// DELETE /api/institutions/:id/membership: leave it, or take the request back. 204.
+
+/** GET /api/institutions/:id/members: its representatives only (and admins). */
+export interface InstitutionMembersResponse {
+  institution: InstitutionRef & Pick<Institution, 'status'>;
+  /** Requests waiting first (oldest first), then members and representatives by name. */
+  members: { user: PublicUser; role: InstitutionRole; status: MembershipStatus; created_at: string }[];
+}
+
+// POST /api/institutions/:id/members/:userId/confirm: a representative confirms a request.
+// DELETE /api/institutions/:id/members/:userId: turns a request down, or takes a member off.
+// Both answer with the InstitutionMembersResponse.
