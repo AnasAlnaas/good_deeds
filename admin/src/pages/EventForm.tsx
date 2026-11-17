@@ -245,10 +245,11 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
       lessons: v.lessons.map((l) => ({ title: l.title.trim(), body: l.body.trim(), image_id: l.image_id, video_id: l.video_id })),
     };
     if (existing) {
-      if (await run(() => api.updateEvent(existing.event.id, body))) navigate(`/events/${existing.event.id}`);
+      // In place of the form, so going back from the event does not land on the form again.
+      if (await run(() => api.updateEvent(existing.event.id, body))) navigate(`/events/${existing.event.id}`, { replace: true });
     } else {
       const r = await run(() => api.createEvent({ ...body, publish }));
-      if (r) navigate(`/events/${r.value.id}`);
+      if (r) navigate(`/events/${r.value.id}`, { replace: true });
     }
   };
 
@@ -634,7 +635,10 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
             </Button>
           </>
         )}
-        <Button variant="quiet" onClick={() => navigate(-1)}>
+        {/* Back where the admin came from; a form opened on its own (a new tab) goes to the event or the list. */}
+        <Button
+          variant="quiet"
+          onClick={() => (window.history.state?.idx > 0 ? navigate(-1) : navigate(existing ? `/events/${existing.event.id}` : '/events'))}>
           {t.cancel}
         </Button>
       </div>

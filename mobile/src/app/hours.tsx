@@ -1,4 +1,5 @@
 import { Image } from 'expo-image';
+import { router } from 'expo-router';
 import { Platform, Share, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/Button';
@@ -31,6 +32,8 @@ export default function HoursRecordScreen() {
   const confirmed = query.data
     .filter((x) => x.attendance.participant_status === 'confirmed' && (x.attendance.hours ?? 0) > 0)
     .sort((a, b) => Date.parse(a.attendance.started_at) - Date.parse(b.attendance.started_at));
+  // Hours recorded but not confirmed yet are left out; the person is told, and taken where they confirm them.
+  const waiting = query.data.some((x) => x.attendance.ended_at && x.attendance.participant_status === 'pending');
   const total = confirmed.reduce((sum, x) => sum + (x.attendance.hours ?? 0), 0);
   const events = new Set(confirmed.map((x) => x.event.id)).size;
   const first = confirmed[0]?.attendance.started_at;
@@ -96,7 +99,20 @@ export default function HoursRecordScreen() {
         )}
       </Card>
 
-      {confirmed.length === 0 && <EmptyState icon="time-outline" text={s.hoursRecord.empty} />}
+      {waiting && (
+        <Card style={styles.waiting}>
+          <Txt>{s.next.hoursWaiting}</Txt>
+          <Button icon="checkmark-circle-outline" label={s.next.confirmHours} onPress={() => router.push('/activity')} />
+        </Card>
+      )}
+
+      {confirmed.length === 0 && (
+        <EmptyState
+          icon="time-outline"
+          text={s.hoursRecord.empty}
+          action={waiting ? null : { label: s.next.findEvent, icon: 'search-outline', onPress: () => router.push('/events') }}
+        />
+      )}
 
       {confirmed.map((x) => (
         <View key={x.attendance.id} style={styles.row}>
@@ -131,6 +147,7 @@ export default function HoursRecordScreen() {
 
 const styles = StyleSheet.create({
   head: { alignItems: 'center', gap: space.xs, paddingVertical: space.lg },
+  waiting: { borderColor: colors.accent, borderWidth: 3 },
   logo: { width: 56, height: 56 },
   metrics: { flexDirection: 'row', alignSelf: 'stretch', marginTop: space.sm },
   metric: { flex: 1, alignItems: 'center' },

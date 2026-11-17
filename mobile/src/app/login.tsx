@@ -17,6 +17,7 @@ import { errorCode } from '@/data/backend';
 import type { Gender } from '@/data/types';
 import { DEMO_ACCOUNTS } from '@/demo/seed';
 import { fmt } from '@/i18n/format';
+import { canContact, contactAssociation } from '@/lib/contact';
 import * as dialog from '@/lib/dialog';
 import { useApp } from '@/state/app';
 import { colors, space } from '@/theme/tokens';
@@ -383,6 +384,17 @@ function PasswordSignIn({ baseUrl }: { baseUrl: string }) {
           {s.login.resetTitle}
         </Txt>
         <Txt color={colors.inkMuted}>{notSet ? s.login.notSetBody : s.login.resetBody}</Txt>
+        {/* The code comes from the admins: this is how to ask them for it. */}
+        {canContact && (
+          <Button
+            variant="secondary"
+            icon="mail-outline"
+            label={s.next.contact}
+            onPress={() =>
+              contactAssociation(s, s.next.contactResetSubject, phone ? fmt(s.next.contactResetBody, { phone: spokenNumber(phone) }) : '')
+            }
+          />
+        )}
         {phoneField}
         {codeField(s.login.resetCode)}
         {passwordField}

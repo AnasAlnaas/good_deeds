@@ -1,4 +1,4 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -11,6 +11,7 @@ import { Badge, Card, InfoRow, QueryState } from '@/components/ui';
 import { useAttendance, useMeSummary } from '@/data/queries';
 import { count, day, fmt, num, time } from '@/i18n/format';
 import * as dialog from '@/lib/dialog';
+import { goBack } from '@/lib/goBack';
 import { useApp } from '@/state/app';
 import { useAction } from '@/state/useAction';
 import { colors, radius, space } from '@/theme/tokens';
@@ -33,7 +34,7 @@ export default function ConfirmHours() {
     const within = (points: number) =>
       level && next ? Math.min(1, Math.max(0, (points - level.min_points) / (next.min_points - level.min_points))) : 1;
     return (
-      <Screen footer={<Button label={s.confirm.done} onPress={() => router.back()} />}>
+      <Screen footer={<Button label={s.confirm.done} onPress={() => goBack('/activity')} />}>
         <View style={styles.reward}>
           <ConfirmedMotion />
           <Txt variant="screenTitle" align="center">

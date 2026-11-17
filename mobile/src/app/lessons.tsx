@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
@@ -10,12 +10,12 @@ import { useMyLessons } from '@/data/queries';
 import { day, fmt } from '@/i18n/format';
 import { useApp } from '@/state/app';
 import { classIcon, classOfEvent } from '@/theme/classes';
-import { colors, space } from '@/theme/tokens';
+import { colors, space, touch } from '@/theme/tokens';
 
 // "What I learned": every lesson the person learned in the learning corners of
 // events (ركن التعلم), grouped by event, the latest learned first.
 export default function MyLessonsScreen() {
-  const { s, now } = useApp();
+  const { s, now, isRTL } = useApp();
   const query = useMyLessons();
   if (!query.data) {
     return (
@@ -36,7 +36,13 @@ export default function MyLessonsScreen() {
 
   return (
     <Screen back title={s.myLessons.title}>
-      {groups.length === 0 && <EmptyState icon="school-outline" text={s.myLessons.empty} />}
+      {groups.length === 0 && (
+        <EmptyState
+          icon="school-outline"
+          text={s.myLessons.empty}
+          action={{ label: s.next.findEvent, icon: 'search-outline', onPress: () => router.push('/events') }}
+        />
+      )}
       {groups.length > 0 && (
         <Txt variant="caption" color={colors.inkMuted}>
           {fmt(s.myLessons.count, { n: query.data.length })}
@@ -44,12 +50,17 @@ export default function MyLessonsScreen() {
       )}
       {groups.map(({ event, lessons }) => (
         <View key={event.id} style={styles.group}>
-          <View style={styles.eventRow}>
+          {/* The event's name opens its page. */}
+          <Pressable
+            accessibilityRole="link"
+            onPress={() => router.push(`/event/${event.id}`)}
+            style={({ pressed }) => [styles.eventRow, pressed && styles.pressed]}>
             <Ionicons name={classIcon(classOfEvent(event))} size={18} color={colors.primary} />
             <Txt variant="bodyStrong" style={styles.flex} numberOfLines={2}>
               {event.title}
             </Txt>
-          </View>
+            <Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={18} color={colors.inkMuted} />
+          </Pressable>
           {lessons.map((l) => (
             <Card key={l.id} onPress={() => router.push({ pathname: '/event/[id]/learn', params: { id: event.id, lesson: l.id } })}>
               <Txt variant="bodyStrong">{l.title}</Txt>
@@ -82,7 +93,8 @@ export default function MyLessonsScreen() {
 
 const styles = StyleSheet.create({
   group: { gap: space.sm },
-  eventRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.sm },
+  eventRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.sm, minHeight: touch },
+  pressed: { opacity: 0.6 },
   flex: { flex: 1 },
   pictureRow: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
 });

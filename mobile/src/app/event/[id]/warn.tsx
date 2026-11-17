@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -9,6 +9,7 @@ import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
 import { Card, EmptyState, Field, QueryState } from '@/components/ui';
 import { useRoster } from '@/data/queries';
+import { goBack } from '@/lib/goBack';
 import { useApp } from '@/state/app';
 import { useAction } from '@/state/useAction';
 import { colors, space } from '@/theme/tokens';
@@ -38,7 +39,7 @@ export default function WarnScreen() {
           <Txt align="center" color={colors.inkMuted}>
             {entry?.user.full_name ?? ''}
           </Txt>
-          <Button variant="secondary" label={s.warn.backToRoster} onPress={() => router.back()} />
+          <Button variant="secondary" label={s.warn.backToRoster} onPress={() => goBack(`/event/${id}/roster`)} />
         </View>
       </Screen>
     );

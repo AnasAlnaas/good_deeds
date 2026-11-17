@@ -665,6 +665,28 @@ const ar = {
     signOutQueuedBody: 'على هاتفك تسجيلات حضور لم تُرسل بعد: {n}. تبقى محفوظة، وتُرسل حين تدخل بهذا الحساب مرة أخرى على هذا الهاتف.',
   },
 
+  // Ways on from a screen with nothing more to do there: every screen leads somewhere.
+  next: {
+    findEvent: 'ابحث عن فعالية',
+    otherEvents: 'اعرض فعاليات أخرى',
+    showAll: 'اعرض كل الأنواع',
+    clearFilters: 'امسح البحث والتصفية',
+    seeUpcoming: 'اعرض الفعاليات القادمة',
+    toMap: 'ارجع إلى الخريطة',
+    toEvent: 'ارجع إلى الفعالية',
+    reviewHours: 'راجع ساعاتك وأكّدها',
+    hoursWaiting: 'سجّل المشرف ساعات لك تنتظر تأكيدك. لا تُحسب هنا قبل أن تؤكدها.',
+    confirmHours: 'أكّد ساعاتك',
+    eventCancelled: 'أُلغيت هذه الفعالية.',
+    seeReports: 'اعرض بلاغاتك',
+    help: 'المساعدة',
+    contact: 'راسل إدارة الجمعية',
+    contactHelpSubject: 'سؤال عن تطبيق الأعمال الصالحة',
+    contactResetSubject: 'طلب رمز استعادة لحسابي',
+    contactResetBody: 'رقم هاتفي في التطبيق: {phone}',
+    contactCantOpen: 'لم يُفتح تطبيق البريد. راسل الإدارة على: {email}',
+  },
+
   units: {
     hour: { one: 'ساعة واحدة', two: 'ساعتان', few: '{n} ساعات', many: '{n} ساعة' },
     point: { one: 'نقطة واحدة', two: 'نقطتان', few: '{n} نقاط', many: '{n} نقطة' },
@@ -1403,6 +1425,27 @@ const en: Strings = {
     privacyPolicy: 'Read the privacy policy',
     signOutQueuedTitle: 'Attendance not sent yet',
     signOutQueuedBody: 'This phone has attendance records not sent yet: {n}. They stay saved, and are sent when you sign in to this account again on this phone.',
+  },
+
+  next: {
+    findEvent: 'Find an event',
+    otherEvents: 'See other events',
+    showAll: 'Show every kind',
+    clearFilters: 'Clear search and filters',
+    seeUpcoming: 'See upcoming events',
+    toMap: 'Back to the map',
+    toEvent: 'Back to the event',
+    reviewHours: 'Review and confirm your hours',
+    hoursWaiting: "A supervisor recorded hours for you that wait for your confirmation. They don't count here until you confirm them.",
+    confirmHours: 'Confirm your hours',
+    eventCancelled: 'This event was cancelled.',
+    seeReports: 'See your reports',
+    help: 'Help',
+    contact: "Email the association's admins",
+    contactHelpSubject: 'A question about the Good Deeds app',
+    contactResetSubject: 'Reset code for my account',
+    contactResetBody: 'My phone number in the app: {phone}',
+    contactCantOpen: "The email app didn't open. Write to the admins at: {email}",
   },
 
   units: {

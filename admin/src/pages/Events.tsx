@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 
 import { classOfEvent, EVENT_CLASSES } from '../../../shared/classes';
@@ -8,16 +7,19 @@ import { api } from '../api';
 import { fill, range } from '../format';
 import { ClassIcon, Icon } from '../icons';
 import { t } from '../strings';
-import { PageHeader, QueryState, StatusBadge } from '../ui';
+import { Button, PageHeader, QueryState, StatusBadge } from '../ui';
 
 const FILTERS: (EventStatus | 'all')[] = ['all', 'running', 'published', 'draft', 'finished', 'cancelled', 'rejected'];
 
 export function Events() {
   const navigate = useNavigate();
   const query = useQuery({ queryKey: ['events'], queryFn: api.events });
-  // ?status=draft opens on the drafts (the overview's link to proposals waiting).
-  const [params] = useSearchParams();
-  const [filter, setFilter] = useState<EventStatus | 'all'>(() => FILTERS.find((f) => f === params.get('status')) ?? 'all');
+  // The filter lives in the address (?status=draft, as the overview links to it), so
+  // coming back from an event shows the list as it was left.
+  const [params, setParams] = useSearchParams();
+  const filter: EventStatus | 'all' = FILTERS.find((f) => f === params.get('status')) ?? 'all';
+  const setFilter = (f: EventStatus | 'all') => setParams(f === 'all' ? {} : { status: f }, { replace: true });
+  const listSearch = filter === 'all' ? '' : `?status=${filter}`;
   const rows = (query.data ?? []).filter((r) => filter === 'all' || r.effective_status === filter);
 
   return (
@@ -54,12 +56,12 @@ export function Events() {
             </thead>
             <tbody>
               {rows.map(({ event: e, effective_status, joined_count, organizers, creator }) => (
-                <tr key={e.id} className="clickable" onClick={() => navigate(`/events/${e.id}`)}>
+                <tr key={e.id} className="clickable" onClick={() => navigate(`/events/${e.id}`, { state: { list: listSearch } })}>
                   <td>
                     <div className="event-cell">
                       <ClassIcon id={classOfEvent(e)} />
                       <div>
-                        <Link className="title-link" to={`/events/${e.id}`}>
+                        <Link className="title-link" to={`/events/${e.id}`} state={{ list: listSearch }}>
                           {e.title}
                         </Link>
                         <span className="small muted">
@@ -80,7 +82,16 @@ export function Events() {
               ))}
             </tbody>
           </table>
-          {rows.length === 0 && <p className="empty">{t.events.empty}</p>}
+          {rows.length === 0 && (
+            <div className="empty">
+              <p>{t.events.empty}</p>
+              {filter !== 'all' && (
+                <Button variant="secondary" onClick={() => setFilter('all')}>
+                  {t.events.showAll}
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </>

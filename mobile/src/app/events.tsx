@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Button } from '@/components/Button';
 import { EventCard } from '@/components/EventCard';
 import { Screen } from '@/components/Screen';
-import { Chip, ClassFilter, EmptyState, Field, QueryState, Row } from '@/components/ui';
+import { Chip, ClassFilter, EmptyState, Field, type NextStep, QueryState, Row } from '@/components/ui';
 import { useEvents, useMeSummary } from '@/data/queries';
 import { useApp } from '@/state/app';
 import type { EventClassId } from '@/theme/classes';
@@ -60,6 +60,19 @@ export default function EventsScreen() {
       : tab === 'mine'
         ? s.events.emptyMine
         : s.events.emptyOrganize;
+  const clearFilters = () => {
+    setText('');
+    setKind(null);
+    setWhere('all');
+  };
+  // Each empty list says where to go instead. (Organising has its propose button above.)
+  const emptyAction: NextStep | null = filtered
+    ? { label: s.next.clearFilters, icon: 'close-circle-outline', onPress: clearFilters }
+    : tab === 'mine'
+      ? { label: s.next.seeUpcoming, icon: 'calendar-outline', onPress: () => setTab('upcoming') }
+      : tab === 'upcoming' && canCreate
+        ? { label: s.events.propose, icon: 'add-circle-outline', onPress: () => router.push('/event/new') }
+        : null;
 
   return (
     <Screen back title={s.tabs.events} island>
@@ -88,7 +101,7 @@ export default function EventsScreen() {
       {!query.data ? (
         <QueryState query={query} />
       ) : list.length === 0 ? (
-        <EmptyState icon={filtered ? 'search-outline' : 'calendar-outline'} text={empty} />
+        <EmptyState icon={filtered ? 'search-outline' : 'calendar-outline'} text={empty} action={emptyAction} />
       ) : (
         list.map((e) => <EventCard key={e.id} event={e} />)
       )}

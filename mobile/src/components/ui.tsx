@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { UseQueryResult } from '@tanstack/react-query';
+import { router, usePathname } from 'expo-router';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View, type StyleProp, type TextInputProps, type ViewStyle } from 'react-native';
 import Animated, { Easing, FadeIn, FadeInUp, FadeOutUp, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
@@ -159,13 +160,21 @@ export function InfoRow({ icon, label, value }: { icon: keyof typeof Ionicons.gl
   );
 }
 
-export function EmptyState({ icon, text }: { icon: keyof typeof Ionicons.glyphMap; text: string }) {
+/** A way on from an empty screen, so it never ends at a sentence. */
+export interface NextStep {
+  label: string;
+  icon?: keyof typeof Ionicons.glyphMap;
+  onPress(): void;
+}
+
+export function EmptyState({ icon, text, action }: { icon: keyof typeof Ionicons.glyphMap; text: string; action?: NextStep | null }) {
   return (
     <View style={styles.empty}>
       <Ionicons name={icon} size={40} color={colors.inkMuted} />
       <Txt align="center" color={colors.inkMuted}>
         {text}
       </Txt>
+      {action && <Button variant="secondary" icon={action.icon} label={action.label} onPress={action.onPress} />}
     </View>
   );
 }
@@ -224,6 +233,7 @@ export function OfflineBanner({ floating }: { floating?: boolean }) {
 export function QueryState({ query }: { query: UseQueryResult<unknown> }) {
   const { s } = useApp();
   const online = useOnline();
+  const pathname = usePathname();
   if (!online && !query.data && (query.fetchStatus === 'paused' || errorCode(query.error) === 'network')) {
     return (
       <Animated.View entering={FadeIn.duration(200)} style={styles.empty}>
@@ -245,6 +255,8 @@ export function QueryState({ query }: { query: UseQueryResult<unknown> }) {
           {s.errors[code]}
         </Txt>
         {retryable && <Button variant="secondary" icon="refresh" label={s.retry} onPress={() => query.refetch()} />}
+        {/* A refusal (the event was withdrawn, say) won't change by trying again: the map is the way on. */}
+        {!retryable && pathname !== '/map' && <Button variant="quiet" icon="map-outline" label={s.next.toMap} onPress={() => router.dismissTo('/map')} />}
       </View>
     );
   }

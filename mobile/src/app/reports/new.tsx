@@ -73,7 +73,8 @@ function Form({ meta, eventId }: { meta: ReportFormMeta; eventId?: string }) {
           <Txt align="center" color={colors.inkMuted}>
             {s.report.doneBody}
           </Txt>
-          <Button label={s.report.showMine} onPress={() => router.replace('/reports')} />
+          {/* Back to the list if it is under this screen, so it isn't opened twice. */}
+          <Button label={s.report.showMine} onPress={() => router.dismissTo('/reports')} />
         </View>
       </Screen>
     );
@@ -87,6 +88,7 @@ function Form({ meta, eventId }: { meta: ReportFormMeta; eventId?: string }) {
       {full && (
         <Card style={styles.warning}>
           <Txt color={colors.warning}>{fmt(s.report.full, { n: meta.open })}</Txt>
+          <Button variant="quiet" icon="list-outline" label={s.next.seeReports} onPress={() => router.dismissTo('/reports')} />
         </Card>
       )}
 
