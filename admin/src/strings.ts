@@ -104,6 +104,9 @@ export const t = {
 
   event: {
     toDispute: 'راجع الاعتراض',
+    cover: 'صورة الغلاف',
+    removeCover: 'أزل صورة الغلاف',
+    removeCoverConfirm: 'إزالة صورة الغلاف؟ يُخبَر من اقترح الفعالية، ويظهر مكانها غلاف من نوعها.',
     edit: 'عدّل الفعالية',
     publish: 'انشر الفعالية',
     publishConfirm: 'تظهر الفعالية في التطبيق للجميع بعد نشرها. انشرها الآن؟',
@@ -218,6 +221,11 @@ export const t = {
     lessonBodyOptional: 'النص (اختياري مع صورة أو فيديو)',
     videoLink: 'رابط فيديو على يوتيوب (اختياري)',
     videoInvalid: 'هذا ليس رابط فيديو على يوتيوب.',
+    cover: 'صورة الغلاف',
+    coverHint: 'اختيارية. تظهر على بطاقة الفعالية وصفحتها. بلا صورة يرسم التطبيق غلافاً من نوعها.',
+    addCover: 'اختر صورة الغلاف',
+    changeCover: 'غيّر الصورة',
+    removeCover: 'احذف الصورة',
     addPicture: 'أضف صورة أو إنفوغرافيك',
     changePicture: 'غيّر الصورة',
     removePicture: 'احذف الصورة',
@@ -411,6 +419,7 @@ export const t = {
       reject_institution: 'رفض مؤسسة',
       add_representative: 'إضافة ممثّل لمؤسسة',
       remove_representative: 'إزالة ممثّل من مؤسسة',
+      remove_cover: 'إزالة صورة غلاف',
     } satisfies Record<AdminAction, string>,
     decisions: { accept: 'اعتُمدت كما سُجّلت', correct: 'عُدّلت', reject: 'لم تُحتسب' } as Record<string, string>,
     fields: {
@@ -428,6 +437,7 @@ export const t = {
       terms: 'الشروط',
       lessons: 'ركن التعلم',
       institution: 'المؤسسة',
+      cover: 'صورة الغلاف',
     } as Record<string, string>,
     nothingChanged: 'لا تغيير في الحقول (المشرفون أو الشعب فقط)',
   },

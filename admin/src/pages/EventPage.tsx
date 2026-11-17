@@ -92,6 +92,24 @@ export function EventPage() {
         <Notice tone="primary">{fill(t.event.proposal, { name: proposal.full_name, role: t.role[proposal.role], level: proposal.level })}</Notice>
       )}
       {proposal && status === 'rejected' && <Notice>{t.event.proposalRejected}</Notice>}
+      {/* Covers show at once; an unsuitable one is taken off here (owner's decision, 2026-11-17). */}
+      {d.cover && (
+        <section className="card">
+          <h2>{t.event.cover}</h2>
+          <LessonPicture image={d.cover} alt={t.event.cover} />
+          <div>
+            <Button
+              variant="danger"
+              className="btn-small"
+              disabled={busy}
+              onClick={() => {
+                if (window.confirm(t.event.removeCoverConfirm)) run(() => api.removeCover(id));
+              }}>
+              {t.event.removeCover}
+            </Button>
+          </div>
+        </section>
+      )}
       <ErrorNote code={error} />
 
       <div className="grid-2">

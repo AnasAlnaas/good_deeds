@@ -22,7 +22,8 @@ import { pointsForAttendance } from './rules';
 // 11: and a YouTube video.
 // 12: full events have a waiting list.
 // 13: institutions (a volunteer team with a representative, a member, a request, and an event in its name).
-export const SEED_VERSION = 13;
+// 14: events may have a cover photo.
+export const SEED_VERSION = 14;
 
 /** The demo's institution: approved, with خالد as its representative. */
 export const DEMO_INSTITUTION = 'inst_saraj';
@@ -343,6 +344,7 @@ export function buildSeed(nowMs: number): Db {
       created_by: s.organizers[0],
       created_at: created,
       institution_id: s.institution ?? null,
+      cover_image_id: null,
     };
     db.events.push(e);
     s.organizers.forEach((u) => db.event_organizers.push({ event_id: s.id, user_id: u, added_by: null }));

@@ -46,7 +46,6 @@ action in the name or short description.
 
 خصوصيتك:
 • تدخل برقم هاتفك ورمز يصلك برسالة نصية
-• صورتك لا يراها إلا من هم من جنسك وإدارة الجمعية
 • لا إعلانات، ولا بيع للبيانات، ولا أدوات تتبّع
 • تحذف حسابك متى شئت من الإعدادات
 
@@ -95,7 +94,6 @@ What's inside:
 
 Your privacy:
 • Sign in with your phone number and a code sent by SMS
-• Your photo is seen only by people of your gender and the association
 • No ads, no selling of data, no tracking
 • Delete your account at any time from Settings
 

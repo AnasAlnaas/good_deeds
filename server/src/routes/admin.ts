@@ -48,6 +48,7 @@ import { type AppEnv, HttpError, readBody } from '../http';
 import {
   notifyDisputeSettled,
   notifyEventCancelled,
+  notifyCoverRemoved,
   notifyEventChanged,
   notifyInstitutionDecided,
   notifyPlaceOffered,
@@ -59,7 +60,8 @@ import {
 } from '../notify';
 import { issueResetCode } from './auth';
 import { fillOpenPlaces } from '../waitlist';
-import { assertIdsExist, createEventInput, eventInput, isoTime, kindOf, placeOf, writeLessons, writeLinks, writeTerms } from './event-input';
+import { assertCoverExists, assertIdsExist, createEventInput, eventInput, isoTime, kindOf, placeOf, writeLessons, writeLinks, writeTerms } from './event-input';
+import { dropUnusedImages } from '../lesson-images';
 
 const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
   if (c.var.user.role !== 'admin') throw new AdminError('forbidden');
@@ -362,6 +364,7 @@ export const adminRoutes = new Hono<AppEnv>()
     const organizers = await organizersOf(db, ids);
     const creators = await creatorsOf(db, events);
     const institutions = await institutionRefs(db, events.map((e) => e.institution_id));
+    const covers = await lessonImageRefs(db, events.map((e) => ({ image_id: e.cover_image_id })));
     return c.json<AdminEventRow[]>(
       events.map((event) => ({
         event,
@@ -370,6 +373,7 @@ export const adminRoutes = new Hono<AppEnv>()
         organizers: organizers.get(event.id) ?? [],
         creator: creators.get(event.created_by) ?? null,
         institution: (event.institution_id && institutions.get(event.institution_id)) || null,
+        cover: (event.cover_image_id && covers.get(event.cover_image_id)) || null,
       })),
     );
   })
@@ -402,6 +406,7 @@ export const adminRoutes = new Hono<AppEnv>()
       organizers: (await organizersOf(db, [id])).get(id) ?? [],
       creator: (await creatorsOf(db, [event])).get(event.created_by) ?? null,
       institution: (event.institution_id && (await institutionRefs(db, [event.institution_id])).get(event.institution_id)) || null,
+      cover: (event.cover_image_id && (await lessonImageRefs(db, [{ image_id: event.cover_image_id }])).get(event.cover_image_id)) || null,
       terms: terms.map(iso),
       lessons: await lessonsWithCounts(db, id),
       participants: registrations.map((r) => {
@@ -430,6 +435,7 @@ export const adminRoutes = new Hono<AppEnv>()
       const { organizerIds } = await assertIdsExist(tx, body);
       if (body.publish && organizerIds.length === 0) throw new AdminError('needs_organizer');
       await assertInstitutionApproved(tx, body.institution_id);
+      await assertCoverExists(tx, body.cover_image_id);
       await tx.insert(s.events).values({
         id,
         title: body.title,
@@ -446,6 +452,7 @@ export const adminRoutes = new Hono<AppEnv>()
         created_by: me.id,
         created_at: t,
         institution_id: body.institution_id ?? null,
+        cover_image_id: body.cover_image_id ?? null,
       });
       await writeLinks(tx, id, organizerIds);
       await writeTerms(tx, id, body.terms, t);
@@ -468,6 +475,9 @@ export const adminRoutes = new Hono<AppEnv>()
       // A form that does not send it (the panel's, so far) leaves the event's institution as it is.
       const institutionId = body.institution_id === undefined ? event.institution_id : body.institution_id;
       if (institutionId !== event.institution_id) await assertInstitutionApproved(tx, institutionId);
+      // The same for the cover photo: absent = as it is.
+      const cover = body.cover_image_id === undefined ? event.cover_image_id : body.cover_image_id;
+      if (cover !== event.cover_image_id) await assertCoverExists(tx, cover);
       const currentTerms = await termTexts(tx, id);
       const currentLessons = await lessonsWithCounts(tx, id);
       adminRules.assertEventEdit({
@@ -500,9 +510,14 @@ export const adminRoutes = new Hono<AppEnv>()
           capacity: body.capacity,
           gender_category: body.gender_category,
           institution_id: institutionId ?? null,
+          cover_image_id: cover ?? null,
         })
         .where(eq(s.events.id, id));
       if (institutionId !== event.institution_id) changed.push('institution');
+      if (cover !== event.cover_image_id) {
+        changed.push('cover');
+        await dropUnusedImages(tx, [event.cover_image_id]);
+      }
       await writeLinks(tx, id, organizerIds);
       const termsChanged = body.terms.length !== currentTerms.length || body.terms.some((x, i) => x !== currentTerms[i]);
       if (termsChanged) await writeTerms(tx, id, body.terms, new Date(t));
@@ -556,6 +571,23 @@ export const adminRoutes = new Hono<AppEnv>()
     // Proposed in the app by someone else: tell them what was decided.
     if (event.created_by !== me.id && action === 'publish') notifyProposalDecided(c.var.deps, id, 'approved');
     if (event.created_by !== me.id && action === 'reject') notifyProposalDecided(c.var.deps, id, 'rejected', note);
+    return c.body(null, 204);
+  })
+
+  // An unsuitable cover photo, taken off (owner's decision, 2026-11-17): covers show at once, and admins remove what does not suit.
+  .delete('/events/:id/cover', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    const event = await db.transaction(async (tx) => {
+      const event = await anyEvent(tx, id, true);
+      if (!event.cover_image_id) return null;
+      await tx.update(s.events).set({ cover_image_id: null }).where(eq(s.events.id, id));
+      await dropUnusedImages(tx, [event.cover_image_id]);
+      await audit(tx, { actorId: me.id, action: 'remove_cover', targetId: id, details: { title: event.title }, at: new Date(now()) });
+      return event;
+    });
+    if (event && event.created_by !== me.id) notifyCoverRemoved(c.var.deps, id);
     return c.body(null, 204);
   })
 

@@ -36,6 +36,8 @@ const proposalFields = z.object({
   terms: z.array(z.string().trim().min(1).max(1000)).max(30),
   // In an institution's name (the proposer must represent it: rules.assertCanProposeEvent). An older app sends none.
   institution_id: z.string().min(1).nullish(),
+  // A picture sent first to POST /lesson-images; absent = unchanged (an older app), null = none.
+  cover_image_id: z.string().min(1).nullish(),
   // Absent from a form sent by an app from before the learning corner: no lessons.
   // A lesson has text, a picture (POST /lesson-images), or both; an older app sends no picture.
   lessons: z
@@ -97,6 +99,13 @@ export async function assertIdsExist(q: Database, input: { organizer_ids: string
     : [];
   if (people.length !== organizerIds.length) throw new HttpError(400, 'invalid_request');
   return { organizerIds };
+}
+
+/** A cover photo named must have been sent (POST /lesson-images), or the request is invalid. */
+export async function assertCoverExists(q: Database, coverId: string | null | undefined) {
+  if (!coverId) return;
+  const [found] = await q.select({ id: s.lesson_images.id }).from(s.lesson_images).where(eq(s.lesson_images.id, coverId));
+  if (!found) throw new HttpError(400, 'invalid_request');
 }
 
 /** The event's supervisors become exactly these. Those who stay keep their row (and who added them in the app). */

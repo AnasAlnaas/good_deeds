@@ -63,6 +63,7 @@ function Details({ entry: e }: { entry: AuditEntry }) {
     case 'create_event':
     case 'publish_event':
     case 'cancel_event':
+    case 'remove_cover':
       return <Link to={`/events/${e.target_id}`}>{str('title')}</Link>;
     case 'remove_photo':
     case 'issue_reset_code':

@@ -5,6 +5,7 @@ import { Linking, StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/components/Avatar';
 import { Button } from '@/components/Button';
+import { EventCover } from '@/components/EventCover';
 import { NoticeReactions, withReaction } from '@/components/NoticeReactions';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
@@ -259,6 +260,10 @@ export default function EventDetail() {
 
   return (
     <Screen back footer={footer}>
+      {/* Its cover: the proposer's photo, or one drawn from its class (design ج). */}
+      <View style={styles.cover}>
+        <EventCover cover={event.cover} eventClass={event.event_class} height={190} />
+      </View>
       <Row>
         <Badge
           label={s.status[status]}
@@ -412,6 +417,7 @@ export default function EventDetail() {
 const styles = StyleSheet.create({
   people: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   organizer: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
+  cover: { borderRadius: 16, overflow: 'hidden' },
   person: { flexDirection: 'row', alignItems: 'center', gap: space.xs, paddingEnd: space.sm },
   notice: { borderStartWidth: 4, borderStartColor: colors.accent },
   question: { borderStartColor: colors.primary },

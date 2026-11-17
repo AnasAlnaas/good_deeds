@@ -219,6 +219,7 @@ export function proposeEvent(db: Db, userId: string, input: EventProposal, now: 
     created_by: userId,
     created_at: at,
     institution_id: institution?.id ?? null,
+    cover_image_id: input.cover_image_id ?? null,
   };
   next.events.push(event);
   next.event_organizers.push({ event_id: event.id, user_id: userId, added_by: null });
@@ -252,9 +253,14 @@ function removeLessons(next: Db, eventId: string) {
   return images;
 }
 
-/** Those of these pictures no lesson shows any more are removed, as on the server (server/src/lesson-images.ts). */
+/** Pictures a lesson shows, or an event uses as its cover. */
+function shownImages(db: Db) {
+  return new Set([...db.event_lessons.map((x) => x.image_id), ...db.events.map((e) => e.cover_image_id)]);
+}
+
+/** Those of these pictures no lesson or cover shows any more are removed, as on the server (server/src/lesson-images.ts). */
 function dropUnusedImages(next: Db, ids: (string | null)[]) {
-  const shown = new Set(next.event_lessons.map((x) => x.image_id));
+  const shown = shownImages(next);
   next.lesson_images = next.lesson_images.filter((x) => !ids.includes(x.id) || shown.has(x.id));
 }
 
@@ -269,7 +275,7 @@ export function addLessonImage(db: Db, userId: string, image: { data_url: string
   const user = getUser(db, userId)!;
   if (!mayProposeEvents(db, user)) throw new ApiError('cannot_create_events');
   const next = clone(db);
-  const shown = new Set(next.event_lessons.map((x) => x.image_id));
+  const shown = shownImages(next);
   next.lesson_images = next.lesson_images.filter((x) => shown.has(x.id) || rules.toMs(x.created_at) > now - UNUSED_IMAGE_MS);
   const id = newId('img');
   next.lesson_images.push({ id, ...image, uploaded_by: userId, created_at: new Date(now).toISOString() });
@@ -317,6 +323,8 @@ export function editProposal(db: Db, userId: string, eventId: string, input: Eve
     institution,
   });
   const next = clone(db);
+  // An app from before covers sends none: the event keeps the one it has.
+  const cover = input.cover_image_id === undefined ? row.cover_image_id : input.cover_image_id;
   Object.assign(next.events.find((e) => e.id === eventId)!, {
     title: input.title,
     description: input.description,
@@ -328,7 +336,9 @@ export function editProposal(db: Db, userId: string, eventId: string, input: Eve
     gender_category: input.gender_category,
     base_points: basePointsOf(input.subtype),
     institution_id: institution?.id ?? null,
+    cover_image_id: cover ?? null,
   });
+  if (cover !== row.cover_image_id) dropUnusedImages(next, [row.cover_image_id]);
   writeTerms(next, eventId, input, new Date(now).toISOString());
   writeLessons(next, eventId, input, new Date(now).toISOString());
   return next;
@@ -336,12 +346,13 @@ export function editProposal(db: Db, userId: string, eventId: string, input: Eve
 
 /** Withdrawn: deleted with its own rows, as on the server (server/src/routes/events.ts says why). */
 export function withdrawProposal(db: Db, userId: string, eventId: string): Db {
-  rules.assertCanChangeProposal(getUser(db, userId)!, db.events.find((e) => e.id === eventId));
+  const row = db.events.find((e) => e.id === eventId);
+  rules.assertCanChangeProposal(getUser(db, userId)!, row);
   const next = clone(db);
   next.events = next.events.filter((e) => e.id !== eventId);
   next.event_organizers = next.event_organizers.filter((x) => x.event_id !== eventId);
   next.event_terms = next.event_terms.filter((x) => x.event_id !== eventId);
-  dropUnusedImages(next, removeLessons(next, eventId));
+  dropUnusedImages(next, [...removeLessons(next, eventId), row.cover_image_id]);
   return next;
 }
 

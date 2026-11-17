@@ -68,7 +68,8 @@ import * as s from '../db/schema';
 import { type AppEnv, readBody } from '../http';
 import { notifyEventNotice, notifyHoursToConfirm, notifyPlaceOffered, notifySupervisorAdded, notifyWarningGiven } from '../notify';
 import { fillOpenPlaces, waitlistOf } from '../waitlist';
-import { kindOf, placeOf, proposalInput, removeLessons, writeLessons, writeLinks, writeTerms } from './event-input';
+import { assertCoverExists, kindOf, placeOf, proposalInput, removeLessons, writeLessons, writeLinks, writeTerms } from './event-input';
+import { dropUnusedImages } from '../lesson-images';
 
 // `recorded_at`: the record was made on the phone without a connection, at that time (rules.decideRecordStart).
 const recordTimeBody = z.object({
@@ -149,6 +150,7 @@ async function summarize(db: Database, me: User, events: AppEvent[], now: number
   const myStatus = new Map(mine.map((r) => [r.event_id, r.status]));
   const iOrganize = new Set(organized.map((r) => r.event_id));
   const institutions = await institutionRefs(db, events.map((e) => e.institution_id));
+  const covers = await lessonImageRefs(db, events.map((e) => ({ image_id: e.cover_image_id })));
 
   return events.map((e) => {
     // The meeting link stays off the list: the event's page gives it to those who may see it.
@@ -163,6 +165,7 @@ async function summarize(db: Database, me: User, events: AppEvent[], now: number
       i_organize: iOrganize.has(e.id),
       i_created: e.created_by === me.id,
       institution: (e.institution_id && institutions.get(e.institution_id)) || null,
+      cover: (e.cover_image_id && covers.get(e.cover_image_id)) || null,
     };
   });
 }
@@ -233,6 +236,7 @@ export const eventRoutes = new Hono<AppEnv>()
         institution,
       });
       const status = rules.proposalStatus(me, institution ? await institutionApproved(tx, institution.id) : null);
+      await assertCoverExists(tx, body.cover_image_id);
       await tx.insert(s.events).values({
         id,
         title: body.title,
@@ -249,6 +253,7 @@ export const eventRoutes = new Hono<AppEnv>()
         created_by: me.id,
         created_at: new Date(t),
         institution_id: institution?.id ?? null,
+        cover_image_id: body.cover_image_id ?? null,
       });
       // Whoever proposes an event supervises it; an admin can add others from the panel.
       await writeLinks(tx, id, [me.id]);
@@ -283,6 +288,9 @@ export const eventRoutes = new Hono<AppEnv>()
         now: t,
         institution,
       });
+      // An app from before covers sends none: the event keeps the one it has.
+      const cover = body.cover_image_id === undefined ? row.cover_image_id : body.cover_image_id;
+      if (cover !== row.cover_image_id) await assertCoverExists(tx, cover);
       const organizers = await tx
         .select({ user_id: s.event_organizers.user_id })
         .from(s.event_organizers)
@@ -300,8 +308,10 @@ export const eventRoutes = new Hono<AppEnv>()
           gender_category: body.gender_category,
           base_points: basePointsOf(body.subtype),
           institution_id: institution?.id ?? null,
+          cover_image_id: cover ?? null,
         })
         .where(eq(s.events.id, id));
+      if (cover !== row.cover_image_id) await dropUnusedImages(tx, [row.cover_image_id]);
       await writeLinks(tx, id, organizers.map((o) => o.user_id));
       // Nobody can join a draft, so nobody has accepted its terms or learned its lessons yet.
       await writeTerms(tx, id, body.terms, new Date(t));
@@ -328,6 +338,7 @@ export const eventRoutes = new Hono<AppEnv>()
       await removeLessons(tx, id);
       await tx.delete(s.event_organizers).where(eq(s.event_organizers.event_id, id));
       await tx.delete(s.events).where(eq(s.events.id, id));
+      await dropUnusedImages(tx, [row.cover_image_id]);
     });
     return c.body(null, 204);
   })

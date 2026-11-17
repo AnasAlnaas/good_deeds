@@ -50,6 +50,7 @@ export const adminAction = pgEnum('admin_action', [
   'reject_institution',
   'add_representative',
   'remove_representative',
+  'remove_cover',
 ]);
 export const reportCategory = pgEnum('report_category', ['behaviour', 'safety', 'event', 'app', 'other']);
 export const reportStatus = pgEnum('report_status', ['open', 'handled']);
@@ -165,6 +166,8 @@ export const events = pgTable(
     created_at: at('created_at').notNull().defaultNow(),
     /** In this institution's name; null = the association's own. */
     institution_id: text('institution_id').references(() => institutions.id),
+    /** Its cover photo, kept with the lessons' pictures; null = none. */
+    cover_image_id: text('cover_image_id').references(() => lesson_images.id),
   },
   (t) => [
     index('events_institution').on(t.institution_id),

@@ -111,6 +111,7 @@ function summary(db: Db, me: User, e: AppEvent, now: number): EventSummary {
     i_organize: server.isOrganizer(db, e.id, me.id),
     i_created: e.created_by === me.id,
     institution: institutionRef(db, e.institution_id),
+    cover: imageRef(db, e.cover_image_id),
   };
 }
 
@@ -182,6 +183,7 @@ function checkProposal(db: Db, body: EventProposal) {
   if (!cleanKind(body) || rules.toMs(body.ends_at) <= rules.toMs(body.starts_at)) {
     throw new BackendError('invalid_request');
   }
+  if (body.cover_image_id && !db.lesson_images.some((x) => x.id === body.cover_image_id)) throw new BackendError('invalid_request');
   // The same limits as the server's form (server/src/routes/event-input.ts); a picture must have been sent.
   const lessonOk = (l: EventProposal['lessons'][number]) =>
     rules.lessonComplete(l) &&

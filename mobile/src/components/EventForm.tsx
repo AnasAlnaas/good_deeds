@@ -21,7 +21,8 @@ import { count, fmt } from '@/i18n/format';
 import { cityTarget, locateInCity } from '@/lib/geocode';
 import { goBack } from '@/lib/goBack';
 import { institutionIcon } from '@/lib/institutions';
-import { pickLessonPicture } from '@/lib/photo';
+import { pickCoverPhoto, pickLessonPicture } from '@/lib/photo';
+import { EventCover } from './EventCover';
 import { useApp, useMe } from '@/state/app';
 import { useAction } from '@/state/useAction';
 import { classIcon, className, classOfEvent, EVENT_CLASSES, type EventClassId } from '@/theme/classes';
@@ -217,6 +218,19 @@ export function EventForm({
     return ownEvents ? null : (institutions[0]?.id ?? null);
   });
   const chosenInstitution = institutions.find((i) => i.id === institutionId);
+  // The cover photo (design ج): the event's own when editing, the earlier event's when copying.
+  const [cover, setCover] = useState<LessonImageRef | null>(() => init?.cover ?? null);
+  const [coverState, setCoverState] = useState<'idle' | 'sending' | 'too_big'>('idle');
+  const chooseCover = async () => {
+    setCoverState('idle');
+    const picked = await pickCoverPhoto();
+    if (!picked) return;
+    if (picked === 'too_big') return setCoverState('too_big');
+    setCoverState('sending');
+    const result = await run((b) => b.uploadLessonImage(picked));
+    setCoverState('idle');
+    if (result) setCover(result.value.image);
+  };
   // The lesson whose picture is being sent, and the one whose picture could not be used.
   const [sending, setSending] = useState<number | null>(null);
   const [badPicture, setBadPicture] = useState<number | null>(null);
@@ -440,6 +454,7 @@ export function EventForm({
       terms: v.terms.map((x) => x.trim()),
       lessons: v.lessons.map((l) => ({ title: l.title.trim(), body: l.body.trim(), image_id: l.image_id, video_id: l.video_id })),
       institution_id: institutionId,
+      cover_image_id: cover?.id ?? null,
     };
     if (editing) {
       if (await run((b) => b.editProposal(editing.id, body))) goBack(`/event/${editing.id}`);
@@ -581,6 +596,25 @@ export function EventForm({
           multiline
           onChangeText={(t) => set('description', t)}
         />
+        <SectionTitle>{s.newEvent.cover}</SectionTitle>
+        <Txt variant="caption" color={colors.inkMuted}>
+          {s.newEvent.coverNote}
+        </Txt>
+        {/* How the event's card will look: the photo, or the cover drawn from its class. */}
+        <View style={styles.coverPreview}>
+          <EventCover cover={cover} eventClass={v.event_class ?? 'environment'} height={150} title={v.title.trim() || undefined} />
+        </View>
+        {coverState === 'too_big' && <Txt color={colors.danger}>{s.newEvent.coverTooBig}</Txt>}
+        <Row>
+          <Button
+            variant="secondary"
+            icon="image-outline"
+            label={coverState === 'sending' ? s.newEvent.sendingPicture : cover ? s.newEvent.changeCover : s.newEvent.addCover}
+            disabled={busy || coverState === 'sending'}
+            onPress={chooseCover}
+          />
+          {cover && <Button variant="quiet" icon="close" label={s.newEvent.removeCover} onPress={() => setCover(null)} />}
+        </Row>
       </Reveal>
 
       <Reveal show={reached >= 2}>
@@ -811,6 +845,7 @@ export function EventForm({
 
 const styles = StyleSheet.create({
   intro: { backgroundColor: colors.primarySoft, borderColor: colors.primarySoft },
+  coverPreview: { borderRadius: radius.card, overflow: 'hidden' },
   status: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
   // As tall as the button it takes the place of, so the page does not move.
   confirmed: { minHeight: touch + 4, flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.sm },

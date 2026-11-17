@@ -95,6 +95,8 @@ export interface AdminEventRow {
   creator: (PublicUser & Pick<User, 'role' | 'level'>) | null;
   /** The institution it is in the name of; null = the association's own. */
   institution: InstitutionRef | null;
+  /** Its cover photo; null = none. */
+  cover: LessonImageRef | null;
 }
 
 /**
@@ -115,6 +117,9 @@ export interface AdminEventDetail extends AdminEventRow {
   /** The waiting list in order: those offered a place, then those waiting. */
   waitlist: { user: PublicUser & Pick<User, 'phone'>; created_at: string; offer_expires_at: string | null }[];
 }
+
+// DELETE /api/admin/events/:id/cover: removes an unsuitable cover photo. Whoever
+// proposed the event (if not an admin) is told, and may choose another while it waits.
 
 // ---------- disputed hours ----------
 
@@ -240,7 +245,8 @@ export type AdminAction =
   | 'approve_institution'
   | 'reject_institution'
   | 'add_representative'
-  | 'remove_representative';
+  | 'remove_representative'
+  | 'remove_cover';
 
 /** POST /api/admin/users/:id/reset-code: shown to the admin once, to give the person (by phone or in person). */
 export interface ResetCodeResponse {

@@ -60,7 +60,7 @@ The **city** is typed at sign-up; it is declared under Personal info below.
 | Race and ethnicity | No | | | | |
 | Political or religious beliefs | **No** ⚠️ | | | | The app never asks about beliefs. But the events are run by an Islamic educational association, points have a "spiritual" pillar, and events are tagged with branches of faith (`branches`, `points_ledger.pillar`). Our reading: that describes the event, not the person's beliefs. Decide whether you agree. |
 | Sexual orientation | No | | | | |
-| Other info | **Yes** | No | Required | App functionality | Gender (`users.gender`): decides men-only / women-only events (`rules.canUserJoinCategory`) and who sees photos (`rules.canSeePhoto` in `shared/rules.ts`). City (`users.city`). |
+| Other info | **Yes** | No | Required | App functionality | Gender (`users.gender`): decides men-only / women-only events (`rules.canUserJoinCategory`). City (`users.city`). |
 
 ### Financial info
 
@@ -81,7 +81,7 @@ All **No**. Attendance hours are volunteer hours, not health data.
 
 | Type | Collected | Shared | Optional? | Purposes | Why (code) |
 |---|---|---|---|---|---|
-| Photos | **Yes** | No | Optional | App functionality | Profile photo: `expo-image-picker` (`mobile/src/lib/photo.ts`), `PUT /api/me/photo`, stored in `user_photos` with metadata removed (`server/src/photo.ts`). Shown only to the owner, admins and the same gender (`rules.canSeePhoto`). |
+| Photos | **Yes** | No | Optional | App functionality | Profile photo: `expo-image-picker` (`mobile/src/lib/photo.ts`), `PUT /api/me/photo`, stored in `user_photos` with metadata removed (`server/src/photo.ts`). Shown to everyone signed in (`rules.canSeePhoto`). |
 | Videos | **No** | | | | |
 
 ### Audio files
