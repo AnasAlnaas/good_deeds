@@ -11,6 +11,7 @@ import { Txt } from '@/components/Txt';
 import { Badge, Card, QueryState } from '@/components/ui';
 import { useEvent } from '@/data/queries';
 import { fmt } from '@/i18n/format';
+import { goBack } from '@/lib/goBack';
 import { useApp } from '@/state/app';
 import { useAction } from '@/state/useAction';
 import { colors, radius, space } from '@/theme/tokens';
@@ -62,13 +63,13 @@ export default function LearnScreen() {
     footer = onTheWay ? (
       <Button icon="shield-checkmark-outline" label={s.learn.toTerms} onPress={() => router.replace(`/event/${id}/terms`)} />
     ) : (
-      <Button label={s.back} onPress={() => router.back()} />
+      <Button label={s.next.toEvent} onPress={() => goBack(`/event/${id}`)} />
     );
   } else if (current.learned_at || preview) {
     footer = more ? (
       <Button variant="secondary" icon="arrow-forward" label={s.learn.next} onPress={() => setChosen(more.id)} />
     ) : (
-      <Button label={s.back} onPress={() => (onTheWay && !preview ? setChosen(DONE) : router.back())} />
+      <Button label={onTheWay && !preview ? s.back : s.next.toEvent} onPress={() => (onTheWay && !preview ? setChosen(DONE) : goBack(`/event/${id}`))} />
     );
   } else {
     const canLearn = pledgedId === current.id;

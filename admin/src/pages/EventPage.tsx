@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link, useParams } from 'react-router';
+import { Link, useLocation, useParams } from 'react-router';
 
 import { classOfEvent, EVENT_CLASSES } from '../../../shared/classes';
 import { api } from '../api';
@@ -11,10 +11,25 @@ import { Badge, Button, ErrorNote, Notice, PageHeader, QueryState, StatusBadge, 
 
 export function EventPage() {
   const { id = '' } = useParams();
+  const location = useLocation();
   const query = useQuery({ queryKey: ['event', id], queryFn: () => api.event(id) });
   const { run, busy, error } = useAction();
 
-  if (!query.data) return <QueryState query={query} />;
+  // Back to the list as the admin left it (its filter comes with the row they opened), or all events.
+  const from = (location.state as { list?: string } | null)?.list ?? '';
+  const backToList = (
+    <Link className="btn btn-quiet btn-small" to={`/events${from}`}>
+      {t.events.backToList}
+    </Link>
+  );
+
+  if (!query.data)
+    return (
+      <>
+        {backToList}
+        <QueryState query={query} />
+      </>
+    );
   const d = query.data;
   const e = d.event;
   const status = d.effective_status;
@@ -41,6 +56,7 @@ export function EventPage() {
 
   return (
     <>
+      <div>{backToList}</div>
       <PageHeader
         title={e.title}
         actions={
@@ -195,9 +211,20 @@ export function EventPage() {
                   <td className="num">{a?.hours != null ? num(a.hours) : t.none}</td>
                   <td>
                     {a?.ended_at ? (
-                      <Badge tone={a.participant_status === 'confirmed' ? 'success' : a.participant_status === 'disputed' ? 'warning' : 'neutral'}>
-                        {t.participant[a.participant_status]}
-                      </Badge>
+                      <>
+                        <Badge tone={a.participant_status === 'confirmed' ? 'success' : a.participant_status === 'disputed' ? 'warning' : 'neutral'}>
+                          {t.participant[a.participant_status]}
+                        </Badge>
+                        {/* A disputed record is decided on the disputes page. */}
+                        {a.participant_status === 'disputed' && (
+                          <>
+                            {' '}
+                            <Link className="small" to="/disputes">
+                              {t.event.toDispute}
+                            </Link>
+                          </>
+                        )}
+                      </>
                     ) : (
                       t.none
                     )}

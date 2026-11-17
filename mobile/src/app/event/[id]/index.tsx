@@ -141,8 +141,25 @@ export default function EventDetail() {
     />
   );
 
+  // Nothing more to do on this event: back to the list (the one it came from, if it did).
+  const otherEvents = (
+    <Button variant="quiet" icon="calendar-outline" label={s.next.otherEvents} onPress={() => router.dismissTo('/events')} />
+  );
+  // Hours the supervisor recorded, waiting for this person to confirm or dispute them.
+  const hoursToReview = attendance?.ended_at && attendance.participant_status === 'pending' ? attendance : null;
+
   let footer;
-  if (status === 'draft') {
+  if (status === 'cancelled') {
+    // Checked before "joined" and "supervisor": a cancelled event asks nothing of anyone.
+    footer = (
+      <>
+        <Txt color={colors.inkMuted} align="center">
+          {s.next.eventCancelled}
+        </Txt>
+        {otherEvents}
+      </>
+    );
+  } else if (status === 'draft') {
     // Only its creator sees an event that is not published, and may change it until an admin decides.
     footer = (
       <>
@@ -181,16 +198,30 @@ export default function EventDetail() {
     footer = (
       <>
         <Badge label={s.event.joined} color={colors.success} icon="checkmark-circle" />
+        {hoursToReview && (
+          <Button icon="checkmark-circle-outline" label={s.next.reviewHours} onPress={() => router.push(`/attendance/${hoursToReview.id}`)} />
+        )}
         {open && !attendance && <Button variant="danger" label={s.event.cancelJoin} disabled={busy} onPress={cancel} />}
+        {status === 'finished' && !hoursToReview && otherEvents}
       </>
     );
   } else if (!open) {
-    footer = <Txt color={colors.inkMuted} align="center">{s.event.finished}</Txt>;
+    footer = (
+      <>
+        <Txt color={colors.inkMuted} align="center">
+          {s.event.finished}
+        </Txt>
+        {otherEvents}
+      </>
+    );
   } else if (!forMe) {
     footer = (
-      <Txt color={colors.inkMuted} align="center">
-        {fmt(s.event.notForYou, { category: s.category[event.gender_category] })}
-      </Txt>
+      <>
+        <Txt color={colors.inkMuted} align="center">
+          {fmt(s.event.notForYou, { category: s.category[event.gender_category] })}
+        </Txt>
+        {otherEvents}
+      </>
     );
   } else if (full) {
     footer = waitlist.mine ? (

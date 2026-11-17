@@ -6,12 +6,13 @@ import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutDown } from 'react-native
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/Avatar';
+import { Button } from '@/components/Button';
 import { EventCard } from '@/components/EventCard';
 import { NAV_GAP, NAV_HEIGHT } from '@/components/NavIsland';
 import { OsmMap, type MapPin } from '@/components/OsmMap';
 import { Txt } from '@/components/Txt';
 import { ClassFilter, IconButton, OfflineBanner, QueryState } from '@/components/ui';
-import { useEvents, useKeepOwnDataReady, usePrefetchEvent } from '@/data/queries';
+import { useEvents, useKeepOwnDataReady, useMeSummary, usePrefetchEvent } from '@/data/queries';
 import { fmt } from '@/i18n/format';
 import { useApp } from '@/state/app';
 import { useNotificationTaps } from '@/state/useNotificationTaps';
@@ -29,6 +30,7 @@ export default function MapScreen() {
   useNotificationTaps();
   const insets = useSafeAreaInsets();
   const query = useEvents();
+  const canPropose = useMeSummary().data?.can_create_events ?? false;
   const [filter, setFilter] = useState<EventClassId | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [recenter, setRecenter] = useState(0);
@@ -132,6 +134,12 @@ export default function MapScreen() {
             <Txt align="center" color={colors.inkMuted}>
               {filter ? s.map.emptyClass : s.map.empty}
             </Txt>
+            {/* Nothing of this kind: back to every kind. Nothing at all: those who may, propose one. */}
+            {filter ? (
+              <Button variant="secondary" icon="apps-outline" label={s.next.showAll} onPress={() => setFilter(null)} />
+            ) : (
+              canPropose && <Button variant="secondary" icon="add-circle-outline" label={s.map.propose} onPress={() => router.push('/event/new')} />
+            )}
           </Animated.View>
         ) : null}
 
@@ -159,7 +167,7 @@ const styles = StyleSheet.create({
   filter: { flexDirection: 'row' },
   side: { alignItems: 'flex-end', paddingHorizontal: space.md },
   bottom: { position: 'absolute', start: space.md, end: space.md, gap: space.sm },
-  note: { backgroundColor: colors.surface, borderRadius: radius.card, padding: space.md },
+  note: { backgroundColor: colors.surface, borderRadius: radius.card, padding: space.md, gap: space.sm },
   online: {
     flexDirection: 'row',
     alignItems: 'center',

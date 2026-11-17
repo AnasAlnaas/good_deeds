@@ -22,6 +22,10 @@ export const API_URL = resolveApiUrl();
 // The published privacy policy (docs/privacy-*.md). Settings links to it; unset = no link.
 export const PRIVACY_URL = process.env.EXPO_PUBLIC_PRIVACY_URL || null;
 
+// The association's admins' email: Settings and the "no email" reset step offer
+// to write to it, so nobody is left with "ask the admins" and no way to. Unset = no button.
+export const CONTACT_EMAIL = process.env.EXPO_PUBLIC_CONTACT_EMAIL?.trim() || null;
+
 // The offline demo (sample accounts, data only on the phone) is for
 // development and for builds with no server. A build for real people, with a
 // server, offers only the real sign-in, so nobody tests on sample data by

@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -10,6 +10,7 @@ import { Txt } from '@/components/Txt';
 import { QueryState } from '@/components/ui';
 import { useEvent } from '@/data/queries';
 import { fmt } from '@/i18n/format';
+import { goBack } from '@/lib/goBack';
 import { useApp } from '@/state/app';
 import { useAction } from '@/state/useAction';
 import { colors, radius, space } from '@/theme/tokens';
@@ -42,7 +43,7 @@ export default function TermsScreen() {
 
   if (joined) {
     return (
-      <Screen background={colors.surfaceAlt} footer={<Button label={s.back} onPress={() => router.back()} />}>
+      <Screen background={colors.surfaceAlt} footer={<Button label={s.next.toEvent} onPress={() => goBack(`/event/${id}`)} />}>
         <View style={styles.done}>
           <JoinedMotion />
           <Txt variant="screenTitle" align="center">

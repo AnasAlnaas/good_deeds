@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Link } from 'react-router';
 
 import type { DisputeRow, ResolveDisputeBody } from '../../../shared/admin-api';
 import { api } from '../api';
@@ -47,7 +48,9 @@ function Dispute({ row, onDone }: { row: DisputeRow; onDone: () => void }) {
           <span className="small muted ltr">{ltr(user.phone)}</span>
         </div>
         <div className="small muted" style={{ textAlign: 'end' }}>
-          <div>{event.title}</div>
+          <div>
+            <Link to={`/events/${event.id}`}>{event.title}</Link>
+          </div>
           <div>{range(event.starts_at, event.ends_at)}</div>
         </div>
       </div>

@@ -50,7 +50,14 @@ export default function ActivityScreen() {
         </Card>
       </View>
 
-      {mine.length === 0 && <EmptyState icon="leaf-outline" text={s.activity.empty} />}
+      {mine.length === 0 && (
+        <EmptyState
+          icon="leaf-outline"
+          text={s.activity.empty}
+          // Activity and the list are both main screens: one replaces the other, as on the nav island.
+          action={{ label: s.next.findEvent, icon: 'search-outline', onPress: () => router.replace('/events') }}
+        />
+      )}
 
       {working.map(({ attendance: a, event: e }) => (
         <Card key={a.id} onPress={() => router.push(`/event/${e.id}`)}>

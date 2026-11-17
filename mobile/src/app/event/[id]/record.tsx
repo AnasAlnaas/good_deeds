@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { onlineManager } from '@tanstack/react-query';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
@@ -14,6 +14,7 @@ import { queueRecord, rosterWithQueued, useOutbox } from '@/data/outbox';
 import { useRoster } from '@/data/queries';
 import { END_GRACE_MINUTES } from '@/demo/placeholders';
 import { fmt, time } from '@/i18n/format';
+import { goBack } from '@/lib/goBack';
 import { useApp } from '@/state/app';
 import { useAction } from '@/state/useAction';
 import { colors, space, touch } from '@/theme/tokens';
@@ -41,9 +42,9 @@ export default function RecordScreen() {
 
   useEffect(() => {
     if (!done) return;
-    const timer = setTimeout(() => router.back(), 900);
+    const timer = setTimeout(() => goBack(`/event/${id}/roster`), 900);
     return () => clearTimeout(timer);
-  }, [done]);
+  }, [done, id]);
 
   if (done) {
     return (

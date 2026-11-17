@@ -7,6 +7,7 @@ import { Chip, Row, SectionTitle } from '@/components/ui';
 import { PRIVACY_URL } from '@/data/config';
 import { queuedCount } from '@/data/outbox';
 import { fmt } from '@/i18n/format';
+import { canContact, contactAssociation } from '@/lib/contact';
 import * as dialog from '@/lib/dialog';
 import { useApp } from '@/state/app';
 import { useAction } from '@/state/useAction';
@@ -85,6 +86,13 @@ export default function SettingsScreen() {
             label={s.settings.privacyPolicy}
             onPress={() => WebBrowser.openBrowserAsync(PRIVACY_URL)}
           />
+        </>
+      )}
+
+      {canContact && (
+        <>
+          <SectionTitle>{s.next.help}</SectionTitle>
+          <Button variant="secondary" icon="mail-outline" label={s.next.contact} onPress={() => contactAssociation(s, s.next.contactHelpSubject)} />
         </>
       )}
 
