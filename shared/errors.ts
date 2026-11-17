@@ -49,7 +49,15 @@ export type ApiErrorCode =
   | 'message_required'
   | 'too_many_notices'
   | 'not_your_notice'
-  | 'sent_too_late';
+  | 'sent_too_late'
+  | 'invalid_institution'
+  | 'institution_exists'
+  | 'too_many_institution_requests'
+  | 'too_many_institutions'
+  | 'already_member'
+  | 'join_request_pending'
+  | 'not_representative'
+  | 'representative_cannot_leave';
 
 export class ApiError extends Error {
   readonly code: ApiErrorCode;
@@ -77,7 +85,11 @@ export type AdminErrorCode =
   | 'hours_out_of_range'
   | 'already_handled'
   | 'not_appealed'
-  | 'already_withdrawn';
+  | 'already_withdrawn'
+  | 'institution_not_waiting'
+  | 'institution_not_approved'
+  | 'no_such_user'
+  | 'already_representative';
 
 export class AdminError extends Error {
   readonly code: AdminErrorCode;

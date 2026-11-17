@@ -1,0 +1,203 @@
+// Institutions (جمعية، مؤسسة، مدرسة…), as members see them in the app
+// (owner's decisions, 2026-11-17; shared/types.ts Institution): asking for a
+// new one (an admin approves it in the panel, routes/admin.ts), asking to
+// belong to one, leaving it, and its representatives confirming who belongs.
+// Every change runs in a transaction: the rows are read (and locked), the
+// shared rule decides, and the result is written, or nothing is.
+
+import { and, asc, count, eq, isNull, ne } from 'drizzle-orm';
+import { Hono } from 'hono';
+import { z } from 'zod';
+
+import type { InstitutionMembersResponse, InstitutionsResponse, MyInstitution } from '../../../shared/api';
+import { ApiError } from '../../../shared/errors';
+import * as rules from '../../../shared/rules';
+import type { InstitutionKind, User } from '../../../shared/types';
+import { requireUser } from '../auth';
+import type { Database } from '../db/client';
+import { findInstitution, membershipOf, membershipsCount, newId, publicUser, shownTo } from '../db/queries';
+import * as s from '../db/schema';
+import { type AppEnv, readBody } from '../http';
+import { notifyJoinRequest, notifyMembershipConfirmed } from '../notify';
+
+// The name and kind are the rule's to check (rules.assertCanRequestInstitution), as in the offline demo.
+const requestBody = z.object({ name: z.string().max(rules.INSTITUTION_NAME_MAX + 50), kind: z.string().max(40) });
+
+/** The person's institutions, as GET /api/institutions lists them. */
+async function myInstitutions(db: Database, userId: string): Promise<MyInstitution[]> {
+  const rows = await db
+    .select({ m: s.institution_members, i: s.institutions })
+    .from(s.institution_members)
+    .innerJoin(s.institutions, eq(s.institutions.id, s.institution_members.institution_id))
+    .where(eq(s.institution_members.user_id, userId))
+    .orderBy(asc(s.institutions.name));
+  const out: MyInstitution[] = [];
+  for (const { m, i } of rows) {
+    let pending = 0;
+    if (rules.isRepresentative(m)) {
+      const [row] = await db
+        .select({ n: count() })
+        .from(s.institution_members)
+        .where(and(eq(s.institution_members.institution_id, i.id), eq(s.institution_members.status, 'pending')));
+      pending = row.n;
+    }
+    out.push({
+      institution: { id: i.id, name: i.name, kind: i.kind, status: i.status, decision_note: i.decision_note },
+      role: m.role,
+      status: m.status,
+      pending_members: pending,
+    });
+  }
+  return out;
+}
+
+async function myInstitution(db: Database, userId: string, institutionId: string) {
+  return (await myInstitutions(db, userId)).find((x) => x.institution.id === institutionId)!;
+}
+
+/** Who belongs to the institution, for its representatives (and admins). */
+async function membersOf(db: Database, viewer: User, institutionId: string): Promise<InstitutionMembersResponse> {
+  const institution = (await findInstitution(db, institutionId))!;
+  const rows = await db
+    .select({ m: s.institution_members, ...publicUser })
+    .from(s.institution_members)
+    .innerJoin(s.users, eq(s.users.id, s.institution_members.user_id))
+    .where(and(eq(s.institution_members.institution_id, institutionId), isNull(s.users.deleted_at)));
+  const order = (r: (typeof rows)[number]) => (r.m.status === 'pending' ? 0 : 1);
+  rows.sort((a, b) => order(a) - order(b) || (order(a) === 0 ? a.m.created_at.getTime() - b.m.created_at.getTime() : a.full_name.localeCompare(b.full_name, 'ar')));
+  return {
+    institution: { id: institution.id, name: institution.name, kind: institution.kind, status: institution.status },
+    members: rows.map((r) => ({
+      user: shownTo(viewer, { id: r.id, full_name: r.full_name, avatar_url: r.avatar_url, gender: r.gender }),
+      role: r.m.role,
+      status: r.m.status,
+      created_at: r.m.created_at.toISOString(),
+    })),
+  };
+}
+
+/** Only its representatives (and admins) see who belongs to it; anyone else is told it is not there. */
+async function assertMayManage(db: Database, me: User, institutionId: string) {
+  const institution = await findInstitution(db, institutionId);
+  if (!institution) throw new ApiError('not_found');
+  if (me.role !== 'admin' && !rules.isRepresentative(await membershipOf(db, institutionId, me.id))) throw new ApiError('not_representative');
+}
+
+export const institutionRoutes = new Hono<AppEnv>()
+  .use(requireUser)
+
+  .get('/', async (c) => {
+    const { db } = c.var.deps;
+    const me = c.var.user;
+    const directory = await db
+      .select({ id: s.institutions.id, name: s.institutions.name, kind: s.institutions.kind })
+      .from(s.institutions)
+      .where(eq(s.institutions.status, 'approved'))
+      .orderBy(asc(s.institutions.name));
+    const [waiting] = await db
+      .select({ n: count() })
+      .from(s.institutions)
+      .where(and(eq(s.institutions.requested_by, me.id), eq(s.institutions.status, 'pending')));
+    return c.json<InstitutionsResponse>({
+      mine: await myInstitutions(db, me.id),
+      directory,
+      waiting_requests: waiting.n,
+      max_waiting_requests: rules.MAX_INSTITUTION_REQUESTS,
+    });
+  })
+
+  // Asking for a new institution: it waits for an admin, and whoever asked is its first representative.
+  .post('/', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const body = await readBody(c, requestBody);
+    const name = rules.cleanInstitutionName(body.name);
+    const t = new Date(now());
+    const id = newId();
+    await db.transaction(async (tx) => {
+      // Locking the person makes two requests sent at once count each other.
+      await tx.select({ id: s.users.id }).from(s.users).where(eq(s.users.id, me.id)).for('update');
+      const existing = await tx.select({ name: s.institutions.name, status: s.institutions.status }).from(s.institutions).where(ne(s.institutions.status, 'rejected'));
+      const [waiting] = await tx
+        .select({ n: count() })
+        .from(s.institutions)
+        .where(and(eq(s.institutions.requested_by, me.id), eq(s.institutions.status, 'pending')));
+      rules.assertCanRequestInstitution({ name, kind: body.kind, existing, waitingCount: waiting.n, membershipsCount: await membershipsCount(tx, me.id) });
+      await tx.insert(s.institutions).values({ id, name: name!, kind: body.kind as InstitutionKind, status: 'pending', requested_by: me.id, created_at: t });
+      await tx.insert(s.institution_members).values({ institution_id: id, user_id: me.id, role: 'representative', status: 'confirmed', created_at: t, confirmed_at: t });
+    });
+    return c.json<MyInstitution>(await myInstitution(db, me.id, id), 201);
+  })
+
+  // Asking to belong: one of its representatives confirms it.
+  .post('/:id/join', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    const t = new Date(now());
+    await db.transaction(async (tx) => {
+      await tx.select({ id: s.users.id }).from(s.users).where(eq(s.users.id, me.id)).for('update');
+      rules.assertCanAskToJoin({
+        institution: await findInstitution(tx, id),
+        membership: await membershipOf(tx, id, me.id),
+        membershipsCount: await membershipsCount(tx, me.id),
+      });
+      await tx.insert(s.institution_members).values({ institution_id: id, user_id: me.id, role: 'member', status: 'pending', created_at: t });
+    });
+    notifyJoinRequest(c.var.deps, id, me.id);
+    return c.json<MyInstitution>(await myInstitution(db, me.id, id), 201);
+  })
+
+  // Leaving it, or taking a request back.
+  .delete('/:id/membership', async (c) => {
+    const { db } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    await db.transaction(async (tx) => {
+      rules.assertCanLeaveInstitution(await membershipOf(tx, id, me.id, { lock: true }), await findInstitution(tx, id));
+      await tx.delete(s.institution_members).where(and(eq(s.institution_members.institution_id, id), eq(s.institution_members.user_id, me.id)));
+    });
+    return c.body(null, 204);
+  })
+
+  // ---------- its representatives ----------
+
+  .get('/:id/members', async (c) => {
+    const { db } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    await assertMayManage(db, me, id);
+    return c.json<InstitutionMembersResponse>(await membersOf(db, me, id));
+  })
+
+  .post('/:id/members/:userId/confirm', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    const userId = c.req.param('userId');
+    const confirmed = await db.transaction(async (tx) => {
+      const member = await membershipOf(tx, id, userId, { lock: true });
+      rules.assertCanManageMember({ user: me, mine: await membershipOf(tx, id, me.id), member });
+      if (member!.status === 'confirmed') return false;
+      await tx
+        .update(s.institution_members)
+        .set({ status: 'confirmed', confirmed_by: me.id, confirmed_at: new Date(now()) })
+        .where(and(eq(s.institution_members.institution_id, id), eq(s.institution_members.user_id, userId)));
+      return true;
+    });
+    if (confirmed) notifyMembershipConfirmed(c.var.deps, id, userId);
+    return c.json<InstitutionMembersResponse>(await membersOf(db, me, id));
+  })
+
+  // Turning a request down, or taking a member off.
+  .delete('/:id/members/:userId', async (c) => {
+    const { db } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    const userId = c.req.param('userId');
+    await db.transaction(async (tx) => {
+      rules.assertCanManageMember({ user: me, mine: await membershipOf(tx, id, me.id), member: await membershipOf(tx, id, userId, { lock: true }) });
+      await tx.delete(s.institution_members).where(and(eq(s.institution_members.institution_id, id), eq(s.institution_members.user_id, userId)));
+    });
+    return c.json<InstitutionMembersResponse>(await membersOf(db, me, id));
+  });

@@ -101,6 +101,24 @@ The app follows the planning notes (`DESIGN.md`, `Screens.md`, `Data_Model.md`,
   everyone who joined is notified once, and again if the start moves.
   Attendance, points, capacity and the men/women rule work as for any event:
   a supervisor records who attended.
+- **Institutions** (جمعية، مؤسسة، مدرسة، جامعة، مسجد، شركة، فريق تطوعي; owner's
+  decisions, 2026-11-17). Profile → "مؤسساتك":
+  - A member asks to add one (its name and kind); an admin approves or turns it
+    down in the panel (المؤسسات). Whoever asked is its first representative;
+    only admins add or remove others (by phone number).
+  - Its representatives propose events in its name (the form asks "باسم من
+    تقترحها؟"), at any level; in their own name the level rule stays. Its first
+    3 approved events wait for an admin (`rules.INSTITUTION_REVIEWED_EVENTS`,
+    counted per institution); after that its events are published at once.
+    The proposer supervises, as for any proposal. Events show "تنظّمها: …"
+    instead of the association.
+  - A volunteer asks to belong to one or several; a representative confirms
+    each, and can take a member off.
+  - Hours: the volunteer's hours record names each event's institution; the
+    panel's hours report filters by organiser (an institution, or the
+    association's own events) and lists the institutions each person belongs to.
+  - The demo has one: فريق شباب السراج التطوعي, represented by خالد, with أحمد
+    in it and a request waiting. It has no admin, so new requests stay waiting.
 - **Reports (بلاغ) and warnings (إنذار)**, kept apart as the master file decides:
   a member reports, a supervisor warns.
   - *Report*: from the event page ("أبلغ عن مشكلة") or Profile → "بلاغاتك".

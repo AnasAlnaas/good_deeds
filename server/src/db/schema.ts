@@ -46,10 +46,18 @@ export const adminAction = pgEnum('admin_action', [
   'uphold_warning',
   'withdraw_warning',
   'issue_reset_code',
+  'approve_institution',
+  'reject_institution',
+  'add_representative',
+  'remove_representative',
 ]);
 export const reportCategory = pgEnum('report_category', ['behaviour', 'safety', 'event', 'app', 'other']);
 export const reportStatus = pgEnum('report_status', ['open', 'handled']);
 export const warningStatus = pgEnum('warning_status', ['active', 'appealed', 'upheld', 'withdrawn']);
+export const institutionKind = pgEnum('institution_kind', ['association', 'foundation', 'school', 'university', 'mosque', 'company', 'team', 'other']);
+export const institutionStatus = pgEnum('institution_status', ['pending', 'approved', 'rejected']);
+export const institutionRole = pgEnum('institution_role', ['representative', 'member']);
+export const membershipStatus = pgEnum('membership_status', ['pending', 'confirmed']);
 
 const at = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 const points = (name: string) => numeric(name, { precision: 10, scale: 2, mode: 'number' });
@@ -94,6 +102,41 @@ export const branches = pgTable('branches', {
   is_active: boolean('is_active').notNull().default(true),
 });
 
+// Owner's decisions (2026-11-17): institutions (جمعية، مؤسسة، مدرسة…) whose
+// representatives propose events in their name, and volunteers who belong to
+// them (shared/types.ts Institution). A member asks for one; an admin approves it.
+export const institutions = pgTable(
+  'institutions',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    kind: institutionKind('kind').notNull(),
+    status: institutionStatus('status').notNull().default('pending'),
+    requested_by: text('requested_by').notNull().references(() => users.id),
+    created_at: at('created_at').notNull(),
+    decided_by: text('decided_by').references(() => users.id),
+    decided_at: at('decided_at'),
+    decision_note: text('decision_note'),
+  },
+  (t) => [index('institutions_status').on(t.status, t.name)],
+);
+
+// Who represents or belongs to which institution. A representative is always
+// confirmed; a member's request waits for a representative (rules.assertCanManageMember).
+export const institution_members = pgTable(
+  'institution_members',
+  {
+    institution_id: text('institution_id').notNull().references(() => institutions.id),
+    user_id: text('user_id').notNull().references(() => users.id),
+    role: institutionRole('role').notNull(),
+    status: membershipStatus('status').notNull(),
+    created_at: at('created_at').notNull(),
+    confirmed_by: text('confirmed_by').references(() => users.id),
+    confirmed_at: at('confirmed_at'),
+  },
+  (t) => [primaryKey({ columns: [t.institution_id, t.user_id] }), index('institution_members_user').on(t.user_id)],
+);
+
 export const events = pgTable(
   'events',
   {
@@ -120,8 +163,11 @@ export const events = pgTable(
     terms_locked_at: at('terms_locked_at'),
     created_by: text('created_by').notNull().references(() => users.id),
     created_at: at('created_at').notNull().defaultNow(),
+    /** In this institution's name; null = the association's own. */
+    institution_id: text('institution_id').references(() => institutions.id),
   },
   (t) => [
+    index('events_institution').on(t.institution_id),
     check('events_ends_after_start', sql`${t.ends_at} > ${t.starts_at}`),
     check('events_capacity_positive', sql`${t.capacity} > 0`),
     check(

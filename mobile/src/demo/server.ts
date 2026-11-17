@@ -4,7 +4,22 @@
 // The screens never compute hours or points themselves.
 
 import type { EventProposal, ProfileEdit, ReportBody } from '@/data/api';
-import type { AppEvent, Attendance, Db, EventLesson, EventNotice, EventStatus, EventTerm, NoticeKind, NoticeReactionKind, Registration, Report, User, Warning } from '@/data/types';
+import type {
+  AppEvent,
+  Attendance,
+  Db,
+  EventLesson,
+  EventNotice,
+  EventStatus,
+  EventTerm,
+  InstitutionKind,
+  NoticeKind,
+  NoticeReactionKind,
+  Registration,
+  Report,
+  User,
+  Warning,
+} from '@/data/types';
 import { NOTICE_REACTIONS } from '@/data/types';
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
@@ -105,6 +120,38 @@ export function canCreateEvents(db: Db, user: User) {
   return rules.canCreateEvents(user, levelFor(db, totalPoints(db, user.id)));
 }
 
+/** Who may open the event form: by level or role, or as a representative of an approved institution (rules.mayProposeEvents). */
+export function mayProposeEvents(db: Db, user: User) {
+  return rules.mayProposeEvents(user, levelFor(db, totalPoints(db, user.id)), representedInstitutions(db, user.id).length > 0);
+}
+
+// ---------- institutions (reads) ----------
+
+export function institutionOf(db: Db, id: string | null | undefined) {
+  return id ? db.institutions.find((i) => i.id === id) : undefined;
+}
+
+export function membershipOf(db: Db, institutionId: string, userId: string) {
+  return db.institution_members.find((m) => m.institution_id === institutionId && m.user_id === userId);
+}
+
+/** The approved institutions a person represents. */
+export function representedInstitutions(db: Db, userId: string) {
+  return db.institutions.filter((i) => i.status === 'approved' && rules.isRepresentative(membershipOf(db, i.id, userId)));
+}
+
+/** Requests to belong waiting for this representative. */
+export function requestsForRepresentative(db: Db, userId: string) {
+  const mine = new Set(representedInstitutions(db, userId).map((i) => i.id));
+  return db.institution_members.filter((m) => mine.has(m.institution_id) && m.status === 'pending').length;
+}
+
+/** The institution an event is to be in the name of, and the proposer's place in it (rules.assertCanProposeEvent). */
+function institutionFor(db: Db, userId: string, institutionId: string | null | undefined) {
+  if (!institutionId) return null;
+  return { id: institutionId, institution: institutionOf(db, institutionId), membership: membershipOf(db, institutionId, userId) };
+}
+
 export function confirmedHours(db: Db, userId: string) {
   return rules.round2(
     db.attendance
@@ -144,12 +191,14 @@ export function tick(db: Db, now: number): Db {
  */
 export function proposeEvent(db: Db, userId: string, input: EventProposal, now: number): { db: Db; event: AppEvent } {
   const user = getUser(db, userId)!;
+  const institution = institutionFor(db, userId, input.institution_id);
   rules.assertCanProposeEvent({
     user,
     level: levelFor(db, totalPoints(db, userId)),
     event: input,
     waitingCount: waitingProposals(db, userId),
     now,
+    institution,
   });
   const next = clone(db);
   const at = new Date(now).toISOString();
@@ -165,10 +214,11 @@ export function proposeEvent(db: Db, userId: string, input: EventProposal, now: 
     capacity: input.capacity,
     gender_category: input.gender_category,
     base_points: basePointsOf(input.subtype),
-    status: rules.proposalStatus(user),
+    status: rules.proposalStatus(user, institution ? rules.institutionApprovedEvents(db.events, institution.id) : null),
     terms_locked_at: null,
     created_by: userId,
     created_at: at,
+    institution_id: institution?.id ?? null,
   };
   next.events.push(event);
   next.event_organizers.push({ event_id: event.id, user_id: userId, added_by: null });
@@ -217,7 +267,7 @@ const UNUSED_IMAGE_MS = 2 * 24 * 60 * 60 * 1000;
  */
 export function addLessonImage(db: Db, userId: string, image: { data_url: string; width: number; height: number }, now: number) {
   const user = getUser(db, userId)!;
-  if (!rules.canCreateEvents(user, levelFor(db, totalPoints(db, userId)))) throw new ApiError('cannot_create_events');
+  if (!mayProposeEvents(db, user)) throw new ApiError('cannot_create_events');
   const next = clone(db);
   const shown = new Set(next.event_lessons.map((x) => x.image_id));
   next.lesson_images = next.lesson_images.filter((x) => shown.has(x.id) || rules.toMs(x.created_at) > now - UNUSED_IMAGE_MS);
@@ -254,7 +304,9 @@ function writeTerms(next: Db, eventId: string, input: EventProposal, at: string)
  */
 export function editProposal(db: Db, userId: string, eventId: string, input: EventProposal, now: number): Db {
   const user = getUser(db, userId)!;
-  rules.assertCanChangeProposal(user, db.events.find((e) => e.id === eventId));
+  const row = db.events.find((e) => e.id === eventId);
+  rules.assertCanChangeProposal(user, row);
+  const institution = institutionFor(db, userId, input.institution_id === undefined ? row.institution_id : input.institution_id);
   rules.assertCanProposeEvent({
     user,
     level: levelFor(db, totalPoints(db, userId)),
@@ -262,6 +314,7 @@ export function editProposal(db: Db, userId: string, eventId: string, input: Eve
     // This draft is one of those waiting; editing it adds none.
     waitingCount: waitingProposals(db, userId) - 1,
     now,
+    institution,
   });
   const next = clone(db);
   Object.assign(next.events.find((e) => e.id === eventId)!, {
@@ -274,6 +327,7 @@ export function editProposal(db: Db, userId: string, eventId: string, input: Eve
     capacity: input.capacity,
     gender_category: input.gender_category,
     base_points: basePointsOf(input.subtype),
+    institution_id: institution?.id ?? null,
   });
   writeTerms(next, eventId, input, new Date(now).toISOString());
   writeLessons(next, eventId, input, new Date(now).toISOString());
@@ -759,5 +813,87 @@ export function deleteAccount(db: Db, userId: string, now: number): Db {
   const u = next.users.find((x) => x.id === userId);
   if (u) Object.assign(u, rules.erasedProfile(), { deleted_at: new Date(now).toISOString() });
   for (const r of next.registrations) if (r.user_id === userId) r.status = 'cancelled';
+  next.institution_members = next.institution_members.filter((m) => m.user_id !== userId);
+  return next;
+}
+
+// ---------- institutions (changes; the server's routes/institutions.ts) ----------
+
+/** Asking for a new institution. The demo has no admin, so it stays waiting. */
+export function requestInstitution(db: Db, userId: string, body: { name: string; kind: string }, now: number) {
+  const name = rules.cleanInstitutionName(body.name);
+  rules.assertCanRequestInstitution({
+    name,
+    kind: body.kind,
+    existing: db.institutions,
+    waitingCount: db.institutions.filter((i) => i.requested_by === userId && i.status === 'pending').length,
+    membershipsCount: db.institution_members.filter((m) => m.user_id === userId).length,
+  });
+  const next = clone(db);
+  const at = new Date(now).toISOString();
+  const id = newId('inst');
+  next.institutions.push({
+    id,
+    name: name!,
+    kind: body.kind as InstitutionKind,
+    status: 'pending',
+    requested_by: userId,
+    created_at: at,
+    decided_by: null,
+    decided_at: null,
+    decision_note: null,
+  });
+  next.institution_members.push({ institution_id: id, user_id: userId, role: 'representative', status: 'confirmed', created_at: at, confirmed_by: null, confirmed_at: at });
+  return { db: next, id };
+}
+
+export function askToJoinInstitution(db: Db, userId: string, institutionId: string, now: number): Db {
+  rules.assertCanAskToJoin({
+    institution: institutionOf(db, institutionId),
+    membership: membershipOf(db, institutionId, userId),
+    membershipsCount: db.institution_members.filter((m) => m.user_id === userId).length,
+  });
+  const next = clone(db);
+  next.institution_members.push({
+    institution_id: institutionId,
+    user_id: userId,
+    role: 'member',
+    status: 'pending',
+    created_at: new Date(now).toISOString(),
+    confirmed_by: null,
+    confirmed_at: null,
+  });
+  return next;
+}
+
+export function leaveInstitution(db: Db, userId: string, institutionId: string): Db {
+  rules.assertCanLeaveInstitution(membershipOf(db, institutionId, userId), institutionOf(db, institutionId));
+  const next = clone(db);
+  next.institution_members = next.institution_members.filter((m) => !(m.institution_id === institutionId && m.user_id === userId));
+  return next;
+}
+
+/** Only its representatives (and admins) manage who belongs to it. */
+export function assertMayManageInstitution(db: Db, user: User, institutionId: string) {
+  if (!institutionOf(db, institutionId)) throw new ApiError('not_found');
+  if (user.role !== 'admin' && !rules.isRepresentative(membershipOf(db, institutionId, user.id))) throw new ApiError('not_representative');
+}
+
+export function confirmMember(db: Db, userId: string, institutionId: string, memberId: string, now: number): Db {
+  const user = getUser(db, userId)!;
+  const member = membershipOf(db, institutionId, memberId);
+  rules.assertCanManageMember({ user, mine: membershipOf(db, institutionId, userId), member });
+  if (member!.status === 'confirmed') return db;
+  const next = clone(db);
+  Object.assign(membershipOf(next, institutionId, memberId)!, { status: 'confirmed', confirmed_by: userId, confirmed_at: new Date(now).toISOString() });
+  return next;
+}
+
+/** Turning a request down, or taking a member off. */
+export function removeMember(db: Db, userId: string, institutionId: string, memberId: string): Db {
+  const user = getUser(db, userId)!;
+  rules.assertCanManageMember({ user, mine: membershipOf(db, institutionId, userId), member: membershipOf(db, institutionId, memberId) });
+  const next = clone(db);
+  next.institution_members = next.institution_members.filter((m) => !(m.institution_id === institutionId && m.user_id === memberId));
   return next;
 }

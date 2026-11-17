@@ -16,7 +16,10 @@ import type {
   MyLesson,
   EventProposal,
   EventSummary,
+  InstitutionMembersResponse,
+  InstitutionsResponse,
   MeResponse,
+  MyInstitution,
   MyReport,
   MyWarning,
   NoticeResponse,
@@ -28,6 +31,7 @@ import type {
   RegistrationResponse,
   ReportBody,
   ReportFormMeta,
+  RequestInstitutionBody,
   RosterResponse,
   ServerErrorCode,
   SupervisorsResponse,
@@ -120,4 +124,17 @@ export interface Backend {
   registerPushToken(token: string, lang: 'ar' | 'en'): Promise<void>;
   /** This phone signed out: stop sending this account's notifications to it. */
   unregisterPushToken(token: string): Promise<void>;
+  /** The person's institutions, and the approved ones they may ask to belong to. */
+  institutions(): Promise<InstitutionsResponse>;
+  /** Asks for a new institution; it waits for an admin, and the person is its first representative. */
+  requestInstitution(body: RequestInstitutionBody): Promise<MyInstitution>;
+  /** Asks to belong to an approved institution; one of its representatives confirms it. */
+  joinInstitution(id: string): Promise<MyInstitution>;
+  /** Leaves an institution, or takes back a request to belong (or puts away one an admin turned down). */
+  leaveInstitution(id: string): Promise<void>;
+  /** Its representatives: who belongs to it and who asks to. */
+  institutionMembers(id: string): Promise<InstitutionMembersResponse>;
+  confirmMember(id: string, userId: string): Promise<InstitutionMembersResponse>;
+  /** Turns a request down, or takes a member off. */
+  removeMember(id: string, userId: string): Promise<InstitutionMembersResponse>;
 }

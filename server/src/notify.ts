@@ -14,7 +14,11 @@
 // - "a supervisor gave you a warning", and "your appeal was decided" / "the warning was withdrawn";
 // - "your report was reviewed", to whoever reported, when an admin handles it;
 // - a supervisor's notice to an event, to the members who joined it and its other supervisors;
-// - "you are now a supervisor of this event", to whoever was made one in the app.
+// - "you are now a supervisor of this event", to whoever was made one in the app;
+// - "your institution was approved" / "was not approved", to whoever asked for it;
+//   "you are now a representative of …", to whoever an admin made one;
+// - "… asks to belong to your institution", to its representatives, and
+//   "you now belong to …", to whoever asked, once a representative confirms it.
 
 import { and, eq, gt, inArray, isNull, lte, ne } from 'drizzle-orm';
 
@@ -596,5 +600,114 @@ export function notifyReportHandled(deps: AppDeps, reportId: string) {
     const [report] = await deps.db.select({ reporter_id: s.reports.reporter_id }).from(s.reports).where(eq(s.reports.id, reportId));
     if (!report) return [];
     return [{ userId: report.reporter_id, text: (lang: Lang) => REPORT_HANDLED[lang], data: { type: 'report_handled', report_id: reportId } }];
+  });
+}
+
+// ---------- institutions ----------
+
+const INSTITUTION = {
+  ar: {
+    approvedTitle: 'اعتُمدت مؤسستك',
+    approved: 'اعتمدت إدارة الجمعية «{name}»، وأنت ممثّلها. تستطيع الآن اقتراح فعاليات باسمها.',
+    rejectedTitle: 'لم تُعتمد المؤسسة',
+    rejected: 'لم تعتمد إدارة الجمعية «{name}».',
+    reason: ' السبب: {note}',
+    representativeTitle: 'أصبحت ممثّلاً لمؤسسة',
+    representative: 'جعلتك إدارة الجمعية ممثّلاً لـ«{name}»: تقترح فعاليات باسمها، وتؤكد من ينتمي إليها.',
+    requestTitle: 'طلب انتماء جديد',
+    request: '{person} يطلب الانتماء إلى «{name}». راجعه وأكّده.',
+    confirmedTitle: 'أُكّد انتماؤك',
+    confirmed: 'أكّد ممثّل «{name}» انتماءك إليها.',
+  },
+  en: {
+    approvedTitle: 'Your institution was approved',
+    approved: 'The association approved "{name}", and you represent it. You can now propose events in its name.',
+    rejectedTitle: 'The institution was not approved',
+    rejected: 'The association did not approve "{name}".',
+    reason: ' Reason: {note}',
+    representativeTitle: 'You now represent an institution',
+    representative: 'The association made you a representative of "{name}": you propose events in its name and confirm who belongs to it.',
+    requestTitle: 'A new request to belong',
+    request: '{person} asks to belong to "{name}". Review and confirm it.',
+    confirmedTitle: 'You now belong',
+    confirmed: 'A representative of "{name}" confirmed that you belong to it.',
+  },
+};
+
+async function institutionName(deps: AppDeps, id: string) {
+  const [row] = await deps.db.select({ name: s.institutions.name }).from(s.institutions).where(eq(s.institutions.id, id));
+  return row?.name ?? null;
+}
+
+export function notifyInstitutionDecided(deps: AppDeps, institutionId: string, userId: string, decision: 'approved' | 'rejected', note?: string) {
+  send(deps, async () => {
+    const name = await institutionName(deps, institutionId);
+    if (!name) return [];
+    return [
+      {
+        userId,
+        text: (lang: Lang) => {
+          const t = INSTITUTION[lang];
+          const body = t[decision].replace('{name}', name) + (note ? t.reason.replace('{note}', note) : '');
+          return { title: decision === 'approved' ? t.approvedTitle : t.rejectedTitle, body };
+        },
+        data: { type: 'institution_decided', institution_id: institutionId },
+      },
+    ];
+  });
+}
+
+export function notifyRepresentativeAdded(deps: AppDeps, institutionId: string, userId: string) {
+  send(deps, async () => {
+    const name = await institutionName(deps, institutionId);
+    if (!name) return [];
+    return [
+      {
+        userId,
+        text: (lang: Lang) => ({ title: INSTITUTION[lang].representativeTitle, body: INSTITUTION[lang].representative.replace('{name}', name) }),
+        data: { type: 'institution_representative', institution_id: institutionId },
+      },
+    ];
+  });
+}
+
+/** To the institution's representatives: someone asks to belong. */
+export function notifyJoinRequest(deps: AppDeps, institutionId: string, userId: string) {
+  send(deps, async () => {
+    const name = await institutionName(deps, institutionId);
+    const [person] = await deps.db.select({ full_name: s.users.full_name }).from(s.users).where(eq(s.users.id, userId));
+    if (!name || !person) return [];
+    const reps = await deps.db
+      .select({ user_id: s.institution_members.user_id })
+      .from(s.institution_members)
+      .where(
+        and(
+          eq(s.institution_members.institution_id, institutionId),
+          eq(s.institution_members.role, 'representative'),
+          eq(s.institution_members.status, 'confirmed'),
+        ),
+      );
+    return reps.map((r) => ({
+      userId: r.user_id,
+      text: (lang: Lang) => ({
+        title: INSTITUTION[lang].requestTitle,
+        body: INSTITUTION[lang].request.replace('{person}', person.full_name).replace('{name}', name),
+      }),
+      data: { type: 'institution_join_request', institution_id: institutionId },
+    }));
+  });
+}
+
+export function notifyMembershipConfirmed(deps: AppDeps, institutionId: string, userId: string) {
+  send(deps, async () => {
+    const name = await institutionName(deps, institutionId);
+    if (!name) return [];
+    return [
+      {
+        userId,
+        text: (lang: Lang) => ({ title: INSTITUTION[lang].confirmedTitle, body: INSTITUTION[lang].confirmed.replace('{name}', name) }),
+        data: { type: 'institution_member_confirmed', institution_id: institutionId },
+      },
+    ];
   });
 }

@@ -135,6 +135,14 @@ export function EventPage() {
             <dd className="tabular">{fill(t.event.seats, { joined: d.joined_count, capacity: e.capacity })}</dd>
             <dt>{t.events.supervisors}</dt>
             <dd>{d.organizers.length ? d.organizers.map((o) => o.full_name).join('، ') : t.events.noSupervisor}</dd>
+            {d.institution && (
+              <>
+                <dt>{t.nav.institutions}</dt>
+                <dd>
+                  <Link to="/institutions">{d.institution.name}</Link>
+                </dd>
+              </>
+            )}
             <dt>{t.event.createdBy}</dt>
             <dd>{d.creator ? `${d.creator.full_name} · ${t.role[d.creator.role]}` : t.none}</dd>
           </dl>

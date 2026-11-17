@@ -124,5 +124,12 @@ export function createApiBackend(opts: { baseUrl: string; token: string; onUnaut
     deleteAccount: () => send('DELETE', '/me'),
     registerPushToken: (token, lang) => send('PUT', '/me/push-token', { token, lang }),
     unregisterPushToken: (token) => send('DELETE', '/me/push-token', { token }),
+    institutions: () => get('/institutions'),
+    requestInstitution: (body) => send('POST', '/institutions', body),
+    joinInstitution: (id) => send('POST', `/institutions/${enc(id)}/join`),
+    leaveInstitution: (id) => send('DELETE', `/institutions/${enc(id)}/membership`),
+    institutionMembers: (id) => get(`/institutions/${enc(id)}/members`),
+    confirmMember: (id, userId) => send('POST', `/institutions/${enc(id)}/members/${enc(userId)}/confirm`),
+    removeMember: (id, userId) => send('DELETE', `/institutions/${enc(id)}/members/${enc(userId)}`),
   };
 }

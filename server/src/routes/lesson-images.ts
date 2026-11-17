@@ -10,7 +10,7 @@ import type { LessonImageResponse } from '../../../shared/api';
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
 import { requireUser } from '../auth';
-import { levelOf, newId } from '../db/queries';
+import { levelOf, newId, representedInstitutions } from '../db/queries';
 import * as s from '../db/schema';
 import { type AppEnv, HttpError, readBody } from '../http';
 import { lessonImageUrl, readLessonImage } from '../photo';
@@ -20,11 +20,13 @@ const imageBody = z.object({ jpeg_base64: z.string().min(1) });
 export const lessonImageRoutes = new Hono<AppEnv>()
   .use(requireUser)
 
-  // The same people who may write lessons: those who may create events, and admins.
+  // The same people who may write lessons: those who may create events (representatives of institutions included), and admins.
   .post('/', async (c) => {
     const { db, now } = c.var.deps;
     const me = c.var.user;
-    if (!rules.canCreateEvents(me, await levelOf(db, me.id))) throw new ApiError('cannot_create_events');
+    if (!rules.mayProposeEvents(me, await levelOf(db, me.id), (await representedInstitutions(db, me.id)).length > 0)) {
+      throw new ApiError('cannot_create_events');
+    }
     const image = readLessonImage((await readBody(c, imageBody)).jpeg_base64);
     if (!image) throw new HttpError(400, 'photo_invalid');
     const id = newId();

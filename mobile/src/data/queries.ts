@@ -42,7 +42,8 @@ export const persistOptions: Omit<PersistQueryClientOptions, 'queryClient'> = {
   persister: createAsyncStoragePersister({ storage: AsyncStorage, key: 'gd.queries', throttleTime: 1000 }),
   maxAge: WEEK,
   // 2: event pages have lessons (the learning corner). 3: lessons may have a picture. 4: and a video.
-  buster: '4',
+  // 5: events and hours name the institution that organised them.
+  buster: '5',
   dehydrateOptions: {
     shouldDehydrateQuery: (q: Query) => q.state.status === 'success' && String(q.queryKey[0]).startsWith('api:'),
   },
@@ -82,6 +83,8 @@ export const useMyReports = () => useBackendQuery(KEYS.myReports(), (b) => b.myR
 export const useMyWarnings = () => useBackendQuery(KEYS.myWarnings(), (b) => b.myWarnings());
 export const useMyLessons = () => useBackendQuery(KEYS.myLessons(), (b) => b.myLessons());
 export const useWarning = (id: string) => useBackendQuery(['warning', id], (b) => b.warning(id));
+export const useInstitutions = () => useBackendQuery(['institutions'], (b) => b.institutions());
+export const useInstitutionMembers = (id: string) => useBackendQuery(['institutionMembers', id], (b) => b.institutionMembers(id));
 
 /** Points, level and hours. Also keeps the stored profile current in server mode. */
 export function useMeSummary() {

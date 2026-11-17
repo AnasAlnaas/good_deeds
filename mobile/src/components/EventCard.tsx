@@ -49,6 +49,15 @@ export function EventCard({ event, floating }: { event: EventSummary; floating?:
           </Txt>
         </View>
       </View>
+      {/* In an institution's name: who organises it. */}
+      {event.institution && (
+        <View style={styles.meta}>
+          <Ionicons name="business" size={16} color={colors.primary} />
+          <Txt variant="caption" color={colors.primary} style={styles.flex} numberOfLines={1}>
+            {fmt(s.institutions.organizedBy, { name: event.institution.name })}
+          </Txt>
+        </View>
+      )}
       <View style={styles.meta}>
         <Ionicons name={online ? 'videocam' : 'location'} size={16} color={colors.inkMuted} />
         <Txt variant="caption" color={colors.inkMuted} style={styles.flex} numberOfLines={1}>

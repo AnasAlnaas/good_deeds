@@ -20,6 +20,7 @@ import { type GenderCategory, type LocationType, MEETING_PLATFORMS, type Meeting
 import { count, fmt } from '@/i18n/format';
 import { cityTarget, locateInCity } from '@/lib/geocode';
 import { goBack } from '@/lib/goBack';
+import { institutionIcon } from '@/lib/institutions';
 import { pickLessonPicture } from '@/lib/photo';
 import { useApp, useMe } from '@/state/app';
 import { useAction } from '@/state/useAction';
@@ -206,6 +207,16 @@ export function EventForm({
   const [invalid, setInvalid] = useState(false);
   const [mapTouched, setMapTouched] = useState(false);
   const [done, setDone] = useState<ProposeEventResponse | null>(null);
+  // In whose name: an institution the person represents, or their own (null).
+  // Someone who may propose only for institutions starts with the first; an edit or copy keeps the event's own.
+  const institutions = meta.institutions ?? [];
+  const ownEvents = meta.own_events !== false;
+  const [institutionId, setInstitutionId] = useState<string | null>(() => {
+    const from = init?.institution?.id;
+    if (from && institutions.some((i) => i.id === from)) return from;
+    return ownEvents ? null : (institutions[0]?.id ?? null);
+  });
+  const chosenInstitution = institutions.find((i) => i.id === institutionId);
   // The lesson whose picture is being sent, and the one whose picture could not be used.
   const [sending, setSending] = useState<number | null>(null);
   const [badPicture, setBadPicture] = useState<number | null>(null);
@@ -328,7 +339,7 @@ export function EventForm({
   }, [v.address_text, v.city, v.location_type]);
 
   // Only a waiting proposal is edited, so an edit never publishes; and it is one of those waiting, not one more.
-  const direct = !editing && meta.publishes_directly;
+  const direct = !editing && (meta.publishes_directly || !!chosenInstitution?.publishes_directly);
   const full = !editing && !direct && meta.waiting >= meta.max_waiting;
   const starts = new Date(v.starts_at);
   const ends = new Date(v.ends_at);
@@ -428,6 +439,7 @@ export function EventForm({
       gender_category: v.gender_category,
       terms: v.terms.map((x) => x.trim()),
       lessons: v.lessons.map((l) => ({ title: l.title.trim(), body: l.body.trim(), image_id: l.image_id, video_id: l.video_id })),
+      institution_id: institutionId,
     };
     if (editing) {
       if (await run((b) => b.editProposal(editing.id, body))) goBack(`/event/${editing.id}`);
@@ -495,6 +507,23 @@ export function EventForm({
         <Card style={styles.warning}>
           <Txt color={colors.warning}>{fmt(s.newEvent.waitingFull, { n: meta.waiting })}</Txt>
         </Card>
+      )}
+
+      {institutions.length > 0 && (
+        <>
+          <SectionTitle>{s.institutions.formWho}</SectionTitle>
+          <Row>
+            {ownEvents && <Chip label={s.institutions.formMine} icon="person-outline" selected={!institutionId} onPress={() => setInstitutionId(null)} />}
+            {institutions.map((i) => (
+              <Chip key={i.id} label={i.name} icon={institutionIcon(i.kind)} selected={institutionId === i.id} onPress={() => setInstitutionId(i.id)} />
+            ))}
+          </Row>
+          {chosenInstitution && (
+            <Txt variant="caption" color={colors.inkMuted}>
+              {chosenInstitution.publishes_directly ? s.institutions.formDirect : s.institutions.formReviewed}
+            </Txt>
+          )}
+        </>
       )}
 
       <SectionTitle>{s.newEvent.type}</SectionTitle>

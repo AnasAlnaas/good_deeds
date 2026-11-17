@@ -11,7 +11,7 @@
 import { cityOf } from './cities';
 import { ApiError } from './errors';
 import { END_GRACE_MINUTES } from './placeholders';
-import { MEETING_PLATFORMS, NOTICE_KINDS, NOTICE_REACTIONS } from './types';
+import { INSTITUTION_KINDS, MEETING_PLATFORMS, NOTICE_KINDS, NOTICE_REACTIONS } from './types';
 import type {
   AppEvent,
   Attendance,
@@ -19,6 +19,8 @@ import type {
   EventLesson,
   EventTerm,
   EventNotice,
+  Institution,
+  InstitutionMember,
   Level,
   NoticeKind,
   NoticeReaction,
@@ -83,6 +85,10 @@ export const MAX_WAITING_PROPOSALS = 3;
  * A member proposing an event. The creator becomes its supervisor, so they may
  * choose only an event they could take part in themselves: their own men /
  * women category, or mixed (owner's decision, 2026-10-22). It must start in the future.
+ *
+ * In an institution's name (`institution` given): only its representatives,
+ * and only once an admin approved it. Being its representative is enough, at
+ * any level (owner's decision, 2026-11-17); in their own name the level rule stays.
  */
 export function assertCanProposeEvent(args: {
   user: Pick<User, 'role' | 'gender'>;
@@ -91,17 +97,48 @@ export function assertCanProposeEvent(args: {
   /** The creator's events still waiting for an admin (drafts). */
   waitingCount: number;
   now: number;
+  /** The institution it is in the name of, and the proposer's place in it; absent or null = their own name. */
+  institution?: { institution: Pick<Institution, 'status'> | undefined; membership: Pick<InstitutionMember, 'role' | 'status'> | undefined } | null;
 }) {
   const { user, event } = args;
-  if (!canCreateEvents(user, args.level)) throw new ApiError('cannot_create_events');
+  if (args.institution) {
+    const { institution, membership } = args.institution;
+    if (!institution || institution.status !== 'approved' || !isRepresentative(membership)) throw new ApiError('not_representative');
+  } else if (!canCreateEvents(user, args.level)) throw new ApiError('cannot_create_events');
   if (!canUserJoinCategory(user, event)) throw new ApiError('category_not_allowed');
   if (toMs(event.starts_at) <= args.now) throw new ApiError('starts_in_past');
   if (user.role !== 'admin' && args.waitingCount >= MAX_WAITING_PROPOSALS) throw new ApiError('too_many_proposals');
 }
 
-/** Owner's decision (2026-10-22): an admin approves every event made in the app; an admin's own is published at once. */
-export function proposalStatus(user: Pick<User, 'role'>): 'draft' | 'published' {
-  return user.role === 'admin' ? 'published' : 'draft';
+/**
+ * Owner's decision (2026-10-22): an admin approves every event made in the app; an admin's own is published at once.
+ * Owner's decision (2026-11-17): an institution's first INSTITUTION_REVIEWED_EVENTS
+ * approved events wait for an admin too; after those, its events are published at once.
+ * `institutionApproved`: how many of the institution's events an admin approved
+ * (institutionApprovedEvents); absent or null = not in an institution's name.
+ */
+export function proposalStatus(user: Pick<User, 'role'>, institutionApproved?: number | null): 'draft' | 'published' {
+  if (user.role === 'admin') return 'published';
+  if (institutionApproved != null && institutionApproved >= INSTITUTION_REVIEWED_EVENTS) return 'published';
+  return 'draft';
+}
+
+/** Owner's decision (2026-11-17): how many of an institution's events an admin approves before its events go out at once. */
+export const INSTITUTION_REVIEWED_EVENTS = 3;
+
+/**
+ * An institution's events an admin approved, counted for the institution
+ * whichever representative proposed them: every one that left draft without
+ * being turned down (cancelled later included). Those published at once,
+ * after the first ones, count too; that changes nothing.
+ */
+export function institutionApprovedEvents(events: Pick<AppEvent, 'institution_id' | 'status'>[], institutionId: string) {
+  return events.filter((e) => e.institution_id === institutionId && !isHidden(e)).length;
+}
+
+/** Who may open the event form: by level or role (canCreateEvents), or as a representative of an approved institution. */
+export function mayProposeEvents(user: Pick<User, 'role'>, level: Pick<Level, 'can_create_events'>, representsAny: boolean) {
+  return canCreateEvents(user, level) || representsAny;
 }
 
 /**
@@ -976,4 +1013,101 @@ export function repeatTimes(e: { starts_at: string; ends_at: string }, now: numb
   const weeks = Math.max(1, Math.floor((now - start) / WEEK_MS) + 1);
   const next = start + weeks * WEEK_MS;
   return { starts_at: new Date(next).toISOString(), ends_at: new Date(next + length).toISOString() };
+}
+
+// ---------- institutions (جمعية، مؤسسة، مدرسة…) ----------
+// Owner's decisions (2026-11-17), in shared/types.ts Institution.
+
+export const INSTITUTION_NAME_MIN = 3;
+export const INSTITUTION_NAME_MAX = 120;
+/** One person's requests for new institutions waiting for an admin at once. */
+export const MAX_INSTITUTION_REQUESTS = 2;
+/** How many institutions one person may belong to (or ask to). */
+export const MAX_INSTITUTIONS_PER_PERSON = 10;
+
+/** The name as typed, with its spaces tidied; null if too short or too long. */
+export function cleanInstitutionName(input: string): string | null {
+  const name = input.replace(/\s+/g, ' ').trim();
+  return name.length >= INSTITUTION_NAME_MIN && name.length <= INSTITUTION_NAME_MAX ? name : null;
+}
+
+/** Two names for the same institution, whatever the spelling of alef, ta marbuta or ya, the vowel marks, spaces or case. */
+export function sameInstitutionName(a: string, b: string) {
+  const plain = (x: string) =>
+    x
+      .toLowerCase()
+      .replace(/[ً-ْـ]/g, '')
+      .replace(/[أإآ]/g, 'ا')
+      .replace(/ة/g, 'ه')
+      .replace(/ى/g, 'ي')
+      .replace(/[^\p{L}\p{N}]+/gu, '');
+  return plain(a) === plain(b);
+}
+
+export const isInstitutionKind = (kind: string): kind is Institution['kind'] => (INSTITUTION_KINDS as readonly string[]).includes(kind);
+
+/** A confirmed representative: may propose events in its name and confirms who belongs to it. */
+export function isRepresentative(m: Pick<InstitutionMember, 'role' | 'status'> | undefined) {
+  return !!m && m.role === 'representative' && m.status === 'confirmed';
+}
+
+/**
+ * A member asks for a new institution. It waits for an admin. A name already
+ * there (approved or waiting) is refused, so each institution is there once.
+ * `name` is cleanInstitutionName's result.
+ */
+export function assertCanRequestInstitution(args: {
+  name: string | null;
+  kind: string;
+  /** The institutions there are (those turned down are not counted). */
+  existing: Pick<Institution, 'name' | 'status'>[];
+  /** This person's requests still waiting for an admin. */
+  waitingCount: number;
+  /** How many institutions this person belongs to or asked to. */
+  membershipsCount: number;
+}) {
+  const { name } = args;
+  if (!name || !isInstitutionKind(args.kind)) throw new ApiError('invalid_institution');
+  if (args.existing.some((i) => i.status !== 'rejected' && sameInstitutionName(i.name, name))) throw new ApiError('institution_exists');
+  if (args.waitingCount >= MAX_INSTITUTION_REQUESTS) throw new ApiError('too_many_institution_requests');
+  if (args.membershipsCount >= MAX_INSTITUTIONS_PER_PERSON) throw new ApiError('too_many_institutions');
+}
+
+/** A volunteer asks to belong to an approved institution; one of its representatives confirms it. */
+export function assertCanAskToJoin(args: {
+  institution: Pick<Institution, 'status'> | undefined;
+  membership: Pick<InstitutionMember, 'status'> | undefined;
+  membershipsCount: number;
+}) {
+  if (!args.institution || args.institution.status !== 'approved') throw new ApiError('not_found');
+  if (args.membership) throw new ApiError(args.membership.status === 'pending' ? 'join_request_pending' : 'already_member');
+  if (args.membershipsCount >= MAX_INSTITUTIONS_PER_PERSON) throw new ApiError('too_many_institutions');
+}
+
+/**
+ * A representative (or an admin) confirms a request to belong, turns it down,
+ * or takes a member off. Representatives are the admins' to change, in the panel.
+ */
+export function assertCanManageMember(args: {
+  user: Pick<User, 'role'>;
+  /** The one acting: their place in the institution. */
+  mine: Pick<InstitutionMember, 'role' | 'status'> | undefined;
+  /** The one acted on. */
+  member: Pick<InstitutionMember, 'role'> | undefined;
+}) {
+  if (args.user.role !== 'admin' && !isRepresentative(args.mine)) throw new ApiError('not_representative');
+  if (!args.member || args.member.role === 'representative') throw new ApiError('not_found');
+}
+
+/**
+ * Leaving an institution, or taking back a request to belong. A representative
+ * is taken off by an admin; but whoever asked for one an admin turned down may
+ * put it away (it is theirs alone).
+ */
+export function assertCanLeaveInstitution<M extends Pick<InstitutionMember, 'role'>>(
+  membership: M | undefined,
+  institution: Pick<Institution, 'status'> | undefined,
+): asserts membership is M {
+  if (!membership || !institution) throw new ApiError('not_found');
+  if (membership.role === 'representative' && institution.status !== 'rejected') throw new ApiError('representative_cannot_leave');
 }

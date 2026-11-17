@@ -21,7 +21,11 @@ import { pointsForAttendance } from './rules';
 // 10: a lesson may have a picture.
 // 11: and a YouTube video.
 // 12: full events have a waiting list.
-export const SEED_VERSION = 12;
+// 13: institutions (a volunteer team with a representative, a member, a request, and an event in its name).
+export const SEED_VERSION = 13;
+
+/** The demo's institution: approved, with خالد as its representative. */
+export const DEMO_INSTITUTION = 'inst_saraj';
 
 export const DEMO_ACCOUNTS = {
   participant: 'u_ahmad',
@@ -122,6 +126,8 @@ interface EventSpec {
   gender: GenderCategory;
   organizers: string[];
   joined: string[];
+  /** In this institution's name (its representative is the first organizer). */
+  institution?: string;
 }
 
 export function buildSeed(nowMs: number): Db {
@@ -206,7 +212,7 @@ export function buildSeed(nowMs: number): Db {
       description: 'توزيع منشورات عن السرعة وحزام الأمان، والحديث مع المشاة عند الإشارات.',
       address: 'ساحة الشهداء، طرابلس', lat: 32.8955, lng: 13.1803,
       start: day(3, 9), end: day(3, 12), capacity: 20, gender: 'mixed',
-      organizers: ['u_khaled'], joined: [],
+      organizers: ['u_khaled'], joined: [], institution: DEMO_INSTITUTION,
     },
     {
       id: 'e11', title: 'تركيب برّادات ماء عامة', subtype: 'water_coolers',
@@ -299,6 +305,18 @@ export function buildSeed(nowMs: number): Db {
     levels: LEVELS,
     reports: [],
     warnings: [],
+    // An approved volunteer team: خالد represents it, أحمد belongs to it, and one more asks to.
+    institutions: [
+      {
+        id: DEMO_INSTITUTION, name: 'فريق شباب السراج التطوعي', kind: 'team', status: 'approved',
+        requested_by: 'u_khaled', created_at: created, decided_by: null, decided_at: created, decision_note: null,
+      },
+    ],
+    institution_members: [
+      { institution_id: DEMO_INSTITUTION, user_id: 'u_khaled', role: 'representative', status: 'confirmed', created_at: created, confirmed_by: null, confirmed_at: created },
+      { institution_id: DEMO_INSTITUTION, user_id: 'u_ahmad', role: 'member', status: 'confirmed', created_at: created, confirmed_by: 'u_khaled', confirmed_at: created },
+      { institution_id: DEMO_INSTITUTION, user_id: 'u_f1', role: 'member', status: 'pending', created_at: iso(minutes(-300)), confirmed_by: null, confirmed_at: null },
+    ],
   };
 
   for (const s of events) {
@@ -324,6 +342,7 @@ export function buildSeed(nowMs: number): Db {
       terms_locked_at: s.joined.length ? created : null,
       created_by: s.organizers[0],
       created_at: created,
+      institution_id: s.institution ?? null,
     };
     db.events.push(e);
     s.organizers.forEach((u) => db.event_organizers.push({ event_id: s.id, user_id: u, added_by: null }));

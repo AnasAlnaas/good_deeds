@@ -13,12 +13,14 @@ import {
   type Attendance,
   type EventLesson,
   type EventTerm,
+  type Institution,
+  type InstitutionMember,
   type Level,
   type Registration,
   type User,
   type Warning,
 } from '../../../shared/types';
-import type { EventLessonItem, EventNoticeItem, LessonImageRef, PublicUser } from '../../../shared/api';
+import type { EventLessonItem, EventNoticeItem, FormInstitution, InstitutionRef, LessonImageRef, PublicUser } from '../../../shared/api';
 import { lessonImageUrl } from '../photo';
 import type { Database } from './client';
 import { iso } from './rows';
@@ -301,4 +303,77 @@ export async function closeDueAttendance(q: Database, now: number): Promise<stri
     closed.push(...updated.map((r) => r.id));
   }
   return closed;
+}
+
+// ---------- institutions ----------
+
+export async function findInstitution(q: Database, id: string, opts: Lock = {}): Promise<Institution | undefined> {
+  const query = q.select().from(s.institutions).where(eq(s.institutions.id, id));
+  const [row] = opts.lock ? await query.for('update') : await query;
+  return row ? iso(row) : undefined;
+}
+
+export async function membershipOf(q: Database, institutionId: string, userId: string, opts: Lock = {}): Promise<InstitutionMember | undefined> {
+  const query = q
+    .select()
+    .from(s.institution_members)
+    .where(and(eq(s.institution_members.institution_id, institutionId), eq(s.institution_members.user_id, userId)));
+  const [row] = opts.lock ? await query.for('update') : await query;
+  return row ? iso(row) : undefined;
+}
+
+/** How many institutions a person belongs to, represents or asked to belong to. */
+export async function membershipsCount(q: Database, userId: string) {
+  const [row] = await q.select({ n: count() }).from(s.institution_members).where(eq(s.institution_members.user_id, userId));
+  return row.n;
+}
+
+/** The institutions these events are in the name of, by id. */
+export async function institutionRefs(q: Database, ids: (string | null)[]): Promise<Map<string, InstitutionRef>> {
+  const wanted = [...new Set(ids.filter((x): x is string => !!x))];
+  if (wanted.length === 0) return new Map();
+  const rows = await q
+    .select({ id: s.institutions.id, name: s.institutions.name, kind: s.institutions.kind })
+    .from(s.institutions)
+    .where(inArray(s.institutions.id, wanted));
+  return new Map(rows.map((r) => [r.id, r]));
+}
+
+/** How many of an institution's events an admin approved (rules.institutionApprovedEvents). */
+export async function institutionApproved(q: Database, institutionId: string) {
+  const rows = await q.select({ institution_id: s.events.institution_id, status: s.events.status }).from(s.events).where(eq(s.events.institution_id, institutionId));
+  return rules.institutionApprovedEvents(rows, institutionId);
+}
+
+/** The approved institutions a person represents, as the event form offers them. */
+export async function representedInstitutions(q: Database, userId: string): Promise<FormInstitution[]> {
+  const rows = await q
+    .select({ id: s.institutions.id, name: s.institutions.name, kind: s.institutions.kind })
+    .from(s.institution_members)
+    .innerJoin(s.institutions, eq(s.institutions.id, s.institution_members.institution_id))
+    .where(
+      and(
+        eq(s.institution_members.user_id, userId),
+        eq(s.institution_members.role, 'representative'),
+        eq(s.institution_members.status, 'confirmed'),
+        eq(s.institutions.status, 'approved'),
+      ),
+    )
+    .orderBy(asc(s.institutions.name));
+  const out: FormInstitution[] = [];
+  for (const r of rows) out.push({ ...r, publishes_directly: rules.proposalStatus({ role: 'member' }, await institutionApproved(q, r.id)) === 'published' });
+  return out;
+}
+
+/** Requests to belong waiting for this representative (in the institutions they represent). */
+export async function requestsForRepresentative(q: Database, userId: string) {
+  const mine = q
+    .select({ id: s.institution_members.institution_id })
+    .from(s.institution_members)
+    .where(and(eq(s.institution_members.user_id, userId), eq(s.institution_members.role, 'representative'), eq(s.institution_members.status, 'confirmed')));
+  const [row] = await q
+    .select({ n: count() })
+    .from(s.institution_members)
+    .where(and(inArray(s.institution_members.institution_id, mine), eq(s.institution_members.status, 'pending')));
+  return row.n;
 }

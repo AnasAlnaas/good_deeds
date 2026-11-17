@@ -134,6 +134,14 @@ export default function ProfileScreen() {
 
       <Button variant="secondary" icon="school-outline" label={s.profile.lessons} onPress={() => router.push('/lessons')} />
 
+      {/* Representatives see the requests waiting for them on the button. */}
+      <Button
+        variant={summary.data.institution_requests ? 'primary' : 'secondary'}
+        icon="business-outline"
+        label={summary.data.institution_requests ? fmt(s.institutions.requests, { n: summary.data.institution_requests }) : s.profile.institutions}
+        onPress={() => router.push('/institutions')}
+      />
+
       {summary.data.warnings > 0 && (
         <Button
           variant="secondary"

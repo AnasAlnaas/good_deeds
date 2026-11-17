@@ -40,6 +40,9 @@ import {
   attendanceOf,
   findEvent,
   findEventFor,
+  findInstitution,
+  institutionApproved,
+  institutionRefs,
   isOrganizer,
   joinedCounts,
   joinedUsers,
@@ -48,9 +51,11 @@ import {
   lessonItems,
   lessonsOf,
   levelOf,
+  membershipOf,
   newId,
   noticeItems,
   registrationOf,
+  representedInstitutions,
   shownTo,
   supervisorLinks,
   supervisorsOf,
@@ -143,6 +148,7 @@ async function summarize(db: Database, me: User, events: AppEvent[], now: number
     .where(and(eq(s.event_organizers.user_id, me.id), inArray(s.event_organizers.event_id, ids)));
   const myStatus = new Map(mine.map((r) => [r.event_id, r.status]));
   const iOrganize = new Set(organized.map((r) => r.event_id));
+  const institutions = await institutionRefs(db, events.map((e) => e.institution_id));
 
   return events.map((e) => {
     // The meeting link stays off the list: the event's page gives it to those who may see it.
@@ -156,8 +162,18 @@ async function summarize(db: Database, me: User, events: AppEvent[], now: number
       my_registration_status: myStatus.get(e.id) ?? null,
       i_organize: iOrganize.has(e.id),
       i_created: e.created_by === me.id,
+      institution: (e.institution_id && institutions.get(e.institution_id)) || null,
     };
   });
+}
+
+/**
+ * The institution an event is to be in the name of, and the proposer's place in
+ * it, for rules.assertCanProposeEvent; null = their own name.
+ */
+async function institutionFor(db: Database, me: User, institutionId: string | null | undefined) {
+  if (!institutionId) return null;
+  return { id: institutionId, institution: await findInstitution(db, institutionId), membership: await membershipOf(db, institutionId, me.id) };
 }
 
 export const eventRoutes = new Hono<AppEnv>()
@@ -177,7 +193,9 @@ export const eventRoutes = new Hono<AppEnv>()
   .get('/form', async (c) => {
     const { db } = c.var.deps;
     const me = c.var.user;
-    if (!rules.canCreateEvents(me, await levelOf(db, me.id))) throw new ApiError('cannot_create_events');
+    const level = await levelOf(db, me.id);
+    const institutions = await representedInstitutions(db, me.id);
+    if (!rules.mayProposeEvents(me, level, institutions.length > 0)) throw new ApiError('cannot_create_events');
     // Only an event with a class of its own can carry a written tag.
     const tagged = await db
       .select({ subtype: s.events.subtype, event_class: s.events.event_class, status: s.events.status })
@@ -191,6 +209,8 @@ export const eventRoutes = new Hono<AppEnv>()
       waiting: await waitingProposals(db, me.id),
       max_waiting: rules.MAX_WAITING_PROPOSALS,
       lesson_library: await lessonLibraryFor(db, me),
+      own_events: rules.canCreateEvents(me, level),
+      institutions,
     });
   })
 
@@ -200,17 +220,19 @@ export const eventRoutes = new Hono<AppEnv>()
     const body = await readBody(c, proposalInput);
     const t = now();
     const id = newId();
-    const status = rules.proposalStatus(me);
-    await db.transaction(async (tx) => {
+    const status = await db.transaction(async (tx) => {
       // Locking the person makes two proposals sent at once count each other.
       await tx.select({ id: s.users.id }).from(s.users).where(eq(s.users.id, me.id)).for('update');
+      const institution = await institutionFor(tx, me, body.institution_id);
       rules.assertCanProposeEvent({
         user: me,
         level: await levelOf(tx, me.id),
         event: body,
         waitingCount: await waitingProposals(tx, me.id),
         now: t,
+        institution,
       });
+      const status = rules.proposalStatus(me, institution ? await institutionApproved(tx, institution.id) : null);
       await tx.insert(s.events).values({
         id,
         title: body.title,
@@ -226,11 +248,13 @@ export const eventRoutes = new Hono<AppEnv>()
         status,
         created_by: me.id,
         created_at: new Date(t),
+        institution_id: institution?.id ?? null,
       });
       // Whoever proposes an event supervises it; an admin can add others from the panel.
       await writeLinks(tx, id, [me.id]);
       await writeTerms(tx, id, body.terms, new Date(t));
       await writeLessons(tx, id, body.lessons, new Date(t));
+      return status;
     });
     return c.json<ProposeEventResponse>({ id, status }, 201);
   })
@@ -248,6 +272,8 @@ export const eventRoutes = new Hono<AppEnv>()
       // Locking the event makes an admin's decision on it wait for this edit, or this edit see the decision.
       const [row] = await tx.select().from(s.events).where(eq(s.events.id, id)).for('update');
       rules.assertCanChangeProposal(me, row);
+      // An app from before institutions sends none: the event keeps the one it has.
+      const institution = await institutionFor(tx, me, body.institution_id === undefined ? row.institution_id : body.institution_id);
       rules.assertCanProposeEvent({
         user: me,
         level: await levelOf(tx, me.id),
@@ -255,6 +281,7 @@ export const eventRoutes = new Hono<AppEnv>()
         // This draft is one of those waiting; editing it adds none.
         waitingCount: (await waitingProposals(tx, me.id)) - 1,
         now: t,
+        institution,
       });
       const organizers = await tx
         .select({ user_id: s.event_organizers.user_id })
@@ -272,6 +299,7 @@ export const eventRoutes = new Hono<AppEnv>()
           capacity: body.capacity,
           gender_category: body.gender_category,
           base_points: basePointsOf(body.subtype),
+          institution_id: institution?.id ?? null,
         })
         .where(eq(s.events.id, id));
       await writeLinks(tx, id, organizers.map((o) => o.user_id));

@@ -55,7 +55,7 @@ export function Events() {
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ event: e, effective_status, joined_count, organizers, creator }) => (
+              {rows.map(({ event: e, effective_status, joined_count, organizers, creator, institution }) => (
                 <tr key={e.id} className="clickable" onClick={() => navigate(`/events/${e.id}`, { state: { list: listSearch } })}>
                   <td>
                     <div className="event-cell">
@@ -68,6 +68,7 @@ export function Events() {
                           {EVENT_CLASSES.find((k) => k.id === classOfEvent(e))?.name_ar} ·{' '}
                           {e.location_type === 'online' ? `${t.online} · ${t.platforms[e.meeting_platform ?? 'other']}` : e.address_text}
                         </span>
+                        {institution && <span className="small">{fill(t.events.organizedBy, { name: institution.name })}</span>}
                         {creator && creator.role !== 'admin' && <span className="small">{fill(t.events.proposedBy, { name: creator.full_name })}</span>}
                       </div>
                     </div>
