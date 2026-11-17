@@ -93,6 +93,7 @@ export const api = {
   event: (id: string) => call<AdminEventDetail>('GET', `/admin/events/${enc(id)}`),
   createEvent: (body: CreateEventBody) => call<{ id: string }>('POST', '/admin/events', body),
   updateEvent: (id: string, body: EventInput) => call<void>('PUT', `/admin/events/${enc(id)}`, body),
+  removeCover: (id: string) => call<void>('DELETE', `/admin/events/${enc(id)}/cover`),
   setEventStatus: (id: string, action: 'publish' | 'cancel' | 'reject', body?: StatusChangeBody) =>
     call<void>('POST', `/admin/events/${enc(id)}/${action}`, body),
 

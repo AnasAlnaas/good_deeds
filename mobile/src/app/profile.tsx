@@ -40,7 +40,7 @@ export default function ProfileScreen() {
   const choosePhoto = () =>
     Platform.OS === 'web'
       ? applyPhoto('library')
-      : Alert.alert(s.profile.photoFrom, s.profile.photoWho, [
+      : Alert.alert(s.profile.photoFrom, undefined, [
           { text: s.cancel, style: 'cancel' },
           { text: s.profile.camera, onPress: () => applyPhoto('camera') },
           { text: s.profile.library, onPress: () => applyPhoto('library') },
@@ -90,9 +90,6 @@ export default function ProfileScreen() {
         />
         {me.avatar_url && <Button variant="quiet" icon="trash-outline" label={s.profile.removePhoto} disabled={busy} onPress={removePhoto} />}
       </View>
-      <Txt variant="caption" color={colors.inkMuted}>
-        {s.profile.photoWho}
-      </Txt>
 
       <View style={styles.level}>
         {/* The logo's tree, faint in the corner: the level card is the app's highlight. */}

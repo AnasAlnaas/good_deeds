@@ -285,10 +285,21 @@ export function cleanProfileEdit(edit: { full_name?: string; city?: string }): {
 
 // ---------- profile photos ----------
 
-/** Owner's decision (2026-10-22): a photo is seen by its owner, by admins, and by people of the same gender. */
-export function canSeePhoto(viewer: Pick<User, 'id' | 'gender' | 'role'>, owner: Pick<User, 'id' | 'gender'>) {
-  return viewer.id === owner.id || viewer.role === 'admin' || viewer.gender === owner.gender;
+/**
+ * Owner's decision (2026-11-17), replacing the one of 2026-10-22 (same gender only):
+ * a profile photo is seen by everyone signed in. Kept as the one place that
+ * decides, so a later change is made here alone.
+ */
+export function canSeePhoto(_viewer: Pick<User, 'id' | 'gender' | 'role'>, _owner: Pick<User, 'id' | 'gender'>) {
+  return true;
 }
+
+/**
+ * An event's cover photo (owner's decision, 2026-11-17): cropped to 16:9 on the
+ * phone and made this wide, then sent like a lesson's picture (LESSON_IMAGE_MAX_BYTES).
+ */
+export const COVER_WIDTH_PX = 1080;
+export const COVER_HEIGHT_PX = 608;
 
 /** Photos are sent as a square JPEG of this many pixels a side, and never bigger than PHOTO_MAX_BYTES. */
 export const PHOTO_SIZE_PX = 512;

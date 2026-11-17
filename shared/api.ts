@@ -152,6 +152,8 @@ export interface EventSummary
   i_created: boolean;
   /** The institution it is in the name of ("تنظّمها …"); null = the association's own. Absent from an older server. */
   institution?: InstitutionRef | null;
+  /** Its cover photo; null = none (the app draws one from its class). Absent from an older server. */
+  cover?: LessonImageRef | null;
 }
 
 /**
@@ -188,6 +190,11 @@ export interface EventProposal {
    * Absent or null = their own name. Not sent by an older app.
    */
   institution_id?: string | null;
+  /**
+   * The cover photo: a picture sent first to POST /api/lesson-images (16:9,
+   * rules.COVER_WIDTH_PX). Absent = unchanged (an older app); null = none.
+   */
+  cover_image_id?: string | null;
 }
 
 export interface LessonInput {

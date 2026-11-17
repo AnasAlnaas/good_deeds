@@ -6,7 +6,14 @@
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 
-import { LESSON_IMAGE_MAX_BYTES, LESSON_IMAGE_MAX_HEIGHT_PX, LESSON_IMAGE_WIDTH_PX, PHOTO_SIZE_PX } from '../../../shared/rules';
+import {
+  COVER_HEIGHT_PX,
+  COVER_WIDTH_PX,
+  LESSON_IMAGE_MAX_BYTES,
+  LESSON_IMAGE_MAX_HEIGHT_PX,
+  LESSON_IMAGE_WIDTH_PX,
+  PHOTO_SIZE_PX,
+} from '../../../shared/rules';
 
 export type PhotoSource = 'library' | 'camera';
 
@@ -33,6 +40,37 @@ async function squareJpeg({ uri, width, height }: ImagePicker.ImagePickerAsset) 
   const image = await context.renderAsync();
   const saved = await image.saveAsync({ format: SaveFormat.JPEG, compress: 0.8, base64: true });
   return saved.base64 ?? null;
+}
+
+/**
+ * An event's cover photo (owner's decision, 2026-11-17), from the phone's
+ * photos: cropped to 16:9 (the middle, where the phone has no crop screen),
+ * made COVER_WIDTH_PX wide, and compressed until it fits LESSON_IMAGE_MAX_BYTES.
+ * Sent like a lesson's picture. `too_big` when it never fits; null when cancelled.
+ */
+export async function pickCoverPhoto(): Promise<LessonPictureFile | 'too_big' | null> {
+  const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [16, 9], quality: 1 });
+  const asset = result.canceled ? null : result.assets[0];
+  if (!asset) return null;
+  const { uri, width, height } = asset;
+  const context = ImageManipulator.manipulate(uri);
+  if (width && height) {
+    const wanted = COVER_WIDTH_PX / COVER_HEIGHT_PX;
+    const cropWidth = Math.min(width, Math.round(height * wanted));
+    const cropHeight = Math.min(height, Math.round(cropWidth / wanted));
+    if (cropWidth !== width || cropHeight !== height) {
+      context.crop({ originX: Math.floor((width - cropWidth) / 2), originY: Math.floor((height - cropHeight) / 2), width: cropWidth, height: cropHeight });
+    }
+  }
+  context.resize({ width: COVER_WIDTH_PX, height: COVER_HEIGHT_PX });
+  const image = await context.renderAsync();
+  for (const compress of [0.8, 0.65, 0.5, 0.4]) {
+    const saved = await image.saveAsync({ format: SaveFormat.JPEG, compress, base64: true });
+    if (saved.base64 && (saved.base64.length * 3) / 4 <= LESSON_IMAGE_MAX_BYTES) {
+      return { base64: saved.base64, width: saved.width, height: saved.height };
+    }
+  }
+  return 'too_big';
 }
 
 /** A lesson's picture, ready to send (shared/api.ts LessonImageBody). */

@@ -1,21 +1,24 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import type { EventSummary } from '@/data/api';
 import { usePrefetchEvent } from '@/data/queries';
-import { dayTimeRange, fmt } from '@/i18n/format';
+import { day, fmt, time } from '@/i18n/format';
 import { openDirections } from '@/lib/directions';
 import { placeLabel, withZone } from '@/lib/place';
 import { useApp } from '@/state/app';
 import { classIcon, className } from '@/theme/classes';
-import { colors, radius, shadow, space } from '@/theme/tokens';
+import { cardShadow, colors, radius, shadow, space } from '@/theme/tokens';
+import { EventCover } from './EventCover';
 import { Txt } from './Txt';
-import { Badge, Card, IconButton, Row } from './ui';
+import { Badge, IconButton, Row } from './ui';
 
 /**
  * An event in the list, and the chosen pin's card on the map (`floating`, with
- * a directions button).
+ * a directions button). Design ج (owner's decision, 2026-11-17): its cover on
+ * top (the proposer's photo, or one drawn from its class) with the title and
+ * the day over it; what, where and when below.
  */
 export function EventCard({ event, floating }: { event: EventSummary; floating?: boolean }) {
   const { s, now, lang } = useApp();
@@ -32,56 +35,48 @@ export function EventCard({ event, floating }: { event: EventSummary; floating?:
 
   const card = (
     // Over the map the card stays solid; the men / women badge says why the event is not for this person.
-    <Card
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={event.title}
       onPress={() => router.push(`/event/${event.id}`)}
       onPressIn={() => prefetch(event.id)}
-      style={[!event.can_join_category && !floating && styles.dim, floating && shadow]}>
-      <View style={[styles.head, floating && styles.headRoom]}>
-        <View style={styles.icon}>
-          <Ionicons name={classIcon(event.event_class)} size={22} color={colors.primary} />
-        </View>
-        <View style={styles.flex}>
-          <Txt variant="caption" color={colors.inkMuted}>
-            {className(event.event_class, lang)}
-          </Txt>
-          <Txt variant="sectionTitle" numberOfLines={2}>
-            {event.title}
-          </Txt>
-        </View>
-      </View>
-      {/* In an institution's name: who organises it. */}
-      {event.institution && (
+      style={({ pressed }) => [styles.card, floating ? shadow : cardShadow, !event.can_join_category && !floating && styles.dim, pressed && styles.pressed]}>
+      <EventCover cover={event.cover} eventClass={event.event_class} height={floating ? 104 : 140} title={event.title} date={day(event.starts_at, s, now)} rounded />
+      <View style={styles.body}>
+        {event.institution && (
+          <View style={styles.meta}>
+            <Ionicons name="business" size={16} color={colors.primary} />
+            <Txt variant="caption" color={colors.primary} style={styles.flex} numberOfLines={1}>
+              {fmt(s.institutions.organizedBy, { name: event.institution.name })}
+            </Txt>
+          </View>
+        )}
         <View style={styles.meta}>
-          <Ionicons name="business" size={16} color={colors.primary} />
-          <Txt variant="caption" color={colors.primary} style={styles.flex} numberOfLines={1}>
-            {fmt(s.institutions.organizedBy, { name: event.institution.name })}
+          <Ionicons name={classIcon(event.event_class)} size={16} color={colors.inkMuted} />
+          <Txt variant="caption" color={colors.inkMuted} style={styles.flex} numberOfLines={1}>
+            {className(event.event_class, lang)} · {withZone(`${time(event.starts_at, s)} – ${time(event.ends_at, s)}`, event, s)}
           </Txt>
         </View>
-      )}
-      <View style={styles.meta}>
-        <Ionicons name={online ? 'videocam' : 'location'} size={16} color={colors.inkMuted} />
-        <Txt variant="caption" color={colors.inkMuted} style={styles.flex} numberOfLines={1}>
-          {placeLabel(event, s)}
-        </Txt>
+        <View style={styles.meta}>
+          <Ionicons name={online ? 'videocam' : 'location'} size={16} color={colors.inkMuted} />
+          <Txt variant="caption" color={colors.inkMuted} style={styles.flex} numberOfLines={1}>
+            {placeLabel(event, s)}
+          </Txt>
+          <Txt variant="caption" color={full ? colors.danger : colors.inkMuted} tabular>
+            {full ? s.event.full : fmt(s.event.seats, { joined: event.joined_count, capacity: event.capacity })}
+          </Txt>
+        </View>
+        {badges && (
+          <Row>
+            {event.status === 'running' && <Badge label={s.status.running} color={colors.danger} icon="radio-button-on" />}
+            {event.status === 'draft' && <Badge label={s.status.draft} color={colors.warning} icon="hourglass-outline" />}
+            {(event.status === 'rejected' || event.status === 'cancelled') && <Badge label={s.status[event.status]} color={colors.inkMuted} />}
+            {event.my_registration_status === 'joined' && <Badge label={s.event.joined} color={colors.success} icon="checkmark-circle" />}
+            {event.gender_category !== 'mixed' && <Badge label={s.category[event.gender_category]} color={colors.inkMuted} />}
+          </Row>
+        )}
       </View>
-      {badges && (
-        <Row>
-          {event.status === 'running' && <Badge label={s.status.running} color={colors.danger} icon="radio-button-on" />}
-          {event.status === 'draft' && <Badge label={s.status.draft} color={colors.warning} icon="hourglass-outline" />}
-          {(event.status === 'rejected' || event.status === 'cancelled') && <Badge label={s.status[event.status]} color={colors.inkMuted} />}
-          {event.my_registration_status === 'joined' && <Badge label={s.event.joined} color={colors.success} icon="checkmark-circle" />}
-          {event.gender_category !== 'mixed' && <Badge label={s.category[event.gender_category]} color={colors.inkMuted} />}
-        </Row>
-      )}
-      <View style={styles.block}>
-        <Txt variant="bodyStrong" color={colors.primary}>
-          {withZone(dayTimeRange(event.starts_at, event.ends_at, s, now), event, s)}
-        </Txt>
-        <Txt variant="caption" color={full ? colors.danger : colors.inkMuted} tabular>
-          {full ? s.event.full : fmt(s.event.seats, { joined: event.joined_count, capacity: event.capacity })}
-        </Txt>
-      </View>
-    </Card>
+    </Pressable>
   );
   // Only an event in a place has a pin on the map, and so directions.
   if (!floating || online) return card;
@@ -97,24 +92,16 @@ export function EventCard({ event, floating }: { event: EventSummary; floating?:
 }
 
 const styles = StyleSheet.create({
-  dim: { opacity: 0.55 },
-  head: { flexDirection: 'row', alignItems: 'center', gap: space.md },
-  headRoom: { paddingEnd: 48 + space.sm },
-  directions: { position: 'absolute', top: space.md + space.xs, end: space.md + space.xs },
-  icon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.surfaceAlt,
-    alignItems: 'center',
-    justifyContent: 'center',
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
   },
+  pressed: { opacity: 0.92 },
+  dim: { opacity: 0.55 },
+  body: { padding: space.md, gap: space.xs + 2 },
+  directions: { position: 'absolute', top: space.sm, end: space.sm },
   flex: { flex: 1 },
   meta: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
-  block: {
-    backgroundColor: colors.primarySoft,
-    borderRadius: radius.card - space.xs,
-    padding: space.md,
-    gap: space.xs,
-  },
 });

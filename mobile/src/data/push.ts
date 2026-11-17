@@ -79,6 +79,7 @@ export function screenFor(data: Record<string, unknown> | undefined): string | n
     case 'event_reminder':
     case 'waitlist_offer':
     case 'supervisor_added':
+    case 'cover_removed':
       return str('event_id') ? `/event/${str('event_id')}` : null;
     case 'photo_removed':
       return '/profile';

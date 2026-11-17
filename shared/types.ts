@@ -85,6 +85,12 @@ export interface AppEvent {
    * (one of its representatives proposed it). null = the association's own.
    */
   institution_id: string | null;
+  /**
+   * Owner's decision (2026-11-17, design ج): a cover photo its proposer (or an
+   * admin) chose, kept with the lessons' pictures (LessonImage). null = none:
+   * the app draws a cover from the event's class and tag instead.
+   */
+  cover_image_id: string | null;
 }
 
 // ---------- institutions (جمعية، مؤسسة، مدرسة…) ----------

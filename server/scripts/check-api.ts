@@ -559,12 +559,12 @@ expectEqual('his profile points to it', (await meOf(ahmad)).user.avatar_url, ava
 const seen = await h.raw(avatar_url, khaled);
 expectEqual("a man sees another man's photo", [seen.status, seen.type], [200, 'image/jpeg']);
 expectEqual('as a JPEG without its metadata', [seen.bytes[0], seen.bytes[1], seen.bytes.includes('Exif'), seen.bytes.includes('GPS'), seen.bytes.includes('JFIF')], [0xff, 0xd8, false, false, true]);
-expectEqual('a woman does not (no photo, as far as she can tell)', (await h.raw(avatar_url, mariam)).status, 404);
+expectEqual('a woman does too (owner\'s decision, 2026-11-17: everyone signed in)', (await h.raw(avatar_url, mariam)).status, 200);
 expectEqual('an admin and the owner do', [(await h.raw(avatar_url, admin)).status, (await h.raw(avatar_url, ahmad)).status], [200, 200]);
 expectEqual('nobody signed out does', (await h.raw(avatar_url)).status, 401);
 const listedFor = async (token: string) =>
   ((await call('GET', '/events/e10', token)).body as EventDetail).participants.find((p) => p.id === 'u_ahmad')?.avatar_url;
-expectEqual('among participants: with his photo for a man, without it for a woman', [await listedFor(khaled), await listedFor(mariam)], [avatar_url, null]);
+expectEqual('among participants: with his photo, for everyone', [await listedFor(khaled), await listedFor(mariam)], [avatar_url, avatar_url]);
 h.setClock(h.clock() + 1000);
 const renewed = (await call('PUT', '/me/photo', ahmad, b64(jpeg))).body.avatar_url;
 expectEqual('a new photo gets a new address, so no phone shows the old one', renewed !== avatar_url, true);

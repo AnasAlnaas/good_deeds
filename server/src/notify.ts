@@ -10,7 +10,8 @@
 // - a reminder to the same people the day before an event, and for one in a
 //   place again an hour before (rules.dueReminder);
 // - "your event was approved" / "was not approved", to whoever proposed it in the app;
-// - "your photo was removed", when an admin removes an unsuitable profile photo;
+// - "your photo was removed", when an admin removes an unsuitable profile photo,
+//   and "your event's cover was removed", to whoever proposed the event;
 // - "a supervisor gave you a warning", and "your appeal was decided" / "the warning was withdrawn";
 // - "your report was reviewed", to whoever reported, when an admin handles it;
 // - a supervisor's notice to an event, to the members who joined it and its other supervisors;
@@ -530,6 +531,25 @@ const PHOTO_REMOVED = {
 
 export function notifyPhotoRemoved(deps: AppDeps, userId: string) {
   send(deps, async () => [{ userId, text: (lang: Lang) => PHOTO_REMOVED[lang], data: { type: 'photo_removed' } }]);
+}
+
+const COVER_REMOVED = {
+  ar: { title: 'أُزيلت صورة الغلاف', body: 'أزالت إدارة الجمعية صورة غلاف «{event}» لأنها لا تناسب التطبيق.' },
+  en: { title: 'A cover photo was removed', body: 'The association removed the cover photo of "{event}" because it doesn\'t suit the app.' },
+};
+
+export function notifyCoverRemoved(deps: AppDeps, eventId: string) {
+  send(deps, async () => {
+    const [event] = await deps.db.select().from(s.events).where(eq(s.events.id, eventId));
+    if (!event) return [];
+    return [
+      {
+        userId: event.created_by,
+        text: (lang: Lang) => ({ title: COVER_REMOVED[lang].title, body: COVER_REMOVED[lang].body.replace('{event}', event.title) }),
+        data: { type: 'cover_removed', event_id: eventId },
+      },
+    ];
+  });
 }
 
 // ---------- warnings ----------

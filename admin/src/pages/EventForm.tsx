@@ -14,7 +14,7 @@ import { api } from '../api';
 import { fill, fromLocalInput, toLocalInput } from '../format';
 import type { LessonImageRef } from '../../../shared/api';
 import { LESSON_BODY_MAX, LESSON_TITLE_MAX, lessonComplete, MAX_LESSONS, youtubeId, youtubeWatchUrl } from '../../../shared/rules';
-import { LessonPicture, LessonVideo, lessonJpeg } from '../LessonPicture';
+import { coverJpeg, LessonPicture, LessonVideo, lessonJpeg } from '../LessonPicture';
 import { MapPicker, type MovedBy } from '../MapPicker';
 import { t } from '../strings';
 import { Button, ErrorNote, Field, Notice, PageHeader, QueryState, useAction } from '../ui';
@@ -113,6 +113,17 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
   const navigate = useNavigate();
   const { run, busy, error } = useAction();
   const [v, setV] = useState<EventInput>(() => initial(existing));
+  // The cover photo (owner's decision, 2026-11-17): sent first, then named by the form.
+  const [cover, setCover] = useState<LessonImageRef | null>(() => existing?.cover ?? null);
+  const [coverProblem, setCoverProblem] = useState<string | null>(null);
+  const chooseCover = async (file: File | undefined) => {
+    setCoverProblem(null);
+    if (!file) return;
+    const jpeg = await coverJpeg(file);
+    if (jpeg === 'unreadable' || jpeg === 'too_big') return setCoverProblem(jpeg === 'unreadable' ? t.form.pictureUnreadable : t.form.pictureTooBig);
+    const r = await run(() => api.uploadLessonImage(jpeg));
+    if (r) setCover(r.value.image);
+  };
   const [place, setPlace] = useState<PlaceDraft>(() => placeDraft(initial(existing)));
   const setPlaceField = <K extends keyof PlaceDraft>(key: K, value: PlaceDraft[K]) => setPlace((prev) => ({ ...prev, [key]: value }));
   const inPerson = place.location_type === 'in_person';
@@ -243,6 +254,7 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
       ...cleaned,
       terms: v.terms.map((x) => x.trim()),
       lessons: v.lessons.map((l) => ({ title: l.title.trim(), body: l.body.trim(), image_id: l.image_id, video_id: l.video_id })),
+      cover_image_id: cover?.id ?? null,
     };
     if (existing) {
       // In place of the form, so going back from the event does not land on the form again.
@@ -499,6 +511,33 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
               <span className="small muted">{t.role[p.role]}</span>
             </label>
           ))}
+        </div>
+      </section>
+
+      <section className="card">
+        <h2>{t.form.cover}</h2>
+        <p className="small muted">{t.form.coverHint}</p>
+        {cover && <LessonPicture image={cover} alt={t.form.cover} />}
+        {coverProblem && <Notice tone="danger">{coverProblem}</Notice>}
+        <div className="row">
+          <label className={`btn btn-secondary btn-small ${busy ? 'btn-disabled' : ''}`}>
+            {cover ? t.form.changeCover : t.form.addCover}
+            <input
+              type="file"
+              accept="image/*"
+              hidden
+              disabled={busy}
+              onChange={(e) => {
+                void chooseCover(e.target.files?.[0]);
+                e.target.value = '';
+              }}
+            />
+          </label>
+          {cover && (
+            <Button variant="quiet" className="btn-small" onClick={() => setCover(null)}>
+              {t.form.removeCover}
+            </Button>
+          )}
         </div>
       </section>
 

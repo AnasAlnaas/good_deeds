@@ -33,8 +33,7 @@ app collects and why.
 - Your **email address**, to sign in and to send you a code if you forget your
   password. We email it a code to confirm it is yours. We send nothing else to it.
 - Your **full name**.
-- Your **gender** (man or woman). Some events are for men only or women only,
-  and photos are shown by gender (see below).
+- Your **gender** (man or woman). Some events are for men only or women only.
 - Your **city**.
 
 **If you choose to add it**
@@ -95,12 +94,12 @@ contains your name, phone number, email, location, or photos.
 
 | Who | What they see |
 |---|---|
-| **Other members** | Your name, and whether you are a man or a woman, in the list of people who joined an event. Your photo only if they are the same gender as you. They never see your phone number, city, hours, points, reports or warnings. |
+| **Other members** | Your name, and whether you are a man or a woman, in the list of people who joined an event. Your photo, if you added one. They never see your phone number, city, hours, points, reports or warnings. |
 | **A supervisor of an event you joined** | The same as other members, plus the attendance they record for you. |
 | **The association's admins** | Everything listed above, including your phone number, so they can run events, settle disputes and handle reports. |
 
-- **Photos** are seen only by you, the admins, and people of the same gender
-  as you. Everyone else sees the first letter of your name.
+- **Photos** you add are seen by the app's signed-in members and the admins.
+  Without a photo, the first letter of your name shows.
 - **Reports** are read only by admins. The person you name is never told
   that you reported them, or that a report exists. You are told only that an
   admin has looked at your report.

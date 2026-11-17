@@ -72,12 +72,12 @@ The app follows the planning notes (`DESIGN.md`, `Screens.md`, `Data_Model.md`,
 - My activity, profile with level, account deletion.
 - **Editing the profile** (Profile → "عدّل بياناتك"): the name and the city,
   checked as at sign-up. Gender stays as it was set at sign-up (it decides which
-  events a person may join and who sees their photo), and so does the phone
+  events a person may join), and so does the phone
   (sign-in is by phone); the screen says so.
 - **Profile photo**: from the phone's photos or the camera, made a small square
   JPEG on the phone; the server removes its metadata (EXIF: place, phone). Seen
-  only by the owner, admins and people of the same gender (owner's decision);
-  everyone else sees the first letter of the name. Shown on the roster and the
+  by everyone signed in (owner's decision, 2026-11-17; before, only the same gender);
+  without one, the first letter of the name shows. Shown on the roster and the
   record screen, so the supervisor can see who stands in front of them.
 - **Proposing an event** (Events tab → "اقترح فعالية"): opens at level 5, or for
   supervisors and admins. The creator becomes its supervisor and may choose only
@@ -101,6 +101,15 @@ The app follows the planning notes (`DESIGN.md`, `Screens.md`, `Data_Model.md`,
   everyone who joined is notified once, and again if the start moves.
   Attendance, points, capacity and the men/women rule work as for any event:
   a supervisor records who attended.
+- **Event cards and covers** (owner's decisions, 2026-11-17, design ج): every
+  card and event page opens with a cover, the title and the day over it. The
+  cover is a photo the proposer chose on the form (cropped to 16:9 on the
+  phone, sent like a lesson's picture, metadata removed), or, without one, a
+  cover drawn from the event's class. The picker says to choose the place or
+  the work, not people's faces. Covers show at once, also on events published
+  without review; an admin removes an unsuitable one from the event's page in
+  the panel, and whoever proposed it is notified. Admins can also set one in
+  the panel's form.
 - **Institutions** (جمعية، مؤسسة، مدرسة، جامعة، مسجد، شركة، فريق تطوعي; owner's
   decisions, 2026-11-17). Profile → "مؤسساتك":
   - A member asks to add one (its name and kind); an admin approves or turns it

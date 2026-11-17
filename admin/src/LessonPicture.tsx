@@ -5,7 +5,15 @@
 import { useEffect, useState } from 'react';
 
 import type { LessonImageRef } from '../../shared/api';
-import { LESSON_IMAGE_MAX_BYTES, LESSON_IMAGE_MAX_HEIGHT_PX, LESSON_IMAGE_WIDTH_PX, youtubeThumbnail, youtubeWatchUrl } from '../../shared/rules';
+import {
+  COVER_HEIGHT_PX,
+  COVER_WIDTH_PX,
+  LESSON_IMAGE_MAX_BYTES,
+  LESSON_IMAGE_MAX_HEIGHT_PX,
+  LESSON_IMAGE_WIDTH_PX,
+  youtubeThumbnail,
+  youtubeWatchUrl,
+} from '../../shared/rules';
 import { api } from './api';
 
 export function LessonPicture({ image, alt }: { image: LessonImageRef; alt: string }) {
@@ -69,6 +77,33 @@ export async function lessonJpeg(file: File): Promise<string | 'too_big' | 'unre
   ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
   bitmap.close();
   for (const quality of [0.85, 0.7, 0.55, 0.4]) {
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+    if (blob && blob.size <= LESSON_IMAGE_MAX_BYTES) return base64(blob);
+  }
+  return 'too_big';
+}
+
+/**
+ * The file as an event's cover photo (owner's decision, 2026-11-17): its middle
+ * cropped to 16:9 and made COVER_WIDTH_PX wide, compressed until it fits
+ * LESSON_IMAGE_MAX_BYTES. As the app's (mobile/src/lib/photo.ts pickCoverPhoto).
+ */
+export async function coverJpeg(file: File): Promise<string | 'too_big' | 'unreadable'> {
+  const bitmap = await createImageBitmap(file).catch(() => null);
+  if (!bitmap) return 'unreadable';
+  const wanted = COVER_WIDTH_PX / COVER_HEIGHT_PX;
+  const cropWidth = Math.min(bitmap.width, Math.round(bitmap.height * wanted));
+  const cropHeight = Math.min(bitmap.height, Math.round(cropWidth / wanted));
+  const canvas = document.createElement('canvas');
+  canvas.width = COVER_WIDTH_PX;
+  canvas.height = COVER_HEIGHT_PX;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return 'unreadable';
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bitmap, (bitmap.width - cropWidth) / 2, (bitmap.height - cropHeight) / 2, cropWidth, cropHeight, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  for (const quality of [0.8, 0.65, 0.5, 0.4]) {
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
     if (blob && blob.size <= LESSON_IMAGE_MAX_BYTES) return base64(blob);
   }
