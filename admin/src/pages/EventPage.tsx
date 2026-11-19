@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useParams } from 'react-router';
 
 import { classOfEvent, EVENT_CLASSES } from '../../../shared/classes';
+import { eventMaxPoints } from '../../../shared/rules';
 import { api } from '../api';
 import { LessonPicture, LessonVideo } from '../LessonPicture';
 import { fill, ltr, num, range, time } from '../format';
@@ -147,7 +148,7 @@ export function EventPage() {
             <dt>{t.event.type}</dt>
             <dd>
               {EVENT_CLASSES.find((k) => k.id === classOfEvent(e))?.name_ar} · {t.subtype[e.subtype] ?? e.subtype} ·{' '}
-              {fill(t.event.points, { n: e.base_points })}
+              {fill(t.event.points, { n: eventMaxPoints(e) })}
             </dd>
             <dt>{t.events.seats}</dt>
             <dd className="tabular">{fill(t.event.seats, { joined: d.joined_count, capacity: e.capacity })}</dd>

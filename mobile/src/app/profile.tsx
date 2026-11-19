@@ -4,6 +4,7 @@ import { ActivityIndicator, Alert, Platform, StyleSheet, View } from 'react-nati
 import { Avatar } from '@/components/Avatar';
 import { LogoMark } from '@/components/brand';
 import { Button } from '@/components/Button';
+import { LevelRoad, useLevelName } from '@/components/LevelRoad';
 import { ProgressBar } from '@/components/ProgressBar';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
@@ -24,6 +25,7 @@ export default function ProfileScreen() {
   const { s, lang } = useApp();
   const summary = useMeSummary();
   const { run, busy } = useAction();
+  const levelName = useLevelName();
 
   const applyPhoto = async (source: PhotoSource) => {
     let photo: string | 'denied' | null;
@@ -98,7 +100,7 @@ export default function ProfileScreen() {
         </View>
         <View style={styles.levelRow}>
           <Txt variant="sectionTitle" color={colors.accentInk}>
-            {fmt(s.profile.level, { n: level.level })}
+            {levelName(level.level)}
           </Txt>
           <Txt variant="hero" color={colors.accentInk} tabular>
             {num(total)}
@@ -107,7 +109,7 @@ export default function ProfileScreen() {
         <ProgressBar value={progress} height={10} onAccent />
         <Txt variant="caption" color={colors.accentInk}>
           {next
-            ? fmt(s.profile.toNext, { n: count(next.min_points - total, s.units.point), level: next.level })
+            ? fmt(s.profile.toNext, { n: count(next.min_points - total, s.units.point), level: num(next.level) })
             : s.profile.maxLevel}
         </Txt>
         {summary.data.can_create_events ? (
@@ -120,6 +122,14 @@ export default function ProfileScreen() {
           )
         )}
       </View>
+
+      {/* An older server sends no levels: the road is left out. */}
+      {summary.data.levels?.length ? (
+        <Card>
+          <Txt variant="sectionTitle">{s.levelRoad.title}</Txt>
+          <LevelRoad levels={summary.data.levels} total={total} />
+        </Card>
+      ) : null}
 
       <Card>
         <InfoRow icon="call-outline" label={s.profile.phone} value={ltr(me.phone)} />

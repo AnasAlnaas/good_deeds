@@ -55,11 +55,12 @@ export async function seedDemo(db: Database, nowMs: number) {
   await db.transaction(async (tx) => {
     await tx.insert(s.users).values(users);
     await tx.insert(s.user_passwords).values(users.map((u) => ({ user_id: u.id, hash, updated_at: new Date(nowMs) })));
-    await tx.insert(s.levels).values(d.levels);
+    // The migrations already hold the levels (drizzle/0020); the seed's are the same.
+    await tx.insert(s.levels).values(d.levels).onConflictDoNothing();
     await tx.insert(s.institutions).values(d.institutions.map(dated));
     await tx.insert(s.institution_members).values(d.institution_members.map(dated));
     await tx.insert(s.events).values(d.events.map(dated));
-    await tx.insert(s.event_organizers).values(d.event_organizers);
+    await tx.insert(s.event_organizers).values(d.event_organizers.map(dated));
     if (d.event_notices.length) await tx.insert(s.event_notices).values(d.event_notices.map(dated));
     if (d.notice_reactions.length) await tx.insert(s.notice_reactions).values(d.notice_reactions.map(dated));
     await tx.insert(s.event_terms).values(d.event_terms.map(dated));

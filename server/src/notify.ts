@@ -25,7 +25,7 @@ import { and, eq, gt, inArray, isNull, lte, ne } from 'drizzle-orm';
 
 import { dueReminder, MEETING_LINK_OPENS_MINUTES, REMINDER_DAY_BEFORE_HOURS } from '../../shared/rules';
 
-import { closeDueAttendance } from './db/queries';
+import { closeDueAttendance, creditSoleSupervisors } from './db/queries';
 import { fillOpenPlaces } from './waitlist';
 import { sweepLessonImages } from './lesson-images';
 import * as s from './db/schema';
@@ -82,15 +82,17 @@ const TO_CONFIRM = {
     title: 'ساعاتك بانتظار تأكيدك',
     recorded: 'سُجّل انتهاء نشاطك في «{event}». راجع ساعاتك وأكّدها لتُضاف نقاطك.',
     auto_closed: 'أُغلق نشاطك في «{event}» آلياً عند انتهاء الفعالية. راجع ساعاتك وأكّدها.',
+    supervised: 'كنت المشرف الوحيد على «{event}»، فسُجّل لك وقتها كاملاً. راجع ساعاتك وأكّدها.',
   },
   en: {
     title: 'Your hours are waiting for you',
     recorded: 'Your finish at "{event}" was recorded. Review and confirm your hours to earn your points.',
     auto_closed: 'Your activity at "{event}" closed automatically when the event ended. Review and confirm your hours.',
+    supervised: 'You were the only supervisor at "{event}", so its whole time was recorded for you. Review and confirm your hours.',
   },
 };
 
-export function notifyHoursToConfirm(deps: AppDeps, attendanceIds: string[], reason: 'recorded' | 'auto_closed') {
+export function notifyHoursToConfirm(deps: AppDeps, attendanceIds: string[], reason: 'recorded' | 'auto_closed' | 'supervised') {
   if (attendanceIds.length === 0) return;
   send(deps, async () =>
     (await attendanceWithEvent(deps, attendanceIds)).map((r) => ({
@@ -105,11 +107,13 @@ export function notifyHoursToConfirm(deps: AppDeps, attendanceIds: string[], rea
 export async function closeDueAndNotify(deps: AppDeps) {
   const closed = await closeDueAttendance(deps.db, deps.now());
   notifyHoursToConfirm(deps, closed, 'auto_closed');
+  const supervised = await creditSoleSupervisors(deps.db, deps.now());
+  notifyHoursToConfirm(deps, supervised, 'supervised');
   await remindMeetingLinks(deps);
   await remindEvents(deps);
   await offerWaitlistPlaces(deps);
   await sweepLessonImages(deps.db, deps.now());
-  return closed.length;
+  return closed.length + supervised.length;
 }
 
 // ---------- an online event's link is open ----------

@@ -189,7 +189,7 @@ const ar = {
     ownTagPlaceholder: 'مثلاً: سقيا الطيور',
     ownTagHint: 'كلمة أو كلمتان تصفان العمل. إن تكرر الوسم في الفعاليات المعتمدة صار يُعرض على الجميع.',
     ownTagExists: 'هذا الوسم موجود: «{tag}». ستحمله فعاليتك.',
-    typePoints: 'تُمنح {points} لمن يحضرها كاملة.',
+    timePoints: 'كل دقيقة عمل نقطة: من يحضرها كاملة يكسب {points}.',
     place: 'المكان',
     city: 'المدينة',
     address: 'المكان في المدينة',
@@ -466,6 +466,8 @@ const ar = {
     recordStart: 'سجّل البدء',
     recordEnd: 'سجّل الانتهاء',
     self: 'يسجّله مشرف آخر',
+    selfSole: 'أنت المشرف الوحيد: يُسجَّل لك وقتها كاملاً عند انتهائها، إن سُجّل حضور أحد فيها.',
+    supervisor: 'مشرف',
     startedAt: 'البدء {time}',
     endedAt: 'الانتهاء {time}',
     autoClosed: 'أُغلق آلياً',
@@ -481,6 +483,16 @@ const ar = {
     refusedStart: 'البدء',
     refusedEnd: 'الانتهاء',
     refusedOk: 'حسناً',
+  },
+
+  // Owner's decision (2026-11-18): the supervisor answers for the points; recording waits for this pledge, once per event.
+  pledge: {
+    title: 'تسجيل الحضور أمانة',
+    body: 'كل دقيقة تسجّلها تصير نقطة في رصيد صاحبها، ويُبنى عليها مستواه وساعاته الرسمية. سجّل ما رأيته فقط، لا زيادة ولا نقصان.',
+    verse: '﴿إِنَّ اللَّهَ يَأْمُرُكُمْ أَنْ تُؤَدُّوا الْأَمَانَاتِ إِلَىٰ أَهْلِهَا﴾',
+    verseSource: 'سورة النساء: ٥٨',
+    take: 'أتعهّد بذلك',
+    reminder: 'تسجيل الحضور أمانة: سجّل ما رأيته فقط.',
   },
 
   record: {
@@ -536,10 +548,20 @@ const ar = {
     review: 'راجع وأكّد',
   },
 
+  // The levels' names, by level (owner's decision, 2026-11-18: chosen later). Until then a level shows its number.
+  levelNames: {} as Partial<Record<number, string>>,
+
+  levelRoad: {
+    title: 'طريق المستويات',
+    left: 'بقي {n}',
+    unlocksEvents: 'تقترح فيه فعالياتك',
+    hidden: 'مستوى لم يُكشف بعد',
+  },
+
   profile: {
     level: 'المستوى {n}',
     toNext: 'بقي {n} للمستوى {level}',
-    maxLevel: 'بلغت أعلى مستوى',
+    maxLevel: 'بلغت آخر مستوى مكشوف، وفي الطريق مستويات قادمة.',
     member: 'عضو في الجمعية',
     phone: 'الهاتف',
     city: 'المدينة',
@@ -788,6 +810,7 @@ const ar = {
     cannot_cancel_after_attendance: 'لا يمكن إلغاء الانضمام بعد تسجيل حضورك.',
     not_organizer: 'لست مشرفاً في هذه الفعالية.',
     cannot_record_self: 'لا يسجّل المشرف حضور نفسه؛ يسجّله مشرف آخر.',
+    pledge_required: 'اقرأ أمانة التسجيل وتعهّد بها أولًا، ثم سجّل الحضور.',
     start_before_event: 'لا يمكن أن يسبق البدء موعد الفعالية.',
     time_in_future: 'لا يمكن التسجيل بوقت في المستقبل.',
     already_started: 'سُجّل بدء هذا المشارك من قبل.',
@@ -1034,7 +1057,7 @@ const en: Strings = {
     ownTagPlaceholder: 'For example: Water for birds',
     ownTagHint: 'A word or two that say what the work is. Once approved events keep using a tag, everyone is offered it.',
     ownTagExists: 'That tag exists: "{tag}". Your event will carry it.',
-    typePoints: 'Attending all of it earns {points}.',
+    timePoints: 'Every minute of work is a point: attending all of it earns {points}.',
     place: 'Place',
     city: 'City',
     address: 'Place in the city',
@@ -1311,6 +1334,8 @@ const en: Strings = {
     recordStart: 'Record start',
     recordEnd: 'Record finish',
     self: 'Another supervisor records this',
+    selfSole: "You're the only supervisor: its whole time is recorded for you when it ends, if anyone's attendance was recorded.",
+    supervisor: 'Supervisor',
     startedAt: 'Started {time}',
     endedAt: 'Finished {time}',
     autoClosed: 'Closed automatically',
@@ -1326,6 +1351,15 @@ const en: Strings = {
     refusedStart: 'start',
     refusedEnd: 'finish',
     refusedOk: 'OK',
+  },
+
+  pledge: {
+    title: 'Recording attendance is a trust',
+    body: 'Every minute you record becomes a point for that person, and their level and official hours rest on it. Record only what you saw, no more and no less.',
+    verse: '"God commands you to render trusts to whom they are due."',
+    verseSource: "Qur'an, An-Nisa 4:58",
+    take: 'I pledge to do so',
+    reminder: 'Recording attendance is a trust: record only what you saw.',
   },
 
   record: {
@@ -1381,10 +1415,19 @@ const en: Strings = {
     review: 'Review and confirm',
   },
 
+  levelNames: {},
+
+  levelRoad: {
+    title: 'The road of levels',
+    left: '{n} to go',
+    unlocksEvents: 'you can propose events',
+    hidden: 'A level not revealed yet',
+  },
+
   profile: {
     level: 'Level {n}',
     toNext: '{n} to level {level}',
-    maxLevel: "You've reached the top level",
+    maxLevel: "You've reached the last level revealed; more are on the way.",
     member: 'Association member',
     phone: 'Phone',
     city: 'City',
@@ -1627,6 +1670,7 @@ const en: Strings = {
     cannot_cancel_after_attendance: "You can't leave after your attendance was recorded.",
     not_organizer: "You're not a supervisor at this event.",
     cannot_record_self: "Supervisors can't record themselves; another supervisor does it.",
+    pledge_required: 'Read the pledge and take it first, then record attendance.',
     start_before_event: "The start can't be before the event starts.",
     time_in_future: "You can't record a time in the future.",
     already_started: "This participant's start is already recorded.",

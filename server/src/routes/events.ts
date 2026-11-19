@@ -28,10 +28,9 @@ import type {
 } from '../../../shared/api';
 import { classOfEvent, eventSubtypes } from '../../../shared/classes';
 import { ApiError } from '../../../shared/errors';
-import { CUSTOM_TAG_BASE_POINTS } from '../../../shared/placeholders';
 import * as rules from '../../../shared/rules';
 import { inLessonLibrary, lessonLibrary } from '../../../shared/lesson-library';
-import { basePointsOf, promotedTags } from '../../../shared/tags';
+import { promotedTags } from '../../../shared/tags';
 import { type AppEvent, NOTICE_REACTIONS, type NoticeKind, type NoticeReactionKind, type Registration, type User } from '../../../shared/types';
 import { requireUser } from '../auth';
 import type { Database } from '../db/client';
@@ -42,8 +41,10 @@ import {
   findEventFor,
   findInstitution,
   institutionApproved,
+  ownApproved,
   institutionRefs,
   isOrganizer,
+  organizerLink,
   joinedCounts,
   joinedUsers,
   learnedAt,
@@ -207,8 +208,7 @@ export const eventRoutes = new Hono<AppEnv>()
     return c.json<EventFormMeta>({
       subtypes: eventSubtypes(),
       tags: promotedTags(tagged),
-      custom_tag_points: CUSTOM_TAG_BASE_POINTS,
-      publishes_directly: rules.proposalStatus(me) === 'published',
+      publishes_directly: rules.proposalStatus(me, { own: await ownApproved(db, me.id) }) === 'published',
       waiting: await waitingProposals(db, me.id),
       max_waiting: rules.MAX_WAITING_PROPOSALS,
       lesson_library: await lessonLibraryFor(db, me),
@@ -235,7 +235,7 @@ export const eventRoutes = new Hono<AppEnv>()
         now: t,
         institution,
       });
-      const status = rules.proposalStatus(me, institution ? await institutionApproved(tx, institution.id) : null);
+      const status = rules.proposalStatus(me, institution ? { institution: await institutionApproved(tx, institution.id) } : { own: await ownApproved(tx, me.id) });
       await assertCoverExists(tx, body.cover_image_id);
       await tx.insert(s.events).values({
         id,
@@ -248,7 +248,6 @@ export const eventRoutes = new Hono<AppEnv>()
         ends_at: new Date(body.ends_at),
         capacity: body.capacity,
         gender_category: body.gender_category,
-        base_points: basePointsOf(body.subtype),
         status,
         created_by: me.id,
         created_at: new Date(t),
@@ -306,7 +305,6 @@ export const eventRoutes = new Hono<AppEnv>()
           ends_at: new Date(body.ends_at),
           capacity: body.capacity,
           gender_category: body.gender_category,
-          base_points: basePointsOf(body.subtype),
           institution_id: institution?.id ?? null,
           cover_image_id: cover ?? null,
         })
@@ -678,17 +676,40 @@ export const eventRoutes = new Hono<AppEnv>()
     if (!(await isOrganizer(db, id, me.id))) throw new ApiError('not_organizer');
     const [summary] = await summarize(db, me, [event], now());
     const people = await joinedUsers(db, id);
+    // The other supervisors are on it too: one of them records each one's hours (rules.decideRecordStart).
+    const supervisors = await supervisorsOf(db, id);
+    const others = supervisors.filter((u) => !people.some((p) => p.id === u.id)).map(({ added_by: _, ...u }) => u);
     const rows = await db.select().from(s.attendance).where(eq(s.attendance.event_id, id));
     const byUser = new Map(rows.map((r) => [r.user_id, iso(r)]));
     const warned = await warnedBy(db, id, me.id);
     return c.json<RosterResponse>({
       event: summary,
-      participants: people.map((user) => ({
+      i_pledged: !!(await organizerLink(db, id, me.id))?.pledged_at,
+      participants: [...people, ...others].map((user) => ({
         user: shownTo(me, user),
         attendance: byUser.get(user.id) ?? null,
         i_warned: warned.has(user.id),
+        is_supervisor: supervisors.some((u) => u.id === user.id),
       })),
     });
+  })
+
+  // A supervisor of this event takes the pledge to record attendance faithfully (إنها أمانة), once.
+  .post('/:id/pledge', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    await db.transaction(async (tx) => {
+      const event = await findEvent(tx, id, { lock: true });
+      const link = await organizerLink(tx, id, me.id);
+      if (rules.decidePledge({ actorIsOrganizer: !!link, event, pledged: !!link?.pledged_at }) === 'pledge') {
+        await tx
+          .update(s.event_organizers)
+          .set({ pledged_at: new Date(now()) })
+          .where(and(eq(s.event_organizers.event_id, id), eq(s.event_organizers.user_id, me.id)));
+      }
+    });
+    return c.body(null, 204);
   })
 
   // A supervisor of this event warns someone who joined it. Only that member and admins see it.
@@ -732,10 +753,13 @@ export const eventRoutes = new Hono<AppEnv>()
       // Locking the event makes an admin cancelling it wait for this start, or this start see the cancellation.
       const event = await findEvent(tx, id, { lock: true });
       const registration = await registrationOf(tx, id, userId, { lock: true });
+      const link = await organizerLink(tx, id, me.id);
       const start = rules.decideRecordStart({
         actorId: me.id,
         participantId: userId,
-        actorIsOrganizer: await isOrganizer(tx, id, me.id),
+        actorIsOrganizer: !!link,
+        pledged: !!link?.pledged_at,
+        participantIsOrganizer: await isOrganizer(tx, id, userId),
         event,
         registration,
         attendance: await attendanceOf(tx, id, userId),
@@ -766,10 +790,12 @@ export const eventRoutes = new Hono<AppEnv>()
     const attendance = await db.transaction(async (tx) => {
       const event = await findEvent(tx, id);
       const current = await attendanceOf(tx, id, userId, { lock: true });
+      const link = await organizerLink(tx, id, me.id);
       const end = rules.decideRecordEnd({
         actorId: me.id,
         participantId: userId,
-        actorIsOrganizer: await isOrganizer(tx, id, me.id),
+        actorIsOrganizer: !!link,
+        pledged: !!link?.pledged_at,
         event,
         attendance: current,
         endedAt: body.at ? Date.parse(body.at) : undefined,

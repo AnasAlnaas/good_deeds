@@ -11,6 +11,7 @@ import type { Db } from '../src/data/types';
 import { buildSeed } from '../src/demo/seed';
 import * as server from '../src/demo/server';
 import { cityInText, cityName, LIBYAN_CITIES, placeInCity, splitAddress } from '../../shared/cities';
+import { LEVELS } from '../../shared/placeholders';
 import * as rules from '../../shared/rules';
 import { lessonLibrary } from '../../shared/lesson-library';
 import { cleanKind, promotedTags } from '../../shared/tags';
@@ -47,7 +48,9 @@ function joinFully(db: Db, userId: string, eventId: string, now: number) {
   return server.completeJoin(d, userId, eventId, now);
 }
 
-const db = buildSeed(NOW);
+const unpledged = buildSeed(NOW);
+// خالد took the pledge at the events he records at below (the seed leaves e01's to be taken in the app).
+const db = server.pledge(server.pledge(unpledged, 'u_khaled', 'e01', NOW), 'u_khaled', 'e02', NOW);
 const running = server.getEvent(db, 'e01');
 const start = new Date(running.starts_at).getTime();
 
@@ -76,6 +79,11 @@ expectError('supervisor of ANOTHER event records here', 'not_organizer', () =>
 expectError('supervisor records himself', 'cannot_record_self', () =>
   server.recordStart(db, 'u_khaled', { eventId: 'e01', userId: 'u_khaled' }, NOW),
 );
+expectError('a supervisor records before taking the pledge', 'pledge_required', () =>
+  server.recordStart(unpledged, 'u_khaled', { eventId: 'e01', userId: 'u_ahmad' }, NOW),
+);
+expectError('a participant takes it', 'not_organizer', () => server.pledge(unpledged, 'u_ahmad', 'e01', NOW));
+expectEqual('taking it twice changes nothing', server.pledge(db, 'u_khaled', 'e01', NOW), db);
 expectError('record someone who never joined', 'not_joined', () =>
   server.recordStart(db, 'u_khaled', { eventId: 'e01', userId: 'u_f5' }, NOW),
 );
@@ -107,8 +115,8 @@ console.log('\n— confirming hours and points');
 expectError("confirm someone else's hours", 'not_your_attendance', () => server.confirmAttendance(d, 'u_mariam', a.id, NOW));
 const before = server.totalPoints(d, 'u_ahmad');
 const confirmed = server.confirmAttendance(d, 'u_ahmad', a.id, NOW);
-// Placeholder formula: base 30 × (0.5 h / 4 h event) = 3.75, all physical.
-expectEqual('fractional points credited', Math.round((server.totalPoints(confirmed, 'u_ahmad') - before) * 100) / 100, 3.75);
+// A point is a minute: 0.5 h = 30 points.
+expectEqual('a point a minute', Math.round((server.totalPoints(confirmed, 'u_ahmad') - before) * 100) / 100, 30);
 expectError('confirm twice', 'already_acted', () => server.confirmAttendance(confirmed, 'u_ahmad', a.id, NOW));
 const disputed = server.disputeAttendance(d, 'u_ahmad', a.id, NOW);
 expectEqual('disputed hours earn nothing', server.totalPoints(disputed, 'u_ahmad'), before);
@@ -191,13 +199,12 @@ expectError('he moves it into the past', 'starts_in_past', () =>
 );
 const afterEdit = server.editProposal(three, 'u_khaled', draft.id, edited, NOW);
 const editedEvent = afterEdit.events.find((e) => e.id === draft.id)!;
-expectEqual('he edits it while three wait; it still waits, with the points of its new type', [
+expectEqual('he edits it while three wait; it still waits', [
   editedEvent.title,
   editedEvent.status,
-  editedEvent.base_points,
   server.eventTerms(afterEdit, draft.id).map((x) => x.text),
   server.isOrganizer(afterEdit, draft.id, 'u_khaled'),
-], ['حلقة تلاوة في الحديقة', 'draft', 20, ['أحضر مصحفك.', 'احضر قبل الموعد بربع ساعة.'], true]);
+], ['حلقة تلاوة في الحديقة', 'draft', ['أحضر مصحفك.', 'احضر قبل الموعد بربع ساعة.'], true]);
 const rejected: Db = { ...three, events: three.events.map((e) => (e.id === draft.id ? { ...e, status: 'rejected' as const } : e)) };
 expectError('he edits it after an admin turned it down', 'proposal_not_waiting', () => server.editProposal(rejected, 'u_khaled', draft.id, edited, NOW));
 expectError('a supervisor edits a published event he runs', 'proposal_not_waiting', () => server.editProposal(three, 'u_khaled', 'e02', edited, NOW));
@@ -249,7 +256,9 @@ console.log('\n— the waiting list');
   ], [false, true]);
   const joined = joinFully(d, 'u_ahmad', 'e12', NOW);
   expectEqual('taken in time: he joins, and leaves the list', [server.registrationOf(joined, 'e12', 'u_ahmad')?.status, server.waitlistOf(joined, 'e12').length], ['joined', 1]);
-  expectEqual('nothing to do leaves the data as it is', server.tick(joined, NOW) === joined, true);
+  // The first run credits e15's only supervisor his hours (it ended two days ago); after that there is nothing to do.
+  const settled = server.tick(joined, NOW);
+  expectEqual('nothing to do leaves the data as it is', server.tick(settled, NOW) === settled, true);
 }
 
 console.log('\n— videos in lessons');
@@ -435,7 +444,7 @@ console.log('\n— attendance kept on the phone with no connection');
   const db = buildSeed(NOW);
   const e01 = db.events.find((e) => e.id === 'e01')!;
   const ends = new Date(e01.ends_at).getTime();
-  const base = { actorId: 'u_khaled', participantId: 'u_f3', actorIsOrganizer: true, event: e01, attendance: undefined };
+  const base = { actorId: 'u_khaled', participantId: 'u_f3', actorIsOrganizer: true, pledged: true, event: e01, attendance: undefined };
   const reg = db.registrations.find((r) => r.event_id === 'e01' && r.user_id === 'u_f3');
   const late = ends + 3 * 60 * MIN;
   const start = rules.decideRecordStart({ ...base, registration: reg, recordedAt: ends - 60 * MIN, now: late });
@@ -451,10 +460,12 @@ console.log('\n— attendance kept on the phone with no connection');
   // As the server sends it: who joined, and what it has recorded for each.
   const roster = {
     event: { id: 'e01' } as RosterResponse['event'],
+    i_pledged: true,
     participants: server.joinedUsers(db, 'e01').map((u) => ({
       user: { id: u.id, full_name: u.full_name, avatar_url: null, gender: u.gender },
       attendance: server.attendanceOf(db, 'e01', u.id) ?? null,
       i_warned: false,
+      is_supervisor: false,
     })),
   };
   const queued = [
@@ -530,7 +541,7 @@ console.log('\n— online events');
 console.log('\n— a written tag, and the city in an address');
 {
   const { event } = server.proposeEvent(db, 'u_khaled', proposal({ subtype: ' سقيا  الطيور ', event_class: 'environment' }), NOW);
-  expectEqual('a proposal with a written tag keeps it tidied, with its class', [event.subtype, event.event_class, event.base_points], ['سقيا الطيور', 'environment', 20]);
+  expectEqual('a proposal with a written tag keeps it tidied, with its class', [event.subtype, event.event_class], ['سقيا الطيور', 'environment']);
   expectEqual('a known type goes under its own class', server.proposeEvent(db, 'u_khaled', proposal({ event_class: 'health' }), NOW).event.event_class, 'environment');
   expectEqual('what is not a tag', [cleanKind({ subtype: 'سقيا الطيور' }), cleanKind({ subtype: 'x', event_class: 'health' }), cleanKind({ subtype: '123', event_class: 'health' })], [null, null, null]);
   const used = (subtype: string, status: 'published' | 'draft' = 'published') => ({ subtype, event_class: 'environment' as const, status });
@@ -624,7 +635,60 @@ console.log('\n— institutions (the demo, as the server: server/scripts/check-i
   const confirmed = server.confirmMember(db, 'u_khaled', inst, 'u_f1', NOW);
   expectEqual('its representative confirms it', server.membershipOf(confirmed, inst, 'u_f1')?.status, 'confirmed');
   expectError('a request twice', 'already_member', () => server.askToJoinInstitution(confirmed, 'u_f1', inst, NOW));
-  expectEqual('three approved, then at once', [rules.proposalStatus({ role: 'member' }, 2), rules.proposalStatus({ role: 'member' }, 3)], ['draft', 'published']);
+  expectEqual('three approved, then at once', [rules.proposalStatus({ role: 'member' }, { institution: 2 }), rules.proposalStatus({ role: 'member' }, { institution: 3 })], ['draft', 'published']);
+}
+
+console.log('\n— points, levels, and who publishes at once (owner\'s decisions, 2026-11-18)');
+{
+  expectEqual('a point a minute, to the nearest', [0.5, 1 + 10 / 60, 1 + (10 + 40 / 60) / 60, 1 + 50 / 60, 3].map((h) => rules.pointsForHours(rules.round2(h))), [30, 70, 71, 110, 180]);
+  expectEqual('ten levels after level 0, 7500 points in all', [LEVELS.length, LEVELS[0].min_points, LEVELS.map((l) => l.min_points)], [
+    11,
+    0,
+    [0, 150, 360, 660, 1050, 1500, 2100, 3000, 4200, 5700, 7500],
+  ]);
+  expectEqual('proposing events opens at level 5, with 1500 points', [rules.levelFor(LEVELS, 1499).level, rules.levelFor(LEVELS, 1500)].map((x) => (typeof x === 'number' ? x : [x.level, x.can_create_events])), [4, [5, true]]);
+  expectEqual('nobody is past level 10 yet', [rules.levelFor(LEVELS, 100000).level, rules.nextLevel(LEVELS, 7500)], [10, undefined]);
+  expectEqual('a newcomer starts at level 0', buildSeed(NOW).users.find((u) => u.id === 'u_f8')?.level, 0);
+  expectEqual('the most an event earns: its whole time', rules.eventMaxPoints({ starts_at: '2026-01-01T10:00:00Z', ends_at: '2026-01-01T13:15:00Z' }), 195);
+  expectEqual('eight own approved events, then at once', [rules.proposalStatus({ role: 'member' }, { own: 7 }), rules.proposalStatus({ role: 'member' }, { own: 8 })], ['draft', 'published']);
+  const own = [
+    { created_by: 'u_x', institution_id: null, status: 'published' as const },
+    { created_by: 'u_x', institution_id: null, status: 'finished' as const },
+    { created_by: 'u_x', institution_id: null, status: 'cancelled' as const },
+    { created_by: 'u_x', institution_id: null, status: 'draft' as const },
+    { created_by: 'u_x', institution_id: null, status: 'rejected' as const },
+    { created_by: 'u_x', institution_id: 'inst', status: 'published' as const },
+    { created_by: 'u_y', institution_id: null, status: 'published' as const },
+  ];
+  expectEqual('only approved ones in their own name count', rules.ownApprovedEvents(own, 'u_x'), 3);
+  let d = db;
+  for (let i = 0; i < 8; i++) {
+    const proposed = server.proposeEvent(d, 'u_khaled', proposal({ title: `تنظيف ${i}` }), NOW);
+    d = { ...proposed.db, events: proposed.db.events.map((e) => (e.id === proposed.event.id ? { ...e, status: 'published' as const } : e)) };
+  }
+  expectEqual('in the demo too', server.proposeEvent(d, 'u_khaled', proposal(), NOW).event.status, 'published');
+}
+
+console.log('\n— supervisors earn points too');
+{
+  const fresh = buildSeed(NOW);
+  const e01 = fresh.events.find((e) => e.id === 'e01')!;
+  const ended = new Date(e01.ends_at).getTime() + 60_000;
+  // e01 has one supervisor, خالد, and people recorded at it.
+  const after = server.tick(fresh, ended);
+  const credited = server.attendanceOf(after, 'e01', 'u_khaled');
+  const length = (Date.parse(e01.ends_at) - Date.parse(e01.starts_at)) / rules.MS_HOUR;
+  expectEqual('the only supervisor is credited the whole time once it ends, to confirm', [credited?.hours, credited?.end_source, credited?.participant_status], [length, 'auto_closed', 'pending']);
+  expectEqual('not before', server.attendanceOf(server.tick(fresh, NOW), 'e01', 'u_khaled'), undefined);
+  expectEqual('once only', server.tick(after, ended + 60_000).attendance.filter((a) => a.event_id === 'e01' && a.user_id === 'u_khaled').length, 1);
+  const supervisor = (eventIds: string[]) =>
+    rules.decideSoleSupervisorHours({ event: { ...e01, status: 'published' }, supervisorIds: eventIds, recordedUserIds: ['u_f1'], now: ended });
+  expectEqual('with two supervisors, they record each other instead', supervisor(['u_khaled', 'u_fatima']), null);
+  expectEqual('nothing where nobody was recorded', rules.decideSoleSupervisorHours({ event: e01, supervisorIds: ['u_khaled'], recordedUserIds: [], now: ended }), null);
+  // A second supervisor, who never joined: the first records him.
+  const two: Db = { ...db, event_organizers: [...db.event_organizers, { event_id: 'e01', user_id: 'u_ahmad2', added_by: 'u_khaled', pledged_at: null }] };
+  const withUser: Db = { ...two, users: [...two.users, { ...two.users.find((u) => u.id === 'u_ahmad')!, id: 'u_ahmad2' }] };
+  expectEqual('one supervisor records another, who never joined', server.attendanceOf(server.recordStart(withUser, 'u_khaled', { eventId: 'e01', userId: 'u_ahmad2' }, NOW), 'e01', 'u_ahmad2')?.recorded_by, 'u_khaled');
 }
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');

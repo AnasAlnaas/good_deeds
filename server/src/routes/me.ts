@@ -111,11 +111,10 @@ async function toItems(db: Database, viewer: User, records: Attendance[]): Promi
         meeting_platform: e.meeting_platform,
         starts_at: e.starts_at,
         ends_at: e.ends_at,
-        base_points: e.base_points,
         institution: (e.institution_id && institutions.get(e.institution_id)) || null,
       },
       recorded_by: recorderById.has(a.recorded_by) ? shownTo(viewer, recorderById.get(a.recorded_by)!) : null,
-      points: rules.pointsForAttendance(e, a.hours),
+      points: rules.pointsForHours(a.hours),
     };
   });
 }
@@ -139,6 +138,7 @@ export const meRoutes = new Hono<AppEnv>()
       total_points: total,
       level,
       next_level: rules.nextLevel(levels, total) ?? null,
+      levels,
       confirmed_hours: rules.round2(confirmed.reduce((sum, r) => sum + (r.hours ?? 0), 0)),
       // Representatives of institutions open the form too, for events in their institutions' names.
       can_create_events: rules.mayProposeEvents(user, level, (await representedInstitutions(db, user.id)).length > 0),
@@ -327,7 +327,7 @@ export const attendanceRoutes = new Hono<AppEnv>()
       const [recordEvent] = a ? await tx.select({ status: s.events.status }).from(s.events).where(eq(s.events.id, a.event_id)) : [];
       rules.assertCanConfirm(a, me.id, recordEvent);
       const event = await findEvent(tx, a.event_id);
-      const earned = rules.pointsForAttendance(event, a.hours);
+      const earned = rules.pointsForHours(a.hours);
       await tx
         .update(s.attendance)
         .set({ participant_status: 'confirmed', participant_acted_at: new Date(t) })

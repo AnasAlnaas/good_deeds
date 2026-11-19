@@ -1,41 +1,32 @@
-// ⚠️ PLACEHOLDER VALUES — Points_And_Levels.md was not available when the demo
-// was built. Everything in this file is a stand-in and must be replaced with
-// the numbers from that file before anything real is built on it.
-// Build_Plan.md: "do not let the tool decide the points formula".
+// Points and levels. Owner's decisions (2026-11-18, the point made a minute on 2026-11-19):
+// - A point is a minute of confirmed work, to the nearest minute
+//   (rules.pointsForHours). An event's type no longer sets its points.
+// - Ten levels, 7500 points (125 hours) in all; reaching level 5 (1500 points,
+//   25 hours) unlocks proposing events. Everyone starts at level 0, before the first.
+// - More levels come after the tenth; they are not set yet, and the profile
+//   shows them hidden (HIDDEN_LEVELS_SHOWN) so people look forward to them.
+// - Every level may report (بلاغ).
+// - The levels' names are chosen later (mobile/src/i18n/strings.ts levelNames).
 
 import type { Level } from './types';
 
-// base_points per event subtype (the "fixed table" in Points_And_Levels.md).
-export const BASE_POINTS_BY_SUBTYPE: Record<string, number> = {
-  street_cleanup: 30,
-  beach_cleanup: 30,
-  tree_planting: 30,
-  charity_kitchen: 25,
-  food_baskets: 25,
-  quran_circle: 20,
-  tutoring: 20,
-  first_aid_course: 20,
-  elderly_visit: 15,
-  orphanage_visit: 20,
-  mosque_cleaning: 25,
-  traffic_awareness: 15,
-  water_coolers: 30,
-};
+/** Points needed for each level from 1 to 10: this level's share, added up below. */
+const LEVEL_STEPS = [150, 210, 300, 390, 450, 600, 900, 1200, 1500, 1800];
+/** The level that unlocks proposing events (1500 points). */
+export const CREATE_EVENTS_LEVEL = 5;
 
-// What an event is worth when its tag is one a person wrote (shared/tags.ts),
-// so not in the table above. A stand-in like the rest: the owner decides it.
-export const CUSTOM_TAG_BASE_POINTS = 20;
-
-// Levels by total points. Level 5 unlocks creating events (master file).
 export const LEVELS: Level[] = [
-  { level: 1, min_points: 0, can_create_events: false, can_report: true },
-  { level: 2, min_points: 50, can_create_events: false, can_report: true },
-  { level: 3, min_points: 150, can_create_events: false, can_report: true },
-  { level: 4, min_points: 300, can_create_events: false, can_report: true },
-  { level: 5, min_points: 500, can_create_events: true, can_report: true },
-  { level: 6, min_points: 800, can_create_events: true, can_report: true },
-  { level: 7, min_points: 1200, can_create_events: true, can_report: true },
+  { level: 0, min_points: 0, can_create_events: false, can_report: true },
+  ...LEVEL_STEPS.map((_, i) => ({
+    level: i + 1,
+    min_points: LEVEL_STEPS.slice(0, i + 1).reduce((a, b) => a + b, 0),
+    can_create_events: i + 1 >= CREATE_EVENTS_LEVEL,
+    can_report: true,
+  })),
 ];
+
+/** How many of the levels to come the profile's road shows, hidden. */
+export const HIDDEN_LEVELS_SHOWN = 3;
 
 // Grace period after events.ends_at for recording an end time (Data_Model.md
 // says "a short grace period" without a number).

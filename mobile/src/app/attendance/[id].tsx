@@ -4,6 +4,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { ConfirmedMotion } from '@/components/brand';
 import { Button } from '@/components/Button';
+import { useLevelName } from '@/components/LevelRoad';
 import { ProgressBar } from '@/components/ProgressBar';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
@@ -25,6 +26,7 @@ export default function ConfirmHours() {
   const query = useAttendance(id);
   const summary = useMeSummary();
   const [reward, setReward] = useState<{ before: number; earned: number } | null>(null);
+  const levelName = useLevelName();
 
   if (reward) {
     const after = summary.data?.total_points ?? reward.before + reward.earned;
@@ -46,7 +48,7 @@ export default function ConfirmHours() {
           {level && (
             <View style={styles.fullWidth}>
               <Txt variant="caption" color={colors.inkMuted} align="center">
-                {fmt(s.profile.level, { n: level.level })}
+                {levelName(level.level)}
               </Txt>
               <ProgressBar value={within(after)} animateFrom={within(reward.before)} height={16} />
             </View>

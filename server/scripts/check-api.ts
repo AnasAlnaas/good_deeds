@@ -5,10 +5,11 @@
 // warnings, editing the profile and account deletion are checked too.
 // Run: npm run check:api
 
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 import type { AdminEventDetail } from '../../shared/admin-api';
 import type {
+  ConfirmResponse,
   EventDetail,
   EventFormMeta,
   EventNoticeItem,
@@ -360,6 +361,14 @@ const start = new Date(running.starts_at).getTime();
 await expectError('participant records someone else', 'not_organizer', call('POST', '/events/e01/attendance/u_mariam/start', ahmad));
 await expectError('supervisor of ANOTHER event records here', 'not_organizer', call('POST', '/events/e01/attendance/u_ahmad/start', fatima));
 await expectError('supervisor records himself', 'cannot_record_self', call('POST', '/events/e01/attendance/u_khaled/start', khaled));
+// The pledge (إنها أمانة) comes before any record, once per supervisor and event.
+expectEqual('the roster says the supervisor has not pledged yet', (await call('GET', '/events/e01/roster', khaled)).body.i_pledged, false);
+await expectError('a supervisor records before pledging', 'pledge_required', call('POST', '/events/e01/attendance/u_ahmad/start', khaled));
+await expectError('a participant pledges', 'not_organizer', call('POST', '/events/e01/pledge', ahmad));
+await expectOk('the supervisor pledges', call('POST', '/events/e01/pledge', khaled));
+await expectOk('pledging again changes nothing', call('POST', '/events/e01/pledge', khaled));
+expectEqual('the roster says so', (await call('GET', '/events/e01/roster', khaled)).body.i_pledged, true);
+await expectOk('and at the next event too', call('POST', '/events/e02/pledge', khaled));
 await expectError('record someone who never joined', 'not_joined', call('POST', '/events/e01/attendance/u_f5/start', khaled));
 await expectError('backdate before the event started', 'start_before_event', call('POST', '/events/e01/attendance/u_ahmad/start', khaled, { at: iso(start - 60_000) }));
 await expectError('start time in the future (server clock decides)', 'time_in_future', call('POST', '/events/e01/attendance/u_ahmad/start', khaled, { at: iso(NOW + 60_000) }));
@@ -416,9 +425,9 @@ console.log('\n— confirming hours and points');
 await expectError("confirm someone else's hours", 'not_your_attendance', call('POST', `/attendance/${ended.id}/confirm`, mariam));
 const before = await totalOf(ahmad);
 const confirmed = (await call('POST', `/attendance/${ended.id}/confirm`, ahmad)).body;
-// Placeholder formula: base 30 × (0.5 h / 4 h event) = 3.75.
-expectEqual('fractional points credited', confirmed.points_earned, 3.75);
-expectEqual('total updated', Math.round(((await totalOf(ahmad)) - before) * 100) / 100, 3.75);
+// A point is a minute: 0.5 h = 30 points.
+expectEqual('a point a minute', confirmed.points_earned, 30);
+expectEqual('total updated', Math.round(((await totalOf(ahmad)) - before) * 100) / 100, 30);
 await expectError('confirm twice', 'already_acted', call('POST', `/attendance/${ended.id}/confirm`, ahmad));
 const afterConfirm = await totalOf(ahmad);
 await expectOk('dispute other recorded hours', call('POST', '/attendance/att_e15_u_ahmad/dispute', ahmad));
@@ -478,7 +487,7 @@ const proposal = (over: Partial<EventProposal> = {}): EventProposal => ({
   ...over,
 });
 const meOf = async (token: string): Promise<MeResponse> => (await call('GET', '/me', token)).body;
-expectEqual('a level-1 member may not create events, and is told the level that opens it', [(await meOf(ahmad)).can_create_events, (await meOf(ahmad)).create_events_level], [false, 5]);
+expectEqual('a member below level 5 may not create events, and is told the level that opens it', [(await meOf(ahmad)).can_create_events, (await meOf(ahmad)).create_events_level], [false, 5]);
 expectEqual('a supervisor may', (await meOf(khaled)).can_create_events, true);
 await expectError('a member below that level proposes', 'cannot_create_events', call('POST', '/events', ahmad, proposal()));
 await expectError('or opens the form', 'cannot_create_events', call('GET', '/events/form', ahmad));
@@ -490,7 +499,7 @@ expectEqual('it says the event waits for approval', [form.publishes_directly, fo
 const proposed = await expectOk('a supervisor proposes an event', call('POST', '/events', khaled, proposal()));
 expectEqual('it waits for an admin', proposed.status, 'draft');
 const asCreator = ((await call('GET', '/events', khaled)).body as EventSummary[]).find((e) => e.id === proposed.id);
-expectEqual('its creator sees it, as its supervisor, with the points of its type', [asCreator?.status, asCreator?.i_created, asCreator?.i_organize, asCreator?.base_points], ['draft', true, true, 30]);
+expectEqual('its creator sees it, as its supervisor', [asCreator?.status, asCreator?.i_created, asCreator?.i_organize], ['draft', true, true]);
 expectEqual('nobody else sees it', ((await call('GET', '/events', ahmad)).body as EventSummary[]).some((e) => e.id === proposed.id), false);
 await expectError('or opens it', 'not_found', call('GET', `/events/${proposed.id}`, ahmad));
 await expectError('or joins it', 'not_found', call('POST', `/events/${proposed.id}/join`, ahmad));
@@ -516,10 +525,9 @@ await expectError('ending before it starts', 'invalid_request', editDraft(khaled
 await expectOk('an admin adds a supervisor to it in the panel', call('PUT', `/admin/events/${proposed.id}`, admin, { ...proposal(), organizer_ids: ['u_khaled', 'u_fatima'] }));
 await expectOk('he edits it while three wait (it does not count itself)', editDraft(khaled, proposed.id));
 const afterEdit: EventDetail = (await call('GET', `/events/${proposed.id}`, khaled)).body;
-expectEqual('the edit shows, with the points of its new type, still waiting', [afterEdit.title, afterEdit.status, afterEdit.base_points, afterEdit.terms.map((x) => x.text)], [
+expectEqual('the edit shows, still waiting', [afterEdit.title, afterEdit.status, afterEdit.terms.map((x) => x.text)], [
   'حلقة تلاوة في الحديقة',
   'draft',
-  20,
   ['أحضر مصحفك.', 'احضر قبل الموعد بربع ساعة.'],
 ]);
 const draftOrganizers = ((await call('GET', `/admin/events/${proposed.id}`, admin)).body as AdminEventDetail).organizers.map((o) => o.id).sort();
@@ -868,7 +876,7 @@ console.log('\n— a tag a person writes');
   await expectError('a tag of digits only', 'invalid_request', call('POST', '/events', admin, written({ subtype: '2026' })));
   const tagged = await expectOk('an event with a written tag', call('POST', '/events', admin, written()));
   const taggedEvent: EventDetail = (await call('GET', `/events/${tagged.id}`, admin)).body;
-  expectEqual('keeps its tag and its class, with the points of a written tag', [taggedEvent.subtype, taggedEvent.event_class, taggedEvent.base_points], ['تنظيف الوديان', 'environment', 20]);
+  expectEqual('keeps its tag and its class', [taggedEvent.subtype, taggedEvent.event_class], ['تنظيف الوديان', 'environment']);
   const known = await expectOk('a known type sent with another class', call('POST', '/events', admin, proposal({ event_class: 'health' })));
   expectEqual('goes under its own', ((await call('GET', `/events/${known.id}`, admin)).body as EventDetail).event_class, 'environment');
   await expectOk('a second event with the tag, spaced differently', call('POST', '/events', admin, written({ subtype: ' تنظيف   الوديان ' })));
@@ -878,6 +886,69 @@ console.log('\n— a tag a person writes');
   expectEqual('nor does one still waiting for approval', await formTags(), []);
   await expectOk('a third approved event, written with its marks', call('POST', '/events', admin, written({ subtype: 'تَنظيف الوديان' })));
   expectEqual('now the form offers it under its class, spelled as most wrote it', await formTags(), [{ tag: 'تنظيف الوديان', event_class: 'environment' }]);
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n— after 8 approved events of her own, a member publishes at once');
+{
+  const form = async () => ((await call('GET', '/events/form', fatima)).body as EventFormMeta).publishes_directly;
+  expectEqual('at first her events wait for an admin', await form(), false);
+  for (let i = 1; i <= 8; i++) {
+    const p = await expectOk(`her proposal ${i}`, call('POST', '/events', fatima, proposal({ title: `تنظيف ${i}`, gender_category: 'female' })));
+    expectEqual(`proposal ${i} waits`, p.status, 'draft');
+    await expectOk(`an admin approves it`, call('POST', `/admin/events/${p.id}/publish`, admin, {}));
+  }
+  expectEqual('after the eighth, the form says hers go out at once', await form(), true);
+  const ninth = await expectOk('her ninth', call('POST', '/events', fatima, proposal({ title: 'تنظيف ٩', gender_category: 'female' })));
+  expectEqual('is published at once', ninth.status, 'published');
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n— supervisors earn points too');
+{
+  const t0 = h.clock();
+  const HOUR_MS = 3_600_000;
+  // Events made straight in the database, happening now: 2 h ago to 1 h from now.
+  const makeEvent = async (id: string, organizers: string[], joined: string[]) => {
+    await conn.db.insert(s.events).values({
+      id, title: id, description: '-', subtype: 'street_cleanup', event_class: 'environment',
+      location_type: 'in_person', lat: 32.9, lng: 13.2, address_text: 'طرابلس',
+      starts_at: new Date(t0 - 2 * HOUR_MS), ends_at: new Date(t0 + HOUR_MS), capacity: 10,
+      gender_category: 'male', status: 'published', created_by: 'u_admin',
+    });
+    await conn.db.insert(s.event_organizers).values(organizers.map((user_id) => ({ event_id: id, user_id, added_by: null })));
+    if (joined.length) {
+      await conn.db.insert(s.registrations).values(joined.map((user_id) => ({ id: `reg_${id}_${user_id}`, event_id: id, user_id, status: 'joined' as const, joined_at: new Date(t0 - 3 * HOUR_MS) })));
+    }
+  };
+  await makeEvent('sup_two', ['u_khaled', 'u_ahmad'], []);
+  await makeEvent('sup_sole', ['u_khaled'], ['u_ahmad']);
+  await makeEvent('sup_empty', ['u_khaled'], ['u_ahmad']);
+
+  const roster: RosterResponse = (await call('GET', '/events/sup_two/roster', khaled)).body;
+  expectEqual('the roster lists the supervisors, who never joined (himself shown as recorded by another)', roster.participants.map((p) => [p.user.id, p.is_supervisor]), [['u_khaled', true], ['u_ahmad', true]]);
+  await expectOk('خالد pledges', call('POST', '/events/sup_two/pledge', khaled));
+  await expectOk('and records the other supervisor', call('POST', '/events/sup_two/attendance/u_ahmad/start', khaled, { at: iso(t0 - 2 * HOUR_MS) }));
+  await expectError('who, before pledging, records him back', 'pledge_required', call('POST', '/events/sup_two/attendance/u_khaled/start', ahmad));
+  await expectOk('pledges', call('POST', '/events/sup_two/pledge', ahmad));
+  await expectOk('and records him', call('POST', '/events/sup_two/attendance/u_khaled/start', ahmad, { at: iso(t0 - HOUR_MS) }));
+
+  await expectOk('at an event he alone supervises', call('POST', '/events/sup_sole/pledge', khaled));
+  await expectOk('he records the one who came', call('POST', '/events/sup_sole/attendance/u_ahmad/start', khaled, { at: iso(t0 - 2 * HOUR_MS) }));
+  await h.tick();
+  const mine = async (eventId: string) => (await conn.db.select().from(s.attendance).where(and(eq(s.attendance.event_id, eventId), eq(s.attendance.user_id, 'u_khaled'))))[0];
+  expectEqual('nothing is credited before it ends', await mine('sup_sole'), undefined);
+  h.setClock(t0 + HOUR_MS + 60_000);
+  pushes.length = 0;
+  await h.tick();
+  await settle();
+  const credited = await mine('sup_sole');
+  expectEqual('once it ends, he is credited its whole time, to confirm', [credited?.hours, credited?.end_source, credited?.participant_status], [3, 'auto_closed', 'pending']);
+  expectEqual('nothing at an event where nobody was recorded', await mine('sup_empty'), undefined);
+  expectEqual('with two supervisors, his record is the one the other made', (await mine('sup_two'))?.recorded_by, 'u_ahmad');
+  const earned: ConfirmResponse = (await call('POST', `/attendance/${credited!.id}/confirm`, khaled)).body;
+  expectEqual('three hours are 180 points', earned.points_earned, 180);
+  h.setClock(t0);
 }
 
 await h.done();

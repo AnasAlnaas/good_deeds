@@ -4,7 +4,7 @@
 
 import { randomUUID } from 'node:crypto';
 
-import { and, asc, count, desc, eq, inArray, isNull, lte, ne } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, isNull, lte, ne } from 'drizzle-orm';
 
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
@@ -132,6 +132,15 @@ export async function acceptedTermIds(q: Database, registrationId: string | unde
     .from(s.term_acceptances)
     .where(eq(s.term_acceptances.registration_id, registrationId));
   return rows.map((r) => r.term_id);
+}
+
+/** The person's supervisor row at this event, if they supervise it: with when they took the pledge. */
+export async function organizerLink(q: Database, eventId: string, userId: string) {
+  const [row] = await q
+    .select()
+    .from(s.event_organizers)
+    .where(and(eq(s.event_organizers.event_id, eventId), eq(s.event_organizers.user_id, userId)));
+  return row;
 }
 
 export async function isOrganizer(q: Database, eventId: string, userId: string) {
@@ -305,6 +314,52 @@ export async function closeDueAttendance(q: Database, now: number): Promise<stri
   return closed;
 }
 
+/** How far back the job looks for events whose only supervisor has hours to be credited. */
+const SOLE_SUPERVISOR_LOOKBACK_MS = 7 * 24 * rules.MS_HOUR;
+
+/**
+ * The scheduled job, after closeDueAttendance: an event that ended with a
+ * single supervisor credits them its whole time (rules.decideSoleSupervisorHours).
+ * Returns the records it added; the unique (event, person) index lets only one caller add each.
+ */
+export async function creditSoleSupervisors(q: Database, now: number): Promise<string[]> {
+  const ended = await q
+    .select({ id: s.events.id, status: s.events.status, starts_at: s.events.starts_at, ends_at: s.events.ends_at })
+    .from(s.events)
+    .where(and(eq(s.events.status, 'published'), lte(s.events.ends_at, new Date(now)), gte(s.events.ends_at, new Date(now - SOLE_SUPERVISOR_LOOKBACK_MS))));
+  const added: string[] = [];
+  for (const e of ended) {
+    const supervisors = await supervisorsOf(q, e.id);
+    if (supervisors.length !== 1) continue;
+    const recorded = await q.select({ user_id: s.attendance.user_id }).from(s.attendance).where(eq(s.attendance.event_id, e.id));
+    const credit = rules.decideSoleSupervisorHours({
+      event: iso(e),
+      supervisorIds: supervisors.map((u) => u.id),
+      recordedUserIds: recorded.map((r) => r.user_id),
+      now,
+    });
+    if (!credit) continue;
+    const rows = await q
+      .insert(s.attendance)
+      .values({
+        id: newId(),
+        event_id: e.id,
+        user_id: credit.user_id,
+        started_at: new Date(credit.started_at),
+        start_source: credit.start_source,
+        ended_at: new Date(credit.ended_at!),
+        end_source: credit.end_source,
+        hours: credit.hours,
+        recorded_by: credit.recorded_by,
+        recorded_at: new Date(credit.recorded_at),
+      })
+      .onConflictDoNothing()
+      .returning({ id: s.attendance.id });
+    added.push(...rows.map((r) => r.id));
+  }
+  return added;
+}
+
 // ---------- institutions ----------
 
 export async function findInstitution(q: Database, id: string, opts: Lock = {}): Promise<Institution | undefined> {
@@ -345,6 +400,15 @@ export async function institutionApproved(q: Database, institutionId: string) {
   return rules.institutionApprovedEvents(rows, institutionId);
 }
 
+/** How many of a person's events in their own name an admin approved (rules.ownApprovedEvents). */
+export async function ownApproved(q: Database, userId: string) {
+  const rows = await q
+    .select({ created_by: s.events.created_by, institution_id: s.events.institution_id, status: s.events.status })
+    .from(s.events)
+    .where(and(eq(s.events.created_by, userId), isNull(s.events.institution_id)));
+  return rules.ownApprovedEvents(rows, userId);
+}
+
 /** The approved institutions a person represents, as the event form offers them. */
 export async function representedInstitutions(q: Database, userId: string): Promise<FormInstitution[]> {
   const rows = await q
@@ -361,7 +425,7 @@ export async function representedInstitutions(q: Database, userId: string): Prom
     )
     .orderBy(asc(s.institutions.name));
   const out: FormInstitution[] = [];
-  for (const r of rows) out.push({ ...r, publishes_directly: rules.proposalStatus({ role: 'member' }, await institutionApproved(q, r.id)) === 'published' });
+  for (const r of rows) out.push({ ...r, publishes_directly: rules.proposalStatus({ role: 'member' }, { institution: await institutionApproved(q, r.id) }) === 'published' });
   return out;
 }
 

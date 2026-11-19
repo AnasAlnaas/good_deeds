@@ -25,8 +25,7 @@ import * as adminRules from '../../../shared/admin-rules';
 import { eventSubtypes } from '../../../shared/classes';
 import { AdminError, ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
-import { CUSTOM_TAG_BASE_POINTS } from '../../../shared/placeholders';
-import { basePointsOf, promotedTags } from '../../../shared/tags';
+import { promotedTags } from '../../../shared/tags';
 import { type AppEvent, type Attendance } from '../../../shared/types';
 import { requireUser } from '../auth';
 import type { Database } from '../db/client';
@@ -248,7 +247,6 @@ export const adminRoutes = new Hono<AppEnv>()
     return c.json<AdminMeta>({
       subtypes: eventSubtypes(),
       tags: promotedTags(tagged),
-      custom_tag_points: CUSTOM_TAG_BASE_POINTS,
       people,
     });
   })
@@ -447,7 +445,6 @@ export const adminRoutes = new Hono<AppEnv>()
         ends_at: new Date(body.ends_at),
         capacity: body.capacity,
         gender_category: body.gender_category,
-        base_points: basePointsOf(body.subtype),
         status: body.publish ? 'published' : 'draft',
         created_by: me.id,
         created_at: t,
@@ -502,8 +499,6 @@ export const adminRoutes = new Hono<AppEnv>()
           title: body.title,
           description: body.description,
           ...kindOf(body),
-          // An event keeps its points unless its type changes.
-          base_points: body.subtype === event.subtype ? event.base_points : basePointsOf(body.subtype),
           ...placeOf(body),
           starts_at: new Date(body.starts_at),
           ends_at: new Date(body.ends_at),
@@ -613,7 +608,6 @@ export const adminRoutes = new Hono<AppEnv>()
           title: r.event.title,
           starts_at: r.event.starts_at.toISOString(),
           ends_at: r.event.ends_at.toISOString(),
-          base_points: r.event.base_points,
         },
         recorded_by: recorders.find((u) => u.id === r.attendance.recorded_by) ?? null,
       })),
@@ -633,7 +627,7 @@ export const adminRoutes = new Hono<AppEnv>()
       const event = await anyEvent(tx, a.event_id);
       const { hours } = adminRules.decideResolution({ attendance: a, event, decision: body.decision, hours: body.hours });
       await tx.update(s.attendance).set({ hours, participant_status: 'confirmed' }).where(eq(s.attendance.id, id));
-      const earned = rules.pointsForAttendance(event, hours);
+      const earned = rules.pointsForHours(hours);
       await creditPoints(tx, { userId: a.user_id, eventId: event.id, earned, reason: 'dispute_resolved', at: t });
       await audit(tx, {
         actorId: me.id,

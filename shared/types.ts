@@ -75,7 +75,6 @@ export interface AppEvent {
   ends_at: string;
   capacity: number;
   gender_category: GenderCategory;
-  base_points: number;
   status: EventStatus;
   terms_locked_at: string | null;
   created_by: string;
@@ -146,6 +145,8 @@ export interface EventOrganizer {
    * taken off again in the app.
    */
   added_by: string | null;
+  /** When they took the pledge to record attendance faithfully (rules.decidePledge); null = not yet. */
+  pledged_at: string | null;
 }
 
 /**

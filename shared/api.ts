@@ -216,16 +216,14 @@ export interface ProposeEventResponse {
 
 /** GET /api/events/form: what the event form offers. */
 export interface EventFormMeta {
-  /** Event types, their fixed points (shared/placeholders.ts until Points_And_Levels.md is in) and their class. */
-  subtypes: { id: string; base_points: number; event_class: EventClassId }[];
+  /** Event types and their class. */
+  subtypes: { id: string; event_class: EventClassId }[];
   /**
    * Tags people wrote that came into use (tags.promotedTags), offered under their
    * class like the types. Absent from a server from before written tags: the
    * form then offers the types only.
    */
   tags?: EventTag[];
-  /** What an event with a written tag is worth. */
-  custom_tag_points?: number;
   /** false = the event waits for an admin's approval (in the proposer's own name; an institution's says so itself). */
   publishes_directly: boolean;
   /**
@@ -393,11 +391,16 @@ export interface AcceptTermResponse {
 /** GET /api/events/:id/roster (supervisors of the event only) */
 export interface RosterResponse {
   event: EventSummary;
+  /** The signed-in supervisor took this event's pledge (POST /api/events/:id/pledge); recording waits for it. */
+  i_pledged: boolean;
+  /** Those who joined, then the event's other supervisors (another supervisor records their hours). */
   participants: {
     user: PublicUser;
     attendance: Attendance | null;
     /** The signed-in supervisor warned them at this event (another supervisor's warnings are not shown). */
     i_warned: boolean;
+    /** One of the event's supervisors. */
+    is_supervisor: boolean;
   }[];
 }
 
@@ -420,12 +423,12 @@ export interface AttendanceResponse {
 /** GET /api/me/attendance (a list), GET /api/attendance/:id */
 export interface AttendanceItem {
   attendance: Attendance;
-  event: Pick<AppEvent, 'id' | 'title' | 'location_type' | 'address_text' | 'meeting_platform' | 'starts_at' | 'ends_at' | 'base_points'> & {
+  event: Pick<AppEvent, 'id' | 'title' | 'location_type' | 'address_text' | 'meeting_platform' | 'starts_at' | 'ends_at'> & {
     /** The institution that organised it; null = the association. Absent from an older server. */
     institution?: InstitutionRef | null;
   };
   recorded_by: PublicUser | null;
-  /** What these hours are worth by the points formula: earned once confirmed. */
+  /** What these hours are worth (rules.pointsForHours): earned once confirmed. */
   points: number;
 }
 
@@ -449,6 +452,8 @@ export interface MeResponse {
   total_points: number;
   level: Level;
   next_level: Level | null;
+  /** Every level, for the profile's road of levels. */
+  levels: Level[];
   confirmed_hours: number;
   /** By level or by role (rules.canCreateEvents). */
   can_create_events: boolean;

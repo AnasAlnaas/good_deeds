@@ -1,6 +1,6 @@
 // Tags: what kind of good work an event is, under its class (shared/classes.ts).
-// A form offers the known types of the chosen class (shared/placeholders.ts
-// lists them, with their points) and lets a person write a tag of their own.
+// A form offers the known types of the chosen class (shared/classes.ts
+// lists them) and lets a person write a tag of their own.
 // A written tag that came into use is then offered to everyone (promotedTags).
 //
 // An event keeps its tag in `subtype`: a known type's id, or the tag as
@@ -8,7 +8,6 @@
 // (`event_class`); a known type's class is always its own.
 
 import { CLASS_OF_SUBTYPE, type EventClassId, isEventClass } from './classes';
-import { BASE_POINTS_BY_SUBTYPE, CUSTOM_TAG_BASE_POINTS } from './placeholders';
 import type { AppEvent } from './types';
 
 export const TAG_MIN = 2;
@@ -26,7 +25,7 @@ export interface EventTag {
 }
 
 export function isKnownType(subtype: string) {
-  return Object.prototype.hasOwnProperty.call(BASE_POINTS_BY_SUBTYPE, subtype);
+  return Object.prototype.hasOwnProperty.call(CLASS_OF_SUBTYPE, subtype);
 }
 
 /** A written tag, tidied: one line, single spaces, with a letter in it. null = not a tag. */
@@ -58,11 +57,6 @@ export function cleanKind(input: { subtype: string; event_class?: string | null 
   const tag = cleanTag(input.subtype);
   if (!tag || !isEventClass(input.event_class)) return null;
   return { subtype: tag, event_class: input.event_class };
-}
-
-/** What attending an event of this tag is worth: its type's points, or those of a written tag. */
-export function basePointsOf(subtype: string) {
-  return isKnownType(subtype) ? BASE_POINTS_BY_SUBTYPE[subtype] : CUSTOM_TAG_BASE_POINTS;
 }
 
 /**

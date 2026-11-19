@@ -79,7 +79,7 @@ export const users = pgTable(
     city: text('city').notNull(),
     avatar_url: text('avatar_url'),
     role: role('role').notNull().default('member'),
-    level: integer('level').notNull().default(1),
+    level: integer('level').notNull().default(0),
     total_points: points('total_points').notNull().default(0),
     is_association_member: boolean('is_association_member').notNull().default(false),
     created_at: at('created_at').notNull().defaultNow(),
@@ -159,7 +159,6 @@ export const events = pgTable(
     ends_at: at('ends_at').notNull(),
     capacity: integer('capacity').notNull(),
     gender_category: genderCategory('gender_category').notNull(),
-    base_points: integer('base_points').notNull(),
     status: eventStatus('status').notNull().default('draft'),
     terms_locked_at: at('terms_locked_at'),
     created_by: text('created_by').notNull().references(() => users.id),
@@ -213,6 +212,8 @@ export const event_organizers = pgTable(
     user_id: text('user_id').notNull().references(() => users.id),
     /** Who made them a supervisor in the app; null = named when the event was made (shared/types.ts EventOrganizer). */
     added_by: text('added_by').references(() => users.id),
+    /** When they took the pledge to record attendance faithfully (shared/rules.ts decidePledge); null = not yet. */
+    pledged_at: at('pledged_at'),
   },
   (t) => [primaryKey({ columns: [t.event_id, t.user_id] }), index('event_organizers_user').on(t.user_id)],
 );

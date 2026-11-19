@@ -16,6 +16,7 @@ export type ApiErrorCode =
   | 'cannot_cancel_after_attendance'
   | 'not_organizer'
   | 'cannot_record_self'
+  | 'pledge_required'
   | 'start_before_event'
   | 'time_in_future'
   | 'already_started'

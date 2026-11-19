@@ -30,7 +30,7 @@ action in the name or short description.
 في الميدان يسجّل المشرف بدء نشاطك وانتهاءه. ثم تؤكد أنت ما سُجّل لك، أو
 تعترض عليه فتنظر فيه إدارة الجمعية.
 
-تتحول ساعاتك المؤكدة إلى نقاط، ومع النقاط يرتفع مستواك.
+تتحول ساعاتك المؤكدة إلى نقاط، كل دقيقة نقطة، ومع النقاط يرتفع مستواك.
 
 ما في التطبيق:
 • خريطة الفعاليات في طرابلس وقائمتها، مع تصفية حسب نوع العمل: بيئة، صحة، تعلُّم وتعليم، مجتمع
@@ -77,7 +77,7 @@ and join.
 At the event, a supervisor records when you start and finish. Then you
 confirm your hours, or dispute them and the association reviews it.
 
-Your confirmed hours become points. As your points grow, so does your level.
+Your confirmed hours become points, one for every minute. As your points grow, so does your level.
 
 What's inside:
 • A map and a list of events in Tripoli, filtered by kind of good work:

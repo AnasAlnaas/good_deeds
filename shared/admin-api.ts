@@ -40,12 +40,10 @@ export interface AdminOverview {
 
 /** GET /api/admin/meta: what the event form offers. */
 export interface AdminMeta {
-  /** Event types, their fixed points (shared/placeholders.ts until Points_And_Levels.md is in) and their class. */
-  subtypes: { id: string; base_points: number; event_class: EventClassId }[];
+  /** Event types and their class. */
+  subtypes: { id: string; event_class: EventClassId }[];
   /** Tags people wrote that came into use (tags.promotedTags), offered under their class like the types; absent from an older server. */
   tags?: EventTag[];
-  /** What an event with a written tag is worth. */
-  custom_tag_points?: number;
   /** Everyone who can be named a supervisor of an event. */
   people: (PublicUser & Pick<User, 'role' | 'phone'>)[];
 }
@@ -127,7 +125,7 @@ export interface AdminEventDetail extends AdminEventRow {
 export interface DisputeRow {
   attendance: Attendance;
   user: PublicUser & Pick<User, 'phone'>;
-  event: Pick<AppEvent, 'id' | 'title' | 'starts_at' | 'ends_at' | 'base_points'>;
+  event: Pick<AppEvent, 'id' | 'title' | 'starts_at' | 'ends_at'>;
   recorded_by: PublicUser | null;
 }
 

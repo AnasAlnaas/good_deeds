@@ -23,7 +23,7 @@ import type {
 import { NOTICE_REACTIONS } from '@/data/types';
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
-import { basePointsOf, cleanKind } from '../../../shared/tags';
+import { cleanKind } from '../../../shared/tags';
 
 export { ApiError } from '../../../shared/errors';
 export type { ApiErrorCode } from '../../../shared/errors';
@@ -77,6 +77,11 @@ function learnedIds(db: Db, userId: string, eventId: string) {
 
 export function isOrganizer(db: Db, eventId: string, userId: string) {
   return db.event_organizers.some((o) => o.event_id === eventId && o.user_id === userId);
+}
+
+/** The person's supervisor row at this event, with when they took the pledge. */
+export function organizerLink(db: Db, eventId: string, userId: string) {
+  return db.event_organizers.find((o) => o.event_id === eventId && o.user_id === userId);
 }
 
 export function registrationOf(db: Db, eventId: string, userId: string): Registration | undefined {
@@ -160,8 +165,27 @@ export function confirmedHours(db: Db, userId: string) {
   );
 }
 
-export function pointsForAttendance(db: Db, a: Attendance): number {
-  return rules.pointsForAttendance(getEvent(db, a.event_id), a.hours);
+/** What a record is worth (rules.pointsForHours): a point a minute. */
+export function pointsForAttendance(_db: Db, a: Attendance): number {
+  return rules.pointsForHours(a.hours);
+}
+
+/** How far back the job looks for events whose only supervisor has hours to be credited (as the server's). */
+const SOLE_SUPERVISOR_LOOKBACK_MS = 7 * 24 * rules.MS_HOUR;
+
+/** An event that ended with a single supervisor credits them its whole time (rules.decideSoleSupervisorHours). */
+function soleSupervisorCredits(db: Db, now: number) {
+  return db.events.flatMap((e) => {
+    if (e.status !== 'published' || rules.toMs(e.ends_at) < now - SOLE_SUPERVISOR_LOOKBACK_MS) return [];
+    const supervisors = db.event_organizers.filter((o) => o.event_id === e.id && getUser(db, o.user_id) && !getUser(db, o.user_id)!.deleted_at);
+    const credit = rules.decideSoleSupervisorHours({
+      event: e,
+      supervisorIds: supervisors.map((o) => o.user_id),
+      recordedUserIds: db.attendance.filter((a) => a.event_id === e.id).map((a) => a.user_id),
+      now,
+    });
+    return credit ? [{ event_id: e.id, ...credit }] : [];
+  });
 }
 
 // ---------- scheduled job: auto-close open attendance at events.ends_at ----------
@@ -173,11 +197,14 @@ export function tick(db: Db, now: number): Db {
     const plan = planOffers(db, id, now);
     return plan.expired.length > 0 || plan.offer.length > 0;
   });
-  if (due.length === 0 && listed.length === 0) return db;
+  if (due.length === 0 && listed.length === 0 && soleSupervisorCredits(db, now).length === 0) return db;
   const next = clone(db);
   for (const a of next.attendance) {
     const close = rules.decideAutoClose(a, getEvent(next, a.event_id), now);
     if (close) Object.assign(a, close);
+  }
+  for (const credit of soleSupervisorCredits(next, now)) {
+    next.attendance.push({ id: newId('att'), ...credit, participant_status: 'pending', participant_acted_at: null });
   }
   for (const id of listed) fillOpenPlaces(next, id, now);
   return next;
@@ -213,8 +240,10 @@ export function proposeEvent(db: Db, userId: string, input: EventProposal, now: 
     ends_at: input.ends_at,
     capacity: input.capacity,
     gender_category: input.gender_category,
-    base_points: basePointsOf(input.subtype),
-    status: rules.proposalStatus(user, institution ? rules.institutionApprovedEvents(db.events, institution.id) : null),
+    status: rules.proposalStatus(
+      user,
+      institution ? { institution: rules.institutionApprovedEvents(db.events, institution.id) } : { own: rules.ownApprovedEvents(db.events, userId) },
+    ),
     terms_locked_at: null,
     created_by: userId,
     created_at: at,
@@ -222,7 +251,7 @@ export function proposeEvent(db: Db, userId: string, input: EventProposal, now: 
     cover_image_id: input.cover_image_id ?? null,
   };
   next.events.push(event);
-  next.event_organizers.push({ event_id: event.id, user_id: userId, added_by: null });
+  next.event_organizers.push({ event_id: event.id, user_id: userId, added_by: null, pledged_at: null });
   writeTerms(next, event.id, input, at);
   writeLessons(next, event.id, input, at);
   return { db: next, event };
@@ -334,7 +363,6 @@ export function editProposal(db: Db, userId: string, eventId: string, input: Eve
     ends_at: input.ends_at,
     capacity: input.capacity,
     gender_category: input.gender_category,
-    base_points: basePointsOf(input.subtype),
     institution_id: institution?.id ?? null,
     cover_image_id: cover ?? null,
   });
@@ -533,10 +561,13 @@ export function recordStart(
   now: number,
 ): Db {
   const event = getEvent(db, args.eventId);
+  const link = organizerLink(db, event.id, actorId);
   const start = rules.decideRecordStart({
     actorId,
     participantId: args.userId,
-    actorIsOrganizer: isOrganizer(db, event.id, actorId),
+    actorIsOrganizer: !!link,
+    pledged: !!link?.pledged_at,
+    participantIsOrganizer: isOrganizer(db, event.id, args.userId),
     event,
     registration: registrationOf(db, event.id, args.userId),
     attendance: attendanceOf(db, event.id, args.userId),
@@ -567,10 +598,12 @@ export function recordEnd(
 ): Db {
   const event = getEvent(db, args.eventId);
   const a = attendanceOf(db, event.id, args.userId);
+  const link = organizerLink(db, event.id, actorId);
   const end = rules.decideRecordEnd({
     actorId,
     participantId: args.userId,
-    actorIsOrganizer: isOrganizer(db, event.id, actorId),
+    actorIsOrganizer: !!link,
+    pledged: !!link?.pledged_at,
     event,
     attendance: a,
     endedAt: args.endedAt,
@@ -578,6 +611,15 @@ export function recordEnd(
   });
   const next = clone(db);
   Object.assign(next.attendance.find((x) => x.id === a!.id)!, end);
+  return next;
+}
+
+/** A supervisor of the event takes the pledge to record attendance faithfully (إنها أمانة), once. */
+export function pledge(db: Db, actorId: string, eventId: string, now: number): Db {
+  const link = organizerLink(db, eventId, actorId);
+  if (rules.decidePledge({ actorIsOrganizer: !!link, event: getEvent(db, eventId), pledged: !!link?.pledged_at }) === 'nothing') return db;
+  const next = clone(db);
+  organizerLink(next, eventId, actorId)!.pledged_at = new Date(now).toISOString();
   return next;
 }
 
@@ -737,7 +779,7 @@ export function addSupervisor(db: Db, actorId: string, eventId: string, userId: 
     now,
   });
   const next = clone(db);
-  next.event_organizers.push({ event_id: eventId, user_id: userId, added_by: actorId });
+  next.event_organizers.push({ event_id: eventId, user_id: userId, added_by: actorId, pledged_at: null });
   return next;
 }
 

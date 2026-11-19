@@ -69,6 +69,23 @@ The app follows the planning notes (`DESIGN.md`, `Screens.md`, `Data_Model.md`,
 - Join flow with the one-item-per-screen terms carousel; capacity and men/women/mixed rules.
 - Supervisor roster: record start and finish, with backdating limited to event start → now.
 - Participant confirms or disputes recorded hours; confirming credits points (one total per person).
+- **Points and levels** (owner's decisions, 2026-11-18, in `shared/placeholders.ts`
+  and `shared/rules.ts`; the point made a minute on 2026-11-19): a point is a
+  minute of confirmed work, to the nearest minute (`rules.pointsForHours`:
+  1 h 10 min 40 s = 71), whatever the event's type. Everyone starts at level 0;
+  ten levels follow, 7500 points (125 hours) in all (150, 360, 660, 1050, 1500,
+  2100, 3000, 4200, 5700, 7500). Level 5 (1500 points, 25 hours) unlocks
+  proposing events. The profile shows the road of levels,
+  and after the tenth a few dark, flickering ones still to come (more levels are
+  set later). The levels' names are chosen later (`levelNames` in
+  `mobile/src/i18n/strings.ts`); until then a level shows its number.
+- **The supervisor's pledge and hours** (owner's decisions, 2026-11-18): the
+  supervisor answers for the points. Before recording anyone at an event, each
+  of its supervisors reads "تسجيل الحضور أمانة" and pledges, once per event
+  (`POST /api/events/:id/pledge`; recording waits for it). Supervising counts:
+  the roster lists the event's other supervisors, who record each other's hours.
+  An event with a single supervisor credits them its whole time when it ends,
+  if someone else's attendance was recorded there, to confirm like any record.
 - My activity, profile with level, account deletion.
 - **Editing the profile** (Profile → "عدّل بياناتك"): the name and the city,
   checked as at sign-up. Gender stays as it was set at sign-up (it decides which
@@ -79,10 +96,11 @@ The app follows the planning notes (`DESIGN.md`, `Screens.md`, `Data_Model.md`,
   by everyone signed in (owner's decision, 2026-11-17; before, only the same gender);
   without one, the first letter of the name shows. Shown on the roster and the
   record screen, so the supervisor can see who stands in front of them.
-- **Proposing an event** (Events tab → "اقترح فعالية"): opens at level 5, or for
+- **Proposing an event** (Events tab → "اقترح فعالية"): opens at level 5 (1500 points), or for
   supervisors and admins. The creator becomes its supervisor and may choose only
   mixed or their own men/women category. It waits for an admin (at most 3 waiting
-  per person), who approves or turns it down from the admin panel; the creator is
+  per person); once an admin approved 8 of a person's events in their own name,
+  the next ones are published at once (owner's decision, 2026-11-18). An admin approves or turns it down from the admin panel; the creator is
   notified either way. Until then only the creator sees it, under "أنظّمها",
   and may edit it with the same form and checks ("عدّل اقتراحك") or withdraw it
   ("اسحب اقتراحك"), which deletes it. Once it is approved or turned down, only
@@ -235,9 +253,9 @@ update it ran. For readable lines of code in them, also set `SENTRY_AUTH_TOKEN`,
 `SENTRY_ORG` and `SENTRY_PROJECT` in the shell before `npm run apk`; without
 them the build skips that step.
 
-**Placeholders to replace** (`shared/placeholders.ts`): base points per event
-type, level thresholds and the end-time grace period — they belong to
-`Points_And_Levels.md`. Fields marked `DEMO-ONLY` in `shared/types.ts` are
+**Placeholders to replace** (`shared/placeholders.ts`): the end-time grace
+period, and the levels after the tenth (not set yet). The points and the ten
+levels are the owner's (2026-11-18, above). Fields marked `DEMO-ONLY` in `shared/types.ts` are
 not in `Data_Model.md` yet and need a decision. Decided by the owner
 (2026-10-22, in `shared/rules.ts`): events may be proposed from level 5 or by
 supervisors and admins ("level + direct nomination"), at most 3 may wait at
@@ -354,7 +372,7 @@ server log, and the development database has an admin: **0910000000**.
   waiting, events running and upcoming, drafts, hours waiting for their owners
   to confirm.
 - **Events**: create (as a draft or published), edit, publish, cancel. Choose
-  the type (it sets the points), branches of faith, supervisors and terms.
+  the type, branches of faith, supervisors and terms (the points come from the time: a point a minute).
   What people already agreed to is protected: terms lock at the first
   acceptance, the men/women/mixed category once someone joined, the time and
   type once attendance was recorded. An event proposed in the app shows who

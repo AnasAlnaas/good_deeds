@@ -13,10 +13,13 @@ import { useRoster } from '@/data/queries';
 import { END_GRACE_MINUTES } from '@/demo/placeholders';
 import { count, fmt, time } from '@/i18n/format';
 import { useApp, useMe } from '@/state/app';
+import { useAction } from '@/state/useAction';
 import { colors, space } from '@/theme/tokens';
 import { effectiveStatus, WARN_DAYS_AFTER_EVENT } from '../../../../../shared/rules';
 
-// Screen 14: the supervisor's list of joined participants and each one's state.
+// Screen 14: the supervisor's list of joined participants and each one's state,
+// and the event's other supervisors: another supervisor records their hours.
+// Before recording anyone, the supervisor takes the pledge (إنها أمانة), once per event.
 // From here the supervisor also records a warning for someone, once the event has started.
 // It works with no connection too: the list is the one last fetched, and what
 // is recorded meanwhile is kept on the phone and shown here until it is sent
@@ -28,6 +31,7 @@ export default function RosterScreen() {
   const query = useRoster(id);
   const outbox = useOutbox();
   const online = useOnline();
+  const { run, busy } = useAction();
   if (!query.data) {
     return (
       <Screen back title={s.roster.title}>
@@ -35,7 +39,7 @@ export default function RosterScreen() {
       </Screen>
     );
   }
-  const { event } = query.data;
+  const { event, i_pledged: pledged } = query.data;
   const participants = rosterWithQueued(query.data, outbox.queued);
   const waiting = outbox.queued.filter((q) => q.eventId === event.id).length;
   const refused = outbox.refused.filter((r) => r.eventId === event.id);
@@ -56,6 +60,31 @@ export default function RosterScreen() {
   return (
     <Screen back title={s.roster.title}>
       <Txt variant="bodyStrong">{event.title}</Txt>
+      {pledged ? (
+        <View style={styles.head}>
+          <Ionicons name="shield-checkmark-outline" size={18} color={colors.accentInk} />
+          <Txt variant="caption" color={colors.inkMuted} style={styles.flex}>
+            {s.pledge.reminder}
+          </Txt>
+        </View>
+      ) : (
+        <Card style={styles.pledge}>
+          <View style={styles.head}>
+            <Ionicons name="shield-checkmark-outline" size={26} color={colors.accentInk} />
+            <Txt variant="sectionTitle" style={styles.flex}>
+              {s.pledge.title}
+            </Txt>
+          </View>
+          <Txt>{s.pledge.body}</Txt>
+          <Txt variant="bodyStrong" align="center">
+            {s.pledge.verse}
+          </Txt>
+          <Txt variant="caption" align="center" color={colors.inkMuted}>
+            {s.pledge.verseSource}
+          </Txt>
+          <Button icon="hand-right-outline" label={s.pledge.take} disabled={busy} onPress={() => run((b) => b.pledge(id))} />
+        </Card>
+      )}
       {status === 'published' && (
         <Card style={styles.notice}>
           <Txt color={colors.inkMuted}>{s.roster.notRunning}</Txt>
@@ -82,7 +111,7 @@ export default function RosterScreen() {
         </Card>
       ))}
       {participants.length === 0 && <EmptyState icon="people-outline" text={s.roster.empty} />}
-      {participants.map(({ user: u, attendance: a, i_warned, queued }) => {
+      {participants.map(({ user: u, attendance: a, i_warned, is_supervisor, queued }) => {
         const state = !a ? 'notStarted' : a.ended_at ? 'done' : 'working';
         const self = u.id === me.id;
         return (
@@ -98,6 +127,7 @@ export default function RosterScreen() {
                 icon={state === 'working' ? 'radio-button-on' : state === 'done' ? 'checkmark-circle' : undefined}
               />
             </View>
+            {is_supervisor && <Badge label={s.roster.supervisor} color={colors.accentInk} icon="shield-outline" />}
             {queued && <Badge label={s.roster.queuedBadge} color={colors.warning} icon="cloud-upload-outline" />}
             {a && (
               <Txt variant="caption" color={colors.inkMuted}>
@@ -108,9 +138,9 @@ export default function RosterScreen() {
             )}
             {self ? (
               <Txt variant="caption" color={colors.inkMuted}>
-                {s.roster.self}
+                {participants.filter((p) => p.is_supervisor).length === 1 ? s.roster.selfSole : s.roster.self}
               </Txt>
-            ) : !a && canStart ? (
+            ) : !pledged ? null : !a && canStart ? (
               <Button icon="play" label={s.roster.recordStart} onPress={() => open(u.id, 'start')} />
             ) : a && !a.ended_at && canEnd ? (
               <Button variant="secondary" icon="stop" label={s.roster.recordEnd} onPress={() => open(u.id, 'end')} />
@@ -120,7 +150,8 @@ export default function RosterScreen() {
                 {u.gender === 'female' ? s.roster.warnedFemale : s.roster.warned}
               </Txt>
             ) : (
-              !self && canWarn && <Button variant="quiet" icon="alert-circle-outline" label={s.roster.warn} onPress={() => warn(u.id)} />
+              // Warnings are for those who joined; a supervisor is the admins' to speak to.
+              !self && !is_supervisor && canWarn && <Button variant="quiet" icon="alert-circle-outline" label={s.roster.warn} onPress={() => warn(u.id)} />
             )}
           </Card>
         );
@@ -131,6 +162,7 @@ export default function RosterScreen() {
 
 const styles = StyleSheet.create({
   notice: { backgroundColor: colors.surfaceAlt },
+  pledge: { borderWidth: 1, borderColor: colors.accent, gap: space.sm },
   refused: { borderWidth: 1, borderColor: colors.danger },
   head: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   flex: { flex: 1 },

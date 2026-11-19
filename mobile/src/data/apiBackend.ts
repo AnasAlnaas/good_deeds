@@ -92,6 +92,7 @@ export function createApiBackend(opts: { baseUrl: string; token: string; onUnaut
     joinWaitlist: (eventId) => send('POST', `/events/${enc(eventId)}/waitlist`),
     leaveWaitlist: (eventId) => send('DELETE', `/events/${enc(eventId)}/waitlist`),
     roster: (eventId) => get(`/events/${enc(eventId)}/roster`),
+    pledge: (eventId) => send('POST', `/events/${enc(eventId)}/pledge`),
     recordStart: (eventId, userId, at, recordedAt) =>
       send('POST', `/events/${enc(eventId)}/attendance/${enc(userId)}/start`, atBody(at, recordedAt)),
     recordEnd: (eventId, userId, at, recordedAt) =>
