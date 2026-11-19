@@ -2,7 +2,7 @@
 // (src/demo/server.ts → shared/rules.ts) on the data kept on the phone, and
 // builds the same responses the server builds (server/src/routes/).
 
-import type { AppEvent, Attendance, Db, EventNotice, Report, User, Warning } from '@/data/types';
+import type { AppEvent, Attendance, Db, EventNotice, OutsideHours, Report, User, Warning } from '@/data/types';
 import { REPORT_CATEGORIES } from '@/data/types';
 import * as server from '@/demo/server';
 import { classOfEvent, eventSubtypes } from '../../../shared/classes';
@@ -11,6 +11,7 @@ import * as rules from '../../../shared/rules';
 import { lessonLibrary } from '../../../shared/lesson-library';
 import { cleanKind, promotedTags } from '../../../shared/tags';
 import type {
+  OutsideHoursItem,
   AttendanceItem,
   EventDetail,
   EventLessonItem,
@@ -77,9 +78,25 @@ function myInstitutions(db: Db, meId: string): MyInstitution[] {
         role: m.role,
         status: m.status,
         pending_members: rules.isRepresentative(m) ? db.institution_members.filter((x) => x.institution_id === i.id && x.status === 'pending').length : 0,
+        pending_hours: rules.isRepresentative(m) ? (db.outside_hours ?? []).filter((x) => x.institution_id === i.id && x.status === 'pending').length : 0,
       };
     })
     .sort((a, b) => a.institution.name.localeCompare(b.institution.name, 'ar'));
+}
+
+/** Claims as their volunteer or the institution's representatives see them (server/src/routes/outside-hours.ts). */
+function outsideHoursItems(db: Db, me: User, claims: OutsideHours[]): OutsideHoursItem[] {
+  return claims.map((claim) => {
+    const i = server.institutionOf(db, claim.institution_id)!;
+    const decider = claim.decided_by ? server.getUser(db, claim.decided_by) : undefined;
+    return {
+      claim,
+      institution: { id: i.id, name: i.name, kind: i.kind },
+      image: imageRef(db, claim.image_id),
+      user: publicUser(me, server.getUser(db, claim.user_id)!),
+      decided_by: decider ? publicUser(me, decider) : null,
+    };
+  });
 }
 
 /** Who belongs to the institution, for its representatives. */
@@ -667,6 +684,53 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
       async(() => {
         const { db, me } = change((d) => server.removeMember(d, meId, id, userId));
         return membersOf(db, me, id);
+      }),
+
+    myOutsideHours: () =>
+      async(() => {
+        const { db, me } = read();
+        const mine = (db.outside_hours ?? []).filter((c) => c.user_id === me.id).sort((a, b) => rules.toMs(b.created_at) - rules.toMs(a.created_at));
+        return outsideHoursItems(db, me, mine);
+      }),
+
+    claimOutsideHours: (body) =>
+      async(() => {
+        let id = '';
+        const { db, me } = change((d, t) => {
+          const result = server.claimOutsideHours(d, meId, body, t);
+          id = result.id;
+          return result.db;
+        });
+        return outsideHoursItems(db, me, [db.outside_hours.find((c) => c.id === id)!])[0];
+      }),
+
+    institutionOutsideHours: (id) =>
+      async(() => {
+        const { db, me } = read();
+        server.assertMayManageInstitution(db, me, id);
+        const rows = (db.outside_hours ?? []).filter((c) => c.institution_id === id).sort((a, b) => rules.toMs(b.created_at) - rules.toMs(a.created_at));
+        const waiting = rows.filter((r) => r.status === 'pending').reverse();
+        return outsideHoursItems(db, me, [...waiting, ...rows.filter((r) => r.status !== 'pending')]);
+      }),
+
+    decideOutsideHours: (id, claimId, body) =>
+      async(() => {
+        const { db, me } = change((d, t) => server.decideOutsideHours(d, meId, id, claimId, body.decision, body.note, t));
+        return outsideHoursItems(db, me, [db.outside_hours.find((c) => c.id === claimId)!])[0];
+      }),
+
+    // The demo has no server to check a certificate: it has no QR code.
+    makeCertificate: (body) =>
+      async(() => {
+        const { db, me } = read();
+        return server.demoCertificate(db, me, body.institution_id ?? null, Date.now());
+      }),
+
+    institutionHoursReport: (id, from, to) =>
+      async(() => {
+        const { db, me } = read();
+        server.assertMayManageInstitution(db, me, id);
+        return server.institutionHoursReport(db, me, id, from, to);
       }),
 
     updateProfile: (edit) =>

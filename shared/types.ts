@@ -297,10 +297,55 @@ export interface Attendance {
 export interface PointsLedgerEntry {
   id: string;
   user_id: string;
-  event_id: string;
+  /** The event the points are for, or null for confirmed outside-app hours (outside_hours_id). */
+  event_id: string | null;
+  outside_hours_id: string | null;
   points: number;
   reason: string;
   created_at: string;
+}
+
+/**
+ * Owner's decisions (2026-11-19): hours a volunteer did outside the app's
+ * events, claimed for one of their institutions and approved or turned down by
+ * its representative. Approved, they earn points like an event's (a point a
+ * minute) and count on the hours record and certificate (rules.assertCanClaimOutsideHours).
+ */
+export type OutsideHoursStatus = 'pending' | 'approved' | 'rejected';
+
+export interface OutsideHours {
+  id: string;
+  user_id: string;
+  institution_id: string;
+  /** The day of the work where the association is, as YYYY-MM-DD. */
+  done_on: string;
+  minutes: number;
+  description: string;
+  place: string | null;
+  /** A photo as proof, kept with the lessons' pictures; null = none. */
+  image_id: string | null;
+  status: OutsideHoursStatus;
+  created_at: string;
+  decided_by: string | null;
+  decided_at: string | null;
+  decision_note: string | null;
+}
+
+/**
+ * Owner's decisions (2026-11-19): a certificate of a volunteer's confirmed
+ * hours, as it was when made. Its id is the short code on it; its QR code opens
+ * the server's page (GET /api/verify/:id) that shows the name, the hours and the
+ * day it was made, and nothing more.
+ */
+export interface Certificate {
+  id: string;
+  user_id: string;
+  /** Only this institution's events and outside-app hours; null = all of them. */
+  institution_id: string | null;
+  hours: number;
+  events: number;
+  outside_hours: number;
+  issued_at: string;
 }
 
 export interface Level {
@@ -385,4 +430,5 @@ export interface Db {
   warnings: Warning[];
   institutions: Institution[];
   institution_members: InstitutionMember[];
+  outside_hours: OutsideHours[];
 }

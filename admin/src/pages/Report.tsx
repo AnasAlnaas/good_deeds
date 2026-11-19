@@ -136,10 +136,10 @@ function downloadCsv(rows: HoursReportRow[], from: string, to: string, organiser
     const text = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
     return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
   };
-  const header = [t.report.name, t.report.phone, t.report.city, t.report.gender, t.report.institutions, t.report.events, t.report.hours, t.report.total];
+  const header = [t.report.name, t.report.phone, t.report.city, t.report.gender, t.report.institutions, t.report.events, t.report.hours, t.report.outsideHours, t.report.total];
   const lines = rows.map((r) =>
     // The phone inside left-to-right marks: Excel then keeps it as text (+218…), not a number in scientific notation.
-    [r.full_name, ltr(r.phone), r.city, t.gender[r.gender], (r.institutions ?? []).join('، '), r.events, r.hours, r.total_points].map(cell).join(','),
+    [r.full_name, ltr(r.phone), r.city, t.gender[r.gender], (r.institutions ?? []).join('، '), r.events, r.hours, r.outside_hours ?? 0, r.total_points].map(cell).join(','),
   );
   const blob = new Blob(['﻿' + [header.map(cell).join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' });
   const link = document.createElement('a');

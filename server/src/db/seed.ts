@@ -11,7 +11,7 @@ import { dated } from './rows';
 import * as s from './schema';
 
 const ALL_TABLES = [
-  'institution_members', 'institutions', 'reports', 'warnings', 'admin_actions', 'user_photos', 'push_tokens', 'login_codes', 'user_passwords', 'points_ledger', 'attendance', 'term_acceptances', 'registrations', 'event_terms',
+  'institution_members', 'institutions', 'reports', 'warnings', 'admin_actions', 'user_photos', 'push_tokens', 'login_codes', 'user_passwords', 'points_ledger', 'certificates', 'outside_hours', 'attendance', 'term_acceptances', 'registrations', 'event_terms',
   'lesson_completions', 'event_lessons', 'lesson_images', 'event_reminders', 'waitlist',
   'notice_reactions', 'event_notices', 'event_organizers', 'events', 'levels', 'branches', 'users',
 ];
@@ -69,6 +69,7 @@ export async function seedDemo(db: Database, nowMs: number) {
     await tx.insert(s.registrations).values(d.registrations.map(dated));
     await tx.insert(s.term_acceptances).values(d.term_acceptances.map(dated));
     await tx.insert(s.attendance).values(d.attendance.map(dated));
+    if (d.outside_hours.length) await tx.insert(s.outside_hours).values(d.outside_hours.map(dated));
     if (d.points_ledger.length) await tx.insert(s.points_ledger).values(d.points_ledger.map(dated));
   });
 }

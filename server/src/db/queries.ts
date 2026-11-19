@@ -266,13 +266,14 @@ export async function waitingProposals(q: Database, userId: string) {
  */
 export async function creditPoints(
   q: Database,
-  args: { userId: string; eventId: string; earned: number; reason: string; at: Date },
+  args: { userId: string; eventId: string | null; outsideHoursId?: string; earned: number; reason: string; at: Date },
 ): Promise<{ total: number; level: Level }> {
   if (args.earned > 0) {
     await q.insert(s.points_ledger).values({
       id: newId(),
       user_id: args.userId,
       event_id: args.eventId,
+      outside_hours_id: args.outsideHoursId ?? null,
       points: args.earned,
       reason: args.reason,
       created_at: args.at,
@@ -440,4 +441,15 @@ export async function requestsForRepresentative(q: Database, userId: string) {
     .from(s.institution_members)
     .where(and(inArray(s.institution_members.institution_id, mine), eq(s.institution_members.status, 'pending')));
   return row.n;
+}
+
+/** Whether the person belongs (confirmed) to an approved institution. */
+export async function belongsToAny(q: Database, userId: string) {
+  const [row] = await q
+    .select({ id: s.institution_members.institution_id })
+    .from(s.institution_members)
+    .innerJoin(s.institutions, eq(s.institutions.id, s.institution_members.institution_id))
+    .where(and(eq(s.institution_members.user_id, userId), eq(s.institution_members.status, 'confirmed'), eq(s.institutions.status, 'approved')))
+    .limit(1);
+  return !!row;
 }

@@ -24,6 +24,7 @@ import type {
   Level,
   NoticeKind,
   NoticeReaction,
+  OutsideHours,
   PointsLedgerEntry,
   Registration,
   ReportCategory,
@@ -1189,4 +1190,93 @@ export function assertCanLeaveInstitution<M extends Pick<InstitutionMember, 'rol
 ): asserts membership is M {
   if (!membership || !institution) throw new ApiError('not_found');
   if (membership.role === 'representative' && institution.status !== 'rejected') throw new ApiError('representative_cannot_leave');
+}
+
+// ---------- hours outside the app's events (shared/types.ts OutsideHours) ----------
+
+// Owner's decisions (2026-11-19): one claim is one day of at most 12 hours,
+// within the last two weeks and never in the future, and one claim at a time
+// waits for each institution's representatives.
+export const OUTSIDE_HOURS_MAX_MINUTES = 12 * 60;
+export const OUTSIDE_HOURS_DAYS_BACK = 14;
+export const OUTSIDE_HOURS_DESCRIPTION_MAX = 300;
+export const OUTSIDE_HOURS_PLACE_MAX = 120;
+export const OUTSIDE_HOURS_NOTE_MAX = 300;
+
+/** Where the association is: the offline demo's clock (the server's is TIME_ZONE). */
+export const ASSOCIATION_TIME_ZONE = 'Africa/Tripoli';
+
+/** The calendar day (YYYY-MM-DD) of a moment where the association is. */
+export function dayIn(at: number, timeZone: string): string {
+  // en-CA writes dates as YYYY-MM-DD.
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(at));
+}
+
+/** Days from `from` to `to`, both YYYY-MM-DD. */
+function daysBetween(from: string, to: string) {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+}
+
+export interface OutsideHoursInput {
+  institution_id: string;
+  done_on: string;
+  minutes: number;
+  description: string;
+  place?: string | null;
+  image_id?: string | null;
+}
+
+/**
+ * A volunteer claims hours they did outside the app's events, for one of the
+ * institutions they belong to (confirmed). Returns what to store.
+ */
+export function assertCanClaimOutsideHours(args: {
+  input: OutsideHoursInput;
+  membership: Pick<InstitutionMember, 'status'> | undefined;
+  institution: Pick<Institution, 'status'> | undefined;
+  /** Claims of this person for this institution still waiting. */
+  pendingForInstitution: number;
+  now: number;
+  timeZone: string;
+}): Pick<OutsideHours, 'institution_id' | 'done_on' | 'minutes' | 'description' | 'place' | 'image_id'> {
+  const { input } = args;
+  if (!args.institution || args.institution.status !== 'approved' || args.membership?.status !== 'confirmed') throw new ApiError('not_found');
+  const doneOn = /^\d{4}-\d{2}-\d{2}$/.test(input.done_on) && !Number.isNaN(Date.parse(`${input.done_on}T00:00:00Z`)) ? input.done_on : null;
+  if (!doneOn) throw new ApiError('outside_hours_too_old');
+  const back = daysBetween(doneOn, dayIn(args.now, args.timeZone));
+  if (back < 0) throw new ApiError('time_in_future');
+  if (back > OUTSIDE_HOURS_DAYS_BACK) throw new ApiError('outside_hours_too_old');
+  const minutes = Math.round(input.minutes);
+  if (!Number.isFinite(minutes) || minutes < 1) throw new ApiError('outside_hours_too_long');
+  if (minutes > OUTSIDE_HOURS_MAX_MINUTES) throw new ApiError('outside_hours_too_long');
+  const description = input.description.trim().replace(/\s+/g, ' ').slice(0, OUTSIDE_HOURS_DESCRIPTION_MAX);
+  if (!description) throw new ApiError('description_required');
+  if (args.pendingForInstitution > 0) throw new ApiError('outside_hours_pending');
+  const place = input.place?.trim().replace(/\s+/g, ' ').slice(0, OUTSIDE_HOURS_PLACE_MAX) || null;
+  return { institution_id: input.institution_id, done_on: doneOn, minutes, description, place, image_id: input.image_id ?? null };
+}
+
+/**
+ * A representative of the claim's institution approves or turns it down, once
+ * (owner's decision, 2026-11-19: their own hours too). Turning it down needs a
+ * reason, which the volunteer sees. Returns the reason as stored.
+ */
+export function assertCanDecideOutsideHours(args: {
+  user: Pick<User, 'id' | 'role'>;
+  mine: Pick<InstitutionMember, 'role' | 'status'> | undefined;
+  claim: Pick<OutsideHours, 'user_id' | 'status'> | undefined;
+  decision: 'approved' | 'rejected';
+  note?: string | null;
+}): string | null {
+  if (!args.claim) throw new ApiError('not_found');
+  if (args.user.role !== 'admin' && !isRepresentative(args.mine)) throw new ApiError('not_representative');
+  if (args.claim.status !== 'pending') throw new ApiError('already_acted');
+  const note = args.note?.trim().replace(/\s+/g, ' ').slice(0, OUTSIDE_HOURS_NOTE_MAX) || null;
+  if (args.decision === 'rejected' && !note) throw new ApiError('reason_required');
+  return note;
+}
+
+/** The points an approved claim earns: a point a minute, as for an event. */
+export function pointsForOutsideHours(claim: Pick<OutsideHours, 'minutes'>): number {
+  return Math.max(0, Math.round(claim.minutes));
 }

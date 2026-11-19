@@ -29,6 +29,8 @@ export interface AppDeps {
   /** Runs work the answer should not wait for (notifications). Tests collect it to wait on. */
   runLater: (task: () => Promise<void>) => void;
   cronSecret?: string;
+  /** The server's public address, for certificates' QR codes. Absent = the address the request came to. */
+  publicUrl?: string;
   /** Empty = any origin. */
   corsOrigins: string[];
   /** Phones made admin when they sign in: how the first admin is made without database access. */

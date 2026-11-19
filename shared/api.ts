@@ -10,6 +10,7 @@ import type { EventTag } from './tags';
 import type {
   AppEvent,
   Attendance,
+  Certificate,
   EventLesson,
   EventStatus,
   EventTerm,
@@ -23,6 +24,7 @@ import type {
   MembershipStatus,
   NoticeKind,
   NoticeReactionKind,
+  OutsideHours,
   Registration,
   RegistrationStatus,
   Report,
@@ -582,6 +584,8 @@ export interface MyInstitution {
   status: MembershipStatus;
   /** A representative's: requests to belong waiting for them. 0 for a member. */
   pending_members: number;
+  /** A representative's: outside-app hours waiting for them to decide. 0 for a member (older servers send none). */
+  pending_hours?: number;
 }
 
 /** GET /api/institutions */
@@ -613,3 +617,56 @@ export interface InstitutionMembersResponse {
 // POST /api/institutions/:id/members/:userId/confirm: a representative confirms a request.
 // DELETE /api/institutions/:id/members/:userId: turns a request down, or takes a member off.
 // Both answer with the InstitutionMembersResponse.
+
+// ---------- hours outside the app's events ----------
+// Owner's decisions (2026-11-19): shared/types.ts OutsideHours.
+
+/** A claim as its volunteer, or its institution's representatives, see it. */
+export interface OutsideHoursItem {
+  claim: OutsideHours;
+  institution: InstitutionRef;
+  image: LessonImageRef | null;
+  /** Who claimed it. */
+  user: PublicUser;
+  decided_by: PublicUser | null;
+}
+
+/** POST /api/outside-hours: a claim (rules.assertCanClaimOutsideHours). Answers with the OutsideHoursItem. */
+export interface ClaimOutsideHoursBody {
+  institution_id: string;
+  done_on: string;
+  minutes: number;
+  description: string;
+  place?: string | null;
+  image_id?: string | null;
+}
+
+// GET /api/outside-hours: the person's own claims, newest first. OutsideHoursItem[].
+// GET /api/institutions/:id/outside-hours: its representatives' (and admins'): waiting first, then the decided. OutsideHoursItem[].
+
+/** POST /api/institutions/:id/outside-hours/:claimId/decide. Answers with the OutsideHoursItem. */
+export interface DecideOutsideHoursBody {
+  decision: 'approved' | 'rejected';
+  note?: string;
+}
+
+/** POST /api/me/certificates: a certificate of the person's confirmed hours, made on the server from its own records. */
+export interface MakeCertificateBody {
+  /** Only this institution's events and outside-app hours; absent = all. */
+  institution_id?: string | null;
+}
+
+export interface CertificateResponse {
+  certificate: Certificate;
+  institution: InstitutionRef | null;
+  /** The page its QR code opens; null when the server's public address is not known. */
+  verify_url: string | null;
+}
+
+/** GET /api/institutions/:id/hours-report?from=YYYY-MM-DD&to=YYYY-MM-DD: its representatives' report of its members' confirmed hours. */
+export interface InstitutionHoursReport {
+  institution: InstitutionRef;
+  from: string;
+  to: string;
+  rows: { user: PublicUser; events: number; event_hours: number; outside_hours: number; hours: number }[];
+}

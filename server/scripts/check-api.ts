@@ -590,7 +590,8 @@ const picture = (width: number, height: number, extra = Buffer.alloc(0)) =>
     jpeg.subarray(jpeg.length - 14),
   ]);
 const upload = (token: string, bytes: Buffer) => call('POST', '/lesson-images', token, b64(bytes));
-await expectError('a member who may not write lessons sends a picture', 'cannot_create_events', upload(ahmad, picture(800, 1200)));
+await expectError('a member who may not write lessons, and in no institution, sends a picture', 'cannot_create_events', upload(mariam, picture(800, 1200)));
+await expectOk('one who belongs to an institution may (a photo as proof of outside-app hours)', upload(ahmad, picture(800, 1200)));
 await expectError('a file that is not a JPEG', 'photo_invalid', upload(khaled, Buffer.from('<svg onload="alert(1)"/>')));
 await expectError('a JPEG without a size', 'photo_invalid', upload(khaled, jpeg));
 await expectError('wider than the app makes one', 'photo_invalid', upload(khaled, picture(4000, 3000)));

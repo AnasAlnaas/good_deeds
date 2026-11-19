@@ -58,7 +58,11 @@ export type ApiErrorCode =
   | 'already_member'
   | 'join_request_pending'
   | 'not_representative'
-  | 'representative_cannot_leave';
+  | 'representative_cannot_leave'
+  | 'outside_hours_too_long'
+  | 'outside_hours_too_old'
+  | 'outside_hours_pending'
+  | 'description_required';
 
 export class ApiError extends Error {
   readonly code: ApiErrorCode;

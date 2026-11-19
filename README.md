@@ -184,6 +184,25 @@ The map is OpenStreetMap through Leaflet in a web view (`src/components/OsmMap.t
 so no Google Maps key is needed. Public OSM tiles are for testing only; switch
 `TILE_URL` to a tile provider before launch.
 
+### Hours outside the app, certificates and reports
+
+Owner's decisions (2026-11-19). A member logs hours done for one of their
+institutions outside the app's events (Hours record → ساعات خارج التطبيق): a day
+within the last two weeks, up to 12 hours, what they did, and if they like a place
+and a photo. One claim waits for each institution at a time. Its representative
+approves it (a point a minute, like an event) or turns it down with a reason
+(Institutions → ساعات خارج التطبيق); a representative may approve their own.
+The demo has one waiting from أحمد for خالد.
+
+The hours record makes a PDF certificate (expo-print): all hours, or one
+institution's. The server writes down what it says (`POST /api/me/certificates`)
+and its QR code opens `GET /api/verify/<code>`, a public page with only the name,
+the hours and the day it was made. Set `PUBLIC_URL` on the server to its public
+address so the QR link is right behind a proxy. The demo's certificates have no QR
+code. Representatives download their institution's hours report as a CSV
+(Institutions → تقرير الساعات); the admin panel's report counts outside hours too,
+and its overview shows hours by month, organiser and city.
+
 ### Push notifications
 
 The app registers the phone for notifications when someone signs in to the

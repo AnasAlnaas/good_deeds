@@ -3,7 +3,7 @@
 // in the on-phone database, calls the rule, and writes what the rule decided.
 // The screens never compute hours or points themselves.
 
-import type { EventProposal, ProfileEdit, ReportBody } from '@/data/api';
+import type { CertificateResponse, EventProposal, InstitutionHoursReport, ProfileEdit, ReportBody } from '@/data/api';
 import type {
   AppEvent,
   Attendance,
@@ -18,6 +18,7 @@ import type {
   Registration,
   Report,
   User,
+  OutsideHours,
   Warning,
 } from '@/data/types';
 import { NOTICE_REACTIONS } from '@/data/types';
@@ -284,7 +285,7 @@ function removeLessons(next: Db, eventId: string) {
 
 /** Pictures a lesson shows, or an event uses as its cover. */
 function shownImages(db: Db) {
-  return new Set([...db.event_lessons.map((x) => x.image_id), ...db.events.map((e) => e.cover_image_id)]);
+  return new Set([...db.event_lessons.map((x) => x.image_id), ...db.events.map((e) => e.cover_image_id), ...(db.outside_hours ?? []).map((c) => c.image_id)]);
 }
 
 /** Those of these pictures no lesson or cover shows any more are removed, as on the server (server/src/lesson-images.ts). */
@@ -302,7 +303,8 @@ const UNUSED_IMAGE_MS = 2 * 24 * 60 * 60 * 1000;
  */
 export function addLessonImage(db: Db, userId: string, image: { data_url: string; width: number; height: number }, now: number) {
   const user = getUser(db, userId)!;
-  if (!mayProposeEvents(db, user)) throw new ApiError('cannot_create_events');
+  // Also anyone who belongs to an institution: a photo as proof of outside-app hours.
+  if (!mayProposeEvents(db, user) && !belongsToAny(db, userId)) throw new ApiError('cannot_create_events');
   const next = clone(db);
   const shown = shownImages(next);
   next.lesson_images = next.lesson_images.filter((x) => shown.has(x.id) || rules.toMs(x.created_at) > now - UNUSED_IMAGE_MS);
@@ -638,6 +640,7 @@ export function confirmAttendance(db: Db, userId: string, attendanceId: string, 
       id: newId('pl'),
       user_id: userId,
       event_id: row.event_id,
+      outside_hours_id: null,
       points,
       reason: 'attendance_confirmed',
       created_at: new Date(now).toISOString(),
@@ -949,4 +952,100 @@ export function removeMember(db: Db, userId: string, institutionId: string, memb
   const next = clone(db);
   next.institution_members = next.institution_members.filter((m) => !(m.institution_id === institutionId && m.user_id === memberId));
   return next;
+}
+
+// ---------- hours outside the app's events (server/src/routes/outside-hours.ts) ----------
+
+export function belongsToAny(db: Db, userId: string) {
+  return db.institution_members.some((m) => m.user_id === userId && m.status === 'confirmed' && institutionOf(db, m.institution_id)?.status === 'approved');
+}
+
+export function claimOutsideHours(db: Db, userId: string, input: rules.OutsideHoursInput, now: number) {
+  const pending = (db.outside_hours ?? []).filter((c) => c.user_id === userId && c.institution_id === input.institution_id && c.status === 'pending').length;
+  const imageId = input.image_id && db.lesson_images.some((x) => x.id === input.image_id) ? input.image_id : null;
+  const claim = rules.assertCanClaimOutsideHours({
+    input: { ...input, image_id: imageId },
+    institution: institutionOf(db, input.institution_id),
+    membership: membershipOf(db, input.institution_id, userId),
+    pendingForInstitution: pending,
+    now,
+    timeZone: rules.ASSOCIATION_TIME_ZONE,
+  });
+  const next = clone(db);
+  const id = newId('oh');
+  const row: OutsideHours = {
+    id, user_id: userId, ...claim, status: 'pending', created_at: new Date(now).toISOString(), decided_by: null, decided_at: null, decision_note: null,
+  };
+  next.outside_hours = [...(next.outside_hours ?? []), row];
+  return { db: next, id };
+}
+
+export function decideOutsideHours(db: Db, userId: string, institutionId: string, claimId: string, decision: 'approved' | 'rejected', note: string | undefined, now: number) {
+  const user = getUser(db, userId)!;
+  const claim = (db.outside_hours ?? []).find((c) => c.id === claimId && c.institution_id === institutionId);
+  const reason = rules.assertCanDecideOutsideHours({ user, mine: membershipOf(db, institutionId, userId), claim, decision, note });
+  const next = clone(db);
+  const row = next.outside_hours.find((c) => c.id === claimId)!;
+  Object.assign(row, { status: decision, decided_by: userId, decided_at: new Date(now).toISOString(), decision_note: reason });
+  if (decision === 'approved') {
+    const points = rules.pointsForOutsideHours(row);
+    if (points > 0) {
+      next.points_ledger.push({
+        id: newId('pl'), user_id: row.user_id, event_id: null, outside_hours_id: row.id, points, reason: 'outside_hours_approved', created_at: new Date(now).toISOString(),
+      });
+    }
+    const u = next.users.find((x) => x.id === row.user_id)!;
+    u.total_points = totalPoints(next, row.user_id);
+    u.level = levelFor(next, u.total_points).level;
+  }
+  return next;
+}
+
+/** Its members' confirmed hours between two days: at its own events, and outside them for it (as GET /institutions/:id/hours-report). */
+export function institutionHoursReport(db: Db, viewer: User, id: string, from: string, to: string): InstitutionHoursReport {
+  const i = institutionOf(db, id)!;
+  const members = db.institution_members
+    .filter((m) => m.institution_id === id && m.status === 'confirmed')
+    .map((m) => getUser(db, m.user_id))
+    .filter((u): u is User => !!u && !u.deleted_at);
+  const tz = rules.ASSOCIATION_TIME_ZONE;
+  const rows = members
+    .map((u) => {
+      const attended = db.attendance.filter((a) => {
+        if (a.user_id !== u.id || a.participant_status !== 'confirmed') return false;
+        if (db.events.find((e) => e.id === a.event_id)?.institution_id !== id) return false;
+        const d = rules.dayIn(rules.toMs(a.started_at), tz);
+        return d >= from && d <= to;
+      });
+      const outside = (db.outside_hours ?? []).filter((c) => c.user_id === u.id && c.institution_id === id && c.status === 'approved' && c.done_on >= from && c.done_on <= to);
+      const eventHours = rules.round2(attended.reduce((sum, a) => sum + (a.hours ?? 0), 0));
+      const outsideHours = rules.round2(outside.reduce((sum, c) => sum + c.minutes, 0) / 60);
+      const shown = !u.avatar_url || rules.canSeePhoto(viewer, u) ? u.avatar_url : null;
+      return {
+        user: { id: u.id, full_name: u.full_name, avatar_url: shown, gender: u.gender },
+        events: new Set(attended.map((a) => a.event_id)).size,
+        event_hours: eventHours,
+        outside_hours: outsideHours,
+        hours: rules.round2(eventHours + outsideHours),
+      };
+    })
+    .sort((a, b) => b.hours - a.hours || a.user.full_name.localeCompare(b.user.full_name, 'ar'));
+  return { institution: { id: i.id, name: i.name, kind: i.kind }, from, to, rows };
+}
+
+/** What a certificate says, as the server counts it (server/src/routes/certificates.ts); the demo keeps none. */
+export function demoCertificate(db: Db, me: User, institutionId: string | null, now: number): CertificateResponse {
+  const institution = institutionId ? institutionOf(db, institutionId) : undefined;
+  if (institutionId && (!institution || membershipOf(db, institutionId, me.id)?.status !== 'confirmed')) throw new ApiError('not_found');
+  const attended = db.attendance.filter(
+    (a) => a.user_id === me.id && a.participant_status === 'confirmed' && (a.hours ?? 0) > 0 && (!institutionId || db.events.find((e) => e.id === a.event_id)?.institution_id === institutionId),
+  );
+  const outside = (db.outside_hours ?? []).filter((c) => c.user_id === me.id && c.status === 'approved' && (!institutionId || c.institution_id === institutionId));
+  const outsideHours = rules.round2(outside.reduce((sum, c) => sum + c.minutes, 0) / 60);
+  const hours = rules.round2(attended.reduce((sum, a) => sum + (a.hours ?? 0), 0) + outsideHours);
+  return {
+    certificate: { id: 'DEMO', user_id: me.id, institution_id: institutionId, hours, events: new Set(attended.map((a) => a.event_id)).size, outside_hours: outsideHours, issued_at: new Date(now).toISOString() },
+    institution: institution ? { id: institution.id, name: institution.name, kind: institution.kind } : null,
+    verify_url: null,
+  };
 }
