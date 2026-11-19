@@ -17,6 +17,7 @@ import { day, dayTimeRange, fmt, time } from '@/i18n/format';
 import * as dialog from '@/lib/dialog';
 import { openDirections } from '@/lib/directions';
 import { placeLabel, withZone } from '@/lib/place';
+import { shareEvent } from '@/lib/shareEvent';
 import { goBack } from '@/lib/goBack';
 import { useApp } from '@/state/app';
 import { useAction } from '@/state/useAction';
@@ -308,6 +309,8 @@ export default function EventDetail() {
             {linkNote}
           </Txt>
         )}
+        {/* Owner's decision (2026-11-19): an open event can be passed on, on WhatsApp or anywhere. */}
+        {open && <Button variant="quiet" icon="share-social-outline" label={s.event.share} onPress={() => shareEvent(event, s)} />}
       </Card>
 
       {lessons.length > 0 && (

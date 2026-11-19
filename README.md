@@ -44,6 +44,7 @@ server on port 3000 of the computer running `npx expo start`, so a phone on the
 same Wi-Fi finds `npm run dev` with no setup. A build without either shows only
 the demo. Android blocks plain `http://` in release builds, so a test APK needs
 the server behind HTTPS; Expo Go and development builds are fine with `http://`.
+The app's store page goes in `EXPO_PUBLIC_SHARE_URL`: a shared event ends with it (unset = no link).
 The privacy policy's address goes in `EXPO_PUBLIC_PRIVACY_URL`; Settings links to it,
 and shows no link without it. The admins' email goes in `EXPO_PUBLIC_CONTACT_EMAIL`;
 Settings ("راسل إدارة الجمعية") and the reset step for people without email
