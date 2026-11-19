@@ -4,7 +4,6 @@
 
 import type { AppEvent, Attendance, Db, EventNotice, Report, User, Warning } from '@/data/types';
 import { REPORT_CATEGORIES } from '@/data/types';
-import { CUSTOM_TAG_BASE_POINTS } from '@/demo/placeholders';
 import * as server from '@/demo/server';
 import { classOfEvent, eventSubtypes } from '../../../shared/classes';
 import { ApiError } from '../../../shared/errors';
@@ -128,7 +127,6 @@ function item(db: Db, me: User, a: Attendance): AttendanceItem {
       meeting_platform: e.meeting_platform,
       starts_at: e.starts_at,
       ends_at: e.ends_at,
-      base_points: e.base_points,
       institution: institutionRef(db, e.institution_id),
     },
     recorded_by: recorder ? publicUser(me, recorder) : null,
@@ -296,8 +294,7 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
         return {
           subtypes: eventSubtypes(),
           tags: promotedTags(db.events),
-          custom_tag_points: CUSTOM_TAG_BASE_POINTS,
-          publishes_directly: rules.proposalStatus(me) === 'published',
+          publishes_directly: rules.proposalStatus(me, { own: rules.ownApprovedEvents(db.events, me.id) }) === 'published',
           waiting: server.waitingProposals(db, me.id),
           max_waiting: rules.MAX_WAITING_PROPOSALS,
           lesson_library: libraryItems(db, me.id),
@@ -306,7 +303,7 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
             id: i.id,
             name: i.name,
             kind: i.kind,
-            publishes_directly: rules.proposalStatus({ role: 'member' }, rules.institutionApprovedEvents(db.events, i.id)) === 'published',
+            publishes_directly: rules.proposalStatus({ role: 'member' }, { institution: rules.institutionApprovedEvents(db.events, i.id) }) === 'published',
           })),
         };
       }),
@@ -410,14 +407,28 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
         const e = server.getEvent(db, eventId);
         if (!server.isOrganizer(db, eventId, me.id)) throw new ApiError('not_organizer');
         const warned = server.warnedBy(db, eventId, me.id);
+        const people = server.joinedUsers(db, eventId);
+        // The other supervisors are on it too: one of them records each one's hours.
+        const supervisorIds = db.event_organizers.filter((o) => o.event_id === eventId).map((o) => o.user_id);
+        const others = supervisorIds
+          .filter((id) => !people.some((p) => p.id === id))
+          .map((id) => server.getUser(db, id))
+          .filter((u): u is User => !!u && !u.deleted_at);
         return {
           event: summary(db, me, e, now),
-          participants: server.joinedUsers(db, eventId).map((u) => ({
+          i_pledged: !!server.organizerLink(db, eventId, me.id)?.pledged_at,
+          participants: [...people, ...others].map((u) => ({
             user: publicUser(me, u),
             attendance: server.attendanceOf(db, eventId, u.id) ?? null,
             i_warned: warned.has(u.id),
+            is_supervisor: supervisorIds.includes(u.id),
           })),
         };
+      }),
+
+    pledge: (eventId) =>
+      async(() => {
+        change((d, t) => server.pledge(d, meId, eventId, t));
       }),
 
     recordStart: (eventId, userId, at) =>
@@ -552,6 +563,7 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
           total_points: total,
           level,
           next_level: server.nextLevel(db, total) ?? null,
+          levels: db.levels,
           confirmed_hours: server.confirmedHours(db, me.id),
           can_create_events: server.mayProposeEvents(db, me),
           create_events_level: db.levels.find((l) => l.can_create_events)?.level ?? null,

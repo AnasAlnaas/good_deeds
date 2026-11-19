@@ -141,6 +141,13 @@
       "when": 1794941906037,
       "tag": "0019_event_covers",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1794997650485,
+      "tag": "0020_levels_and_hours",
+      "breakpoints": true
     }
   ]
 }

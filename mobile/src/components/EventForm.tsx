@@ -39,6 +39,7 @@ import {
   repeatTimes,
   youtubeId,
   youtubeWatchUrl,
+  eventMaxPoints,
 } from '../../../shared/rules';
 import { nameExample as nameExampleFor } from '../../../shared/name-examples';
 import { cleanTag, TAG_MAX, tagKey } from '../../../shared/tags';
@@ -71,7 +72,6 @@ const STAGGER_MS = 110;
 interface TagOption {
   id: string;
   label: string;
-  points: number;
 }
 
 /** What the form says about where the map is: at the address, at its city, or that it found neither. */
@@ -240,10 +240,9 @@ export function EventForm({
 
   // A server from before written tags sends none, and would refuse one: the form then offers the types only.
   const canWrite = meta.tags !== undefined;
-  const writtenPoints = meta.custom_tag_points ?? 0;
   const tagsOf = (c: EventClassId): TagOption[] => [
-    ...meta.subtypes.filter((x) => x.event_class === c).map((x) => ({ id: x.id, label: s.subtype[x.id] ?? x.id, points: x.base_points })),
-    ...(meta.tags ?? []).filter((x) => x.event_class === c).map((x) => ({ id: x.tag, label: x.tag, points: writtenPoints })),
+    ...meta.subtypes.filter((x) => x.event_class === c).map((x) => ({ id: x.id, label: s.subtype[x.id] ?? x.id })),
+    ...(meta.tags ?? []).filter((x) => x.event_class === c).map((x) => ({ id: x.tag, label: x.tag })),
   ];
   const options = v.event_class ? tagsOf(v.event_class) : [];
   // Writing a tag of their own. An event being edited opens that way when its tag is not among those offered.
@@ -255,7 +254,6 @@ export function EventForm({
   // What they wrote is a tag already offered: the event carries that one, spelled as everyone's.
   const same = writing && typed ? options.find((o) => tagKey(o.label) === tagKey(typed) || tagKey(o.id) === tagKey(typed)) : undefined;
   const subtype = writing ? (same?.id ?? typed ?? '') : v.subtype;
-  const points = options.find((o) => o.id === subtype)?.points ?? writtenPoints;
 
   const chooseClass = (c: EventClassId) => {
     if (c === v.event_class) return;
@@ -579,12 +577,6 @@ export function EventForm({
           {same ? fmt(s.newEvent.ownTagExists, { tag: same.label }) : s.newEvent.ownTagHint}
         </Txt>
       </Reveal>
-      <Reveal show={kindDone}>
-        <Txt variant="caption" color={colors.inkMuted}>
-          {fmt(s.newEvent.typePoints, { points: count(points, s.units.point) })}
-        </Txt>
-      </Reveal>
-
       <Reveal show={reached >= 1}>
         <SectionTitle>{s.newEvent.about}</SectionTitle>
         <Field label={s.newEvent.name} placeholder={nameExample} value={v.title} maxLength={120} onChangeText={(t) => set('title', t)} />
@@ -698,6 +690,12 @@ export function EventForm({
         <SectionTitle>{s.newEvent.time}</SectionTitle>
         <DateTimeField label={s.newEvent.starts} value={starts} minimumDate={today} onChange={setStart} />
         <DateTimeField label={s.newEvent.ends} value={ends} minimumDate={today} onChange={(d) => set('ends_at', d.toISOString())} />
+        {/* A point is a minute, whatever the event's type (rules.pointsForHours). */}
+        {ends > starts && (
+          <Txt variant="caption" color={colors.inkMuted}>
+            {fmt(s.newEvent.timePoints, { points: count(eventMaxPoints(v), s.units.point) })}
+          </Txt>
+        )}
       </Reveal>
 
       <Reveal show={reached >= 3} delay={STAGGER_MS}>

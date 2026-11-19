@@ -8,7 +8,7 @@ import { classOfEvent, EVENT_CLASSES, type EventClassId } from '../../../shared/
 import { cityTarget, locateInCity, type MapTarget } from '../../../shared/geocode';
 import { nameExample } from '../../../shared/name-examples';
 import { cleanTag, TAG_MAX, tagKey } from '../../../shared/tags';
-import { ADDRESS_MAX, cleanPlace, MEETING_URL_MAX } from '../../../shared/rules';
+import { ADDRESS_MAX, cleanPlace, eventMaxPoints, MEETING_URL_MAX } from '../../../shared/rules';
 import { type GenderCategory, type LocationType, MEETING_PLATFORMS, type MeetingPlatform } from '../../../shared/types';
 import { api } from '../api';
 import { fill, fromLocalInput, toLocalInput } from '../format';
@@ -136,8 +136,8 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
   // ---------- the class and its tag, as the app's form ----------
 
   const typesOf = (c: EventClassId) => [
-    ...meta.subtypes.filter((x) => x.event_class === c).map((x) => ({ id: x.id, label: t.subtype[x.id] ?? x.id, points: x.base_points })),
-    ...(meta.tags ?? []).filter((x) => x.event_class === c).map((x) => ({ id: x.tag, label: x.tag, points: meta.custom_tag_points ?? 0 })),
+    ...meta.subtypes.filter((x) => x.event_class === c).map((x) => ({ id: x.id, label: t.subtype[x.id] ?? x.id })),
+    ...(meta.tags ?? []).filter((x) => x.event_class === c).map((x) => ({ id: x.tag, label: x.tag })),
   ];
   const [eventClass, setEventClass] = useState<EventClassId | null>(() => (existing ? classOfEvent(existing.event) : null));
   const options = eventClass ? typesOf(eventClass) : [];
@@ -147,7 +147,6 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
   const typed = cleanTag(ownTag);
   const same = writing && typed ? options.find((o) => tagKey(o.label) === tagKey(typed) || tagKey(o.id) === tagKey(typed)) : undefined;
   const subtype = writing ? (same?.id ?? typed ?? '') : v.subtype;
-  const points = options.find((o) => o.id === subtype)?.points ?? (writing ? (meta.custom_tag_points ?? 0) : (existing?.event.base_points ?? 0));
   const chooseClass = (c: EventClassId) => {
     if (c === eventClass) return;
     setEventClass(c);
@@ -335,7 +334,7 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
           </div>
         </Field>
         {eventClass && (
-          <Field label={t.form.tagLabel} hint={subtype ? fill(t.form.typePoints, { n: points }) : undefined}>
+          <Field label={t.form.tagLabel}>
             <div className="chips" role="group" aria-label={t.form.tagLabel}>
               {options.map((o) => (
                 <button
@@ -469,7 +468,10 @@ function Form({ meta, existing }: { meta: AdminMeta; existing?: AdminEventDetail
           <Field label={t.form.starts}>
             <input type="datetime-local" disabled={timesLocked} value={toLocalInput(v.starts_at)} onChange={(e) => set('starts_at', fromLocalInput(e.target.value))} />
           </Field>
-          <Field label={t.form.ends}>
+          {/* A point is a minute, whatever the type (rules.pointsForHours). */}
+          <Field
+            label={t.form.ends}
+            hint={Date.parse(v.ends_at) > Date.parse(v.starts_at) ? fill(t.form.timePoints, { n: eventMaxPoints(v) }) : undefined}>
             <input type="datetime-local" disabled={timesLocked} value={toLocalInput(v.ends_at)} onChange={(e) => set('ends_at', fromLocalInput(e.target.value))} />
           </Field>
           <Field label={t.form.capacity}>

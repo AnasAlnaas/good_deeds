@@ -114,17 +114,26 @@ export function assertCanProposeEvent(args: {
  * Owner's decision (2026-10-22): an admin approves every event made in the app; an admin's own is published at once.
  * Owner's decision (2026-11-17): an institution's first INSTITUTION_REVIEWED_EVENTS
  * approved events wait for an admin too; after those, its events are published at once.
- * `institutionApproved`: how many of the institution's events an admin approved
- * (institutionApprovedEvents); absent or null = not in an institution's name.
+ * Owner's decision (2026-11-18): the same for a person's events in their own
+ * name, after OWN_REVIEWED_EVENTS approved ones.
+ * `approved`: how many of the institution's events an admin approved
+ * (institutionApprovedEvents), or of the person's own (ownApprovedEvents).
  */
-export function proposalStatus(user: Pick<User, 'role'>, institutionApproved?: number | null): 'draft' | 'published' {
+export function proposalStatus(user: Pick<User, 'role'>, approved: { institution: number } | { own: number }): 'draft' | 'published' {
   if (user.role === 'admin') return 'published';
-  if (institutionApproved != null && institutionApproved >= INSTITUTION_REVIEWED_EVENTS) return 'published';
-  return 'draft';
+  if ('institution' in approved) return approved.institution >= INSTITUTION_REVIEWED_EVENTS ? 'published' : 'draft';
+  return approved.own >= OWN_REVIEWED_EVENTS ? 'published' : 'draft';
 }
 
 /** Owner's decision (2026-11-17): how many of an institution's events an admin approves before its events go out at once. */
 export const INSTITUTION_REVIEWED_EVENTS = 3;
+/** Owner's decision (2026-11-18): how many of a person's own events an admin approves before theirs go out at once. */
+export const OWN_REVIEWED_EVENTS = 8;
+
+/** A person's events in their own name that an admin approved, counted as an institution's are (institutionApprovedEvents). */
+export function ownApprovedEvents(events: Pick<AppEvent, 'created_by' | 'institution_id' | 'status'>[], userId: string) {
+  return events.filter((e) => e.created_by === userId && !e.institution_id && !isHidden(e)).length;
+}
 
 /**
  * An institution's events an admin approved, counted for the institution
@@ -589,6 +598,10 @@ export function decideRecordStart(args: {
   actorId: string;
   participantId: string;
   actorIsOrganizer: boolean;
+  /** The recording supervisor took this event's pledge (decidePledge). */
+  pledged: boolean;
+  /** The participant supervises this event too: another supervisor records their hours (owner's decision, 2026-11-18). */
+  participantIsOrganizer?: boolean;
   event: Pick<AppEvent, 'status' | 'starts_at' | 'ends_at'>;
   registration: Registration | undefined;
   attendance: Attendance | undefined;
@@ -603,7 +616,8 @@ export function decideRecordStart(args: {
   if (event.status === 'cancelled') throw new ApiError('event_closed');
   if (at < toMs(event.starts_at)) throw new ApiError('event_not_started');
   if (at > toMs(event.ends_at)) throw new ApiError('event_closed');
-  if (args.registration?.status !== 'joined') throw new ApiError('not_joined');
+  if (!args.pledged) throw new ApiError('pledge_required');
+  if (args.registration?.status !== 'joined' && !args.participantIsOrganizer) throw new ApiError('not_joined');
   if (args.attendance) throw new ApiError('already_started');
   const startedAt = args.startedAt ?? at;
   if (startedAt < toMs(event.starts_at)) throw new ApiError('start_before_event');
@@ -626,6 +640,7 @@ export function decideRecordEnd(args: {
   actorId: string;
   participantId: string;
   actorIsOrganizer: boolean;
+  pledged: boolean;
   event: Pick<AppEvent, 'status' | 'ends_at'>;
   attendance: Attendance | undefined;
   endedAt?: number;
@@ -636,6 +651,7 @@ export function decideRecordEnd(args: {
   assertRecorder(args);
   const at = recordingMoment(args.recordedAt, args.now);
   if (args.event.status === 'cancelled') throw new ApiError('event_closed');
+  if (!args.pledged) throw new ApiError('pledge_required');
   if (!a) throw new ApiError('not_started');
   const replacesAutoClose = args.recordedAt !== undefined && a.end_source === 'auto_closed' && a.participant_status === 'pending';
   if (a.ended_at && !replacesAutoClose) throw new ApiError('already_ended');
@@ -647,6 +663,50 @@ export function decideRecordEnd(args: {
     ended_at: toIso(endedAt),
     end_source: at - endedAt > BACKDATE_AFTER_MS ? 'backdated' : 'live',
     hours: round2((endedAt - toMs(a.started_at)) / MS_HOUR),
+  };
+}
+
+// ---------- the supervisor's pledge (إنها أمانة) ----------
+//
+// Owner's decision (2026-11-18): the supervisor answers for the points. Before
+// recording anyone's attendance at an event, each of its supervisors reads that
+// recording is a trust and pledges to record only what they saw; once per event.
+
+/** Pledging at an event: only one of its supervisors, and not at a cancelled event or a draft. */
+export function decidePledge(args: { actorIsOrganizer: boolean; event: EventTimes; pledged: boolean }): 'pledge' | 'nothing' {
+  if (!args.actorIsOrganizer) throw new ApiError('not_organizer');
+  if (args.event.status === 'cancelled' || isHidden(args.event)) throw new ApiError('event_closed');
+  return args.pledged ? 'nothing' : 'pledge';
+}
+
+/**
+ * Owner's decision (2026-11-18): supervising counts. Another supervisor of the
+ * event records a supervisor's hours, like anyone's. An event with a single
+ * supervisor has nobody to do that: once it ends, they are credited its whole
+ * time, to confirm like any record. Only if someone else's attendance was
+ * recorded there, so an event nobody came to earns nothing. null = nothing to add.
+ */
+export function decideSoleSupervisorHours(args: {
+  event: EventTimes;
+  supervisorIds: string[];
+  /** Who has an attendance record at this event. */
+  recordedUserIds: string[];
+  now: number;
+}): Pick<Attendance, 'user_id' | 'started_at' | 'start_source' | 'ended_at' | 'end_source' | 'hours' | 'recorded_by' | 'recorded_at'> | null {
+  const { event, now } = args;
+  if (event.status === 'cancelled' || isHidden(event) || now < toMs(event.ends_at)) return null;
+  if (args.supervisorIds.length !== 1) return null;
+  const [supervisor] = args.supervisorIds;
+  if (args.recordedUserIds.includes(supervisor) || args.recordedUserIds.length === 0) return null;
+  return {
+    user_id: supervisor,
+    started_at: event.starts_at,
+    start_source: 'live',
+    ended_at: event.ends_at,
+    end_source: 'auto_closed',
+    hours: round2((toMs(event.ends_at) - toMs(event.starts_at)) / MS_HOUR),
+    recorded_by: supervisor,
+    recorded_at: toIso(now),
   };
 }
 
@@ -690,11 +750,19 @@ export function assertCanDispute(a: Attendance | undefined, userId: string): ass
 
 // ---------- points and levels ----------
 
-/** The master file's formula: points = event points × attendance ratio. */
-export function pointsForAttendance(event: Pick<AppEvent, 'starts_at' | 'ends_at' | 'base_points'>, hours: number | null): number {
-  const duration = (toMs(event.ends_at) - toMs(event.starts_at)) / MS_HOUR;
-  const ratio = Math.min(1, (hours ?? 0) / duration);
-  return round2(event.base_points * ratio);
+/**
+ * Owner's decision (2026-11-19, replacing a point a half hour): a point is a
+ * minute of work, counted to the nearest minute (1 h 10 min 40 s = 71 points),
+ * whatever the event's type. Hours are kept to two decimals (36 seconds).
+ */
+export function pointsForHours(hours: number | null): number {
+  // The small nudge keeps an exact half from rounding down by float error.
+  return Math.round((hours ?? 0) * 60 + 1e-9);
+}
+
+/** The most one person can earn at an event: its whole time. */
+export function eventMaxPoints(event: Pick<AppEvent, 'starts_at' | 'ends_at'>): number {
+  return pointsForHours((toMs(event.ends_at) - toMs(event.starts_at)) / MS_HOUR);
 }
 
 export function totalPoints(ledger: Pick<PointsLedgerEntry, 'points'>[]): number {

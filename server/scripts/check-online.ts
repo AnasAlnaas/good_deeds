@@ -119,6 +119,7 @@ expectEqual('told only once', (await news()).filter((m) => m.data.type === 'meet
 
 h.setClock(start + HOUR);
 expectEqual('during the event', (await page(id, ahmad)).meeting_url, ZOOM);
+await expectOk('the supervisor takes the pledge', call('POST', `/events/${id}/pledge`, khaled));
 await expectOk('attendance is recorded by the supervisor, as anywhere', call('POST', `/events/${id}/attendance/u_ahmad/start`, khaled));
 h.setClock(end);
 expectEqual('once it is over: gone', (await page(id, ahmad)).meeting_url, null);

@@ -81,6 +81,8 @@ export interface Backend {
   joinWaitlist(eventId: string): Promise<void>;
   leaveWaitlist(eventId: string): Promise<void>;
   roster(eventId: string): Promise<RosterResponse>;
+  /** A supervisor of the event takes the pledge to record attendance faithfully, before recording anyone (rules.decidePledge). */
+  pledge(eventId: string): Promise<void>;
   /**
    * `at` absent = when it is recorded (the server's now). `recordedAt`: recorded
    * on the phone with no connection, at that time, and sent now (outbox.ts).

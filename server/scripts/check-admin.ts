@@ -94,7 +94,8 @@ await expectError('not signed in', 'unauthorized', call('GET', '/admin/overview'
 await expectError('a member', 'forbidden', call('GET', '/admin/overview', ahmad));
 await expectError('a supervisor', 'forbidden', call('GET', '/admin/overview', khaled));
 const overview: AdminOverview = await expectOk('an admin', call('GET', '/admin/overview', admin));
-expectEqual('overview counts', [overview.users, overview.running_events, overview.awaiting_confirmation, overview.open_disputes], [13, 1, 3, 0]);
+// Three records wait for their volunteers, and one for خالد: the whole time of e15, which he alone supervised.
+expectEqual('overview counts', [overview.users, overview.running_events, overview.awaiting_confirmation, overview.open_disputes], [13, 1, 4, 0]);
 
 // ---------------------------------------------------------------------------
 console.log('\n— people and roles');
@@ -111,7 +112,7 @@ await expectError('someone who does not exist', 'not_found', call('PATCH', '/adm
 // ---------------------------------------------------------------------------
 console.log('\n— creating events');
 const meta = (await call('GET', '/admin/meta', admin)).body;
-expectEqual('form choices', [meta.subtypes.find((x: { id: string }) => x.id === 'street_cleanup')?.base_points], [30]);
+expectEqual('form choices', [meta.subtypes.find((x: { id: string }) => x.id === 'street_cleanup')?.event_class], ['environment']);
 const base: CreateEventBody = {
   title: 'حملة نظافة تجريبية',
   description: 'تنظيف الساحة.',
@@ -135,7 +136,7 @@ await expectError('ends before it starts', 'invalid_request', call('POST', '/adm
 await expectError('published with nobody to record attendance', 'needs_organizer', call('POST', '/admin/events', admin, { ...base, publish: true }));
 const { id } = await expectOk('save a draft', call('POST', '/admin/events', admin, base));
 const draft = await detail(id);
-expectEqual('draft with its terms and points', [draft.event.status, draft.terms.length, draft.event.base_points], ['draft', 2, 30]);
+expectEqual('draft with its terms', [draft.event.status, draft.terms.length], ['draft', 2]);
 expectEqual('a draft is not in the app', (await call('GET', '/events', ahmad)).body.some((e: EventSummary) => e.id === id), false);
 await expectError('nor can it be opened there', 'not_found', call('GET', `/events/${id}`, ahmad));
 await expectError('publish without a supervisor', 'needs_organizer', call('POST', `/admin/events/${id}/publish`, admin));
@@ -210,8 +211,8 @@ await expectError('a decision without a reason', 'invalid_request', call('POST',
 await expectError('more hours than the event lasted', 'hours_out_of_range', call('POST', '/admin/disputes/att_e15_u_ahmad/resolve', admin, { decision: 'correct', hours: 99, note: 'خطأ' }));
 const before = await totalOf(ahmad);
 await expectOk('correct the hours to 2', call('POST', '/admin/disputes/att_e15_u_ahmad/resolve', admin, { decision: 'correct', hours: 2, note: 'غادر قبل نهاية الحملة' }));
-// Beach clean-up: 30 points × (2 h / 3 h event), all physical.
-expectEqual('points credited for the corrected hours', Math.round(((await totalOf(ahmad)) - before) * 100) / 100, 20);
+// A point is a minute: 2 h = 120 points.
+expectEqual('points credited for the corrected hours', Math.round(((await totalOf(ahmad)) - before) * 100) / 100, 120);
 await settle();
 expectEqual('the member is told', pushes.filter((p) => p.data.type === 'dispute_settled').map((p) => p.body), ['عُدّلت ساعاتك في «تنظيف شاطئ طرابلس» إلى 2 ساعة.']);
 await expectError('settle it twice', 'not_disputed', call('POST', '/admin/disputes/att_e15_u_ahmad/resolve', admin, { decision: 'accept', note: 'مكرر' }));

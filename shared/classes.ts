@@ -6,8 +6,6 @@
 // shows a plain icon until then). Nothing in the database changes: an event's
 // class comes from its type (or was chosen with a written tag: classOfEvent).
 
-import { BASE_POINTS_BY_SUBTYPE } from './placeholders';
-
 export type EventClassId = 'environment' | 'health' | 'learning' | 'community';
 
 export interface EventClass {
@@ -24,7 +22,7 @@ export const EVENT_CLASSES: EventClass[] = [
   { id: 'community', name_ar: 'مجتمع', name_en: 'Community' },
 ];
 
-/** The class of each event type (BASE_POINTS_BY_SUBTYPE in placeholders.ts lists the types). */
+/** The event types, each with its class. */
 export const CLASS_OF_SUBTYPE: Record<string, EventClassId> = {
   street_cleanup: 'environment',
   beach_cleanup: 'environment',
@@ -58,7 +56,7 @@ export function classOfEvent(e: { subtype: string; event_class?: EventClassId | 
   return CLASS_OF_SUBTYPE[e.subtype] ?? e.event_class ?? 'community';
 }
 
-/** The event types a form offers, with their fixed points and their class. */
-export function eventSubtypes(): { id: string; base_points: number; event_class: EventClassId }[] {
-  return Object.entries(BASE_POINTS_BY_SUBTYPE).map(([id, base_points]) => ({ id, base_points, event_class: classOf(id) }));
+/** The event types a form offers, with their class. */
+export function eventSubtypes(): { id: string; event_class: EventClassId }[] {
+  return Object.entries(CLASS_OF_SUBTYPE).map(([id, event_class]) => ({ id, event_class }));
 }

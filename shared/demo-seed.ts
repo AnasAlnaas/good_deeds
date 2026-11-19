@@ -7,8 +7,8 @@
 
 import type { AppEvent, Attendance, Db, GenderCategory, MeetingPlatform, User } from './types';
 import { classOf } from './classes';
-import { BASE_POINTS_BY_SUBTYPE, LEVELS } from './placeholders';
-import { pointsForAttendance } from './rules';
+import { LEVELS } from './placeholders';
+import { levelFor, pointsForHours } from './rules';
 
 // 2: reports and warnings were added; phones holding version 1 start again from this seed.
 // 3: the pillars were removed (one points total per person).
@@ -23,7 +23,9 @@ import { pointsForAttendance } from './rules';
 // 12: full events have a waiting list.
 // 13: institutions (a volunteer team with a representative, a member, a request, and an event in its name).
 // 14: events may have a cover photo.
-export const SEED_VERSION = 14;
+// 15: points by the half hour, levels 0–10, and supervisors' pledges.
+// 16: the point made a minute (levels ×30).
+export const SEED_VERSION = 16;
 
 /** The demo's institution: approved, with خالد as its representative. */
 export const DEMO_INSTITUTION = 'inst_saraj';
@@ -278,7 +280,7 @@ export function buildSeed(nowMs: number): Db {
     city: 'طرابلس',
     avatar_url: null,
     role,
-    level: 1,
+    level: 0,
     total_points: 0,
     is_association_member: true,
     created_at: created,
@@ -338,16 +340,19 @@ export function buildSeed(nowMs: number): Db {
       ends_at: iso(s.end),
       capacity: s.capacity,
       gender_category: s.gender,
-      base_points: BASE_POINTS_BY_SUBTYPE[s.subtype] ?? 20,
       status: 'published',
       terms_locked_at: s.joined.length ? created : null,
-      created_by: s.organizers[0],
+      // The association's own events: an admin made them in the panel (the server's development admin; the offline demo has
+      // none). So nobody starts with approved events of their own (rules.OWN_REVIEWED_EVENTS).
+      created_by: 'u_admin',
       created_at: created,
       institution_id: s.institution ?? null,
       cover_image_id: null,
     };
     db.events.push(e);
-    s.organizers.forEach((u) => db.event_organizers.push({ event_id: s.id, user_id: u, added_by: null }));
+    // The past events' supervisors took the pledge when they recorded; the one happening now still waits for it, to show it.
+    const pledged = ['e13', 'e14', 'e15'].includes(s.id) ? created : null;
+    s.organizers.forEach((u) => db.event_organizers.push({ event_id: s.id, user_id: u, added_by: null, pledged_at: pledged }));
     const texts = [ARRIVE, ...(TERMS[s.subtype] ?? []), LEAVE];
     texts.forEach((text, i) =>
       db.event_terms.push({
@@ -432,8 +437,7 @@ export function buildSeed(nowMs: number): Db {
 
   // Ledger rows for already-confirmed attendance, computed with the same formula as the server.
   for (const a of db.attendance.filter((x) => x.participant_status === 'confirmed')) {
-    const e = db.events.find((x) => x.id === a.event_id)!;
-    const points = pointsForAttendance(e, a.hours);
+    const points = pointsForHours(a.hours);
     if (points > 0) {
       db.points_ledger.push({
         id: `pl_${a.id}`, user_id: a.user_id, event_id: a.event_id,
@@ -444,7 +448,7 @@ export function buildSeed(nowMs: number): Db {
   for (const u of db.users) {
     const total = db.points_ledger.filter((l) => l.user_id === u.id).reduce((s, l) => s + l.points, 0);
     u.total_points = Math.round(total * 100) / 100;
-    u.level = [...LEVELS].reverse().find((l) => total >= l.min_points)!.level;
+    u.level = levelFor(LEVELS, total).level;
   }
 
   return db;
