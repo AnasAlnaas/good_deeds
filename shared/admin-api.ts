@@ -20,6 +20,18 @@ import type {
 } from './types';
 
 /** GET /api/admin/overview */
+/**
+ * GET /api/admin/stats/hours: confirmed hours (events and approved outside-app
+ * hours) for the overview's charts (owner's decisions, 2026-11-19): the last 12
+ * months, and the past year by institution and by city, largest first.
+ */
+export interface AdminHoursStats {
+  months: { month: string; hours: number }[];
+  /** '' = the association's own events. */
+  institutions: { name: string; hours: number }[];
+  cities: { city: string; hours: number }[];
+}
+
 export interface AdminOverview {
   users: number;
   upcoming_events: number;
@@ -153,6 +165,8 @@ export interface HoursReportRow extends Pick<User, 'full_name' | 'phone' | 'city
   total_points: number;
   /** The institutions the person belongs to (confirmed), by name. */
   institutions: string[];
+  /** Of `hours`, those outside the app's events, approved by an institution's representative (older servers send none). */
+  outside_hours?: number;
 }
 
 // ---------- institutions (جمعية، مؤسسة، مدرسة…) ----------

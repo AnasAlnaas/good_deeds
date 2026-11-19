@@ -2,7 +2,7 @@
 // in a transaction with its audit row, so a decision and its record of who
 // made it land together or not at all.
 
-import { and, asc, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, lt, ne, or } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, lt, lte, ne, or } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { z } from 'zod';
@@ -18,6 +18,7 @@ import type {
   AdminWarningRow,
   AuditEntry,
   DisputeRow,
+  AdminHoursStats,
   HoursReportRow,
   ResetCodeResponse,
 } from '../../../shared/admin-api';
@@ -755,6 +756,49 @@ export const adminRoutes = new Hono<AppEnv>()
 
   // ---------- hours report ----------
 
+  .get('/stats/hours', async (c) => {
+    const { db, now, timeZone } = c.var.deps;
+    const end = now();
+    // The first day of the month eleven months ago, where the association is.
+    const today = rules.dayIn(end, timeZone);
+    const startMonth = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 12, 1)); // month index is 0-based: this month - 11
+    const fromDay = startMonth.toISOString().slice(0, 10);
+    const months = Array.from({ length: 12 }, (_, k) => new Date(Date.UTC(startMonth.getUTCFullYear(), startMonth.getUTCMonth() + k, 1)).toISOString().slice(0, 7));
+    const attended = await db
+      .select({ hours: s.attendance.hours, started_at: s.attendance.started_at, city: s.users.city, institution: s.institutions.name })
+      .from(s.attendance)
+      .innerJoin(s.users, eq(s.users.id, s.attendance.user_id))
+      .innerJoin(s.events, eq(s.events.id, s.attendance.event_id))
+      .leftJoin(s.institutions, eq(s.institutions.id, s.events.institution_id))
+      .where(and(eq(s.attendance.participant_status, 'confirmed'), gte(s.attendance.started_at, new Date(Date.parse(`${fromDay}T00:00:00Z`) - 86_400_000))));
+    const outside = await db
+      .select({ minutes: s.outside_hours.minutes, done_on: s.outside_hours.done_on, city: s.users.city, institution: s.institutions.name })
+      .from(s.outside_hours)
+      .innerJoin(s.users, eq(s.users.id, s.outside_hours.user_id))
+      .innerJoin(s.institutions, eq(s.institutions.id, s.outside_hours.institution_id))
+      .where(and(eq(s.outside_hours.status, 'approved'), gte(s.outside_hours.done_on, fromDay)));
+    const items = [
+      ...attended.map((a) => ({ month: rules.dayIn(a.started_at.getTime(), timeZone).slice(0, 7), hours: a.hours ?? 0, city: a.city, institution: a.institution })),
+      ...outside.map((o) => ({ month: o.done_on.slice(0, 7), hours: o.minutes / 60, city: o.city, institution: o.institution as string | null })),
+    ].filter((x) => months.includes(x.month));
+    const sumBy = (key: (x: (typeof items)[number]) => string | null) => {
+      const totals = new Map<string, number>();
+      for (const x of items) {
+        const k = key(x);
+        if (k !== null) totals.set(k, (totals.get(k) ?? 0) + x.hours);
+      }
+      return totals;
+    };
+    const byMonth = sumBy((x) => x.month);
+    const top = (m: Map<string, number>) => [...m].map(([k, h]) => [k, rules.round2(h)] as const).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    return c.json<AdminHoursStats>({
+      months: months.map((month) => ({ month, hours: rules.round2(byMonth.get(month) ?? 0) })),
+      // The association's own events are counted under one name the panel writes ('' here).
+      institutions: top(sumBy((x) => x.institution ?? '')).map(([name, hours]) => ({ name, hours })),
+      cities: top(sumBy((x) => x.city || null)).map(([city, hours]) => ({ city, hours })),
+    });
+  })
+
   .get('/reports/hours', async (c) => {
     const { db } = c.var.deps;
     // institution_id: only the events in that institution's name; `association`: only the association's own.
@@ -775,7 +819,27 @@ export const adminRoutes = new Hono<AppEnv>()
           organiser === 'association' ? isNull(s.events.institution_id) : organiser ? eq(s.events.institution_id, organiser) : undefined,
         ),
       );
-    const userIds = [...new Set(rows.map((r) => r.a.user_id))];
+    // Hours outside the app's events approved in the period (their day, where the association is): none for the association's own.
+    const { timeZone } = c.var.deps;
+    const fromDay = rules.dayIn(Date.parse(range.data.from), timeZone);
+    const toDay = rules.dayIn(Date.parse(range.data.to) - 1, timeZone);
+    const outside =
+      organiser === 'association'
+        ? []
+        : await db
+            .select({ o: s.outside_hours, user: s.users })
+            .from(s.outside_hours)
+            .innerJoin(s.users, eq(s.users.id, s.outside_hours.user_id))
+            .where(
+              and(
+                eq(s.outside_hours.status, 'approved'),
+                gte(s.outside_hours.done_on, fromDay),
+                lte(s.outside_hours.done_on, toDay),
+                isNull(s.users.deleted_at),
+                organiser ? eq(s.outside_hours.institution_id, organiser) : undefined,
+              ),
+            );
+    const userIds = [...new Set([...rows.map((r) => r.a.user_id), ...outside.map((r) => r.o.user_id)])];
     const ledger = userIds.length
       ? await db.select().from(s.points_ledger).where(inArray(s.points_ledger.user_id, userIds))
       : [];
@@ -795,8 +859,8 @@ export const adminRoutes = new Hono<AppEnv>()
           .orderBy(asc(s.institutions.name))
       : [];
     const report = new Map<string, HoursReportRow>();
-    for (const { a, user } of rows) {
-      const entry = report.get(user.id) ?? {
+    const entryOf = (user: typeof s.users.$inferSelect): HoursReportRow =>
+      report.get(user.id) ?? {
         user_id: user.id,
         full_name: user.full_name,
         phone: user.phone,
@@ -806,12 +870,23 @@ export const adminRoutes = new Hono<AppEnv>()
         hours: 0,
         total_points: 0,
         institutions: belongs.filter((b) => b.user_id === user.id).map((b) => b.name),
+        outside_hours: 0,
       };
+    for (const { a, user } of rows) {
+      const entry = entryOf(user);
       entry.events += 1;
       entry.hours = rules.round2(entry.hours + (a.hours ?? 0));
       // The points these hours earned: the ledger rows for this person at this event.
       const earned = rules.totalPoints(ledger.filter((x) => x.user_id === user.id && x.event_id === a.event_id));
       entry.total_points = rules.round2(entry.total_points + earned);
+      report.set(user.id, entry);
+    }
+    for (const { o, user } of outside) {
+      const entry = entryOf(user);
+      const hours = o.minutes / 60;
+      entry.hours = rules.round2(entry.hours + hours);
+      entry.outside_hours = rules.round2((entry.outside_hours ?? 0) + hours);
+      entry.total_points = rules.round2(entry.total_points + rules.totalPoints(ledger.filter((x) => x.outside_hours_id === o.id)));
       report.set(user.id, entry);
     }
     return c.json<HoursReportRow[]>([...report.values()].sort((x, y) => y.hours - x.hours));

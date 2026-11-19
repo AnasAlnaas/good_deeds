@@ -37,6 +37,7 @@ const deps: AppDeps = {
   runLater: (task) => void task().catch((err) => console.error('background task failed', err)),
   cronSecret: env.cronSecret,
   corsOrigins: env.corsOrigins,
+  publicUrl: env.publicUrl,
   adminPhones: env.adminPhones,
   clientIp: (c) =>
     (env.trustProxy ? c.req.header('X-Forwarded-For')?.split(',')[0]?.trim() : undefined) || getConnInfo(c).remote.address,

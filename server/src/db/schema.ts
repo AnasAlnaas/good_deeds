@@ -57,6 +57,7 @@ export const reportStatus = pgEnum('report_status', ['open', 'handled']);
 export const warningStatus = pgEnum('warning_status', ['active', 'appealed', 'upheld', 'withdrawn']);
 export const institutionKind = pgEnum('institution_kind', ['association', 'foundation', 'school', 'university', 'mosque', 'company', 'team', 'other']);
 export const institutionStatus = pgEnum('institution_status', ['pending', 'approved', 'rejected']);
+export const outsideHoursStatus = pgEnum('outside_hours_status', ['pending', 'approved', 'rejected']);
 export const institutionRole = pgEnum('institution_role', ['representative', 'member']);
 export const membershipStatus = pgEnum('membership_status', ['pending', 'confirmed']);
 
@@ -366,18 +367,63 @@ export const attendance = pgTable(
   ],
 );
 
+// Hours done outside the app's events, claimed for an institution and decided by
+// its representatives (shared/types.ts OutsideHours, rules.assertCanClaimOutsideHours).
+export const outside_hours = pgTable(
+  'outside_hours',
+  {
+    id: text('id').primaryKey(),
+    user_id: text('user_id').notNull().references(() => users.id),
+    institution_id: text('institution_id').notNull().references(() => institutions.id),
+    done_on: text('done_on').notNull(),
+    minutes: integer('minutes').notNull(),
+    description: text('description').notNull(),
+    place: text('place'),
+    image_id: text('image_id').references(() => lesson_images.id),
+    status: outsideHoursStatus('status').notNull().default('pending'),
+    created_at: at('created_at').notNull(),
+    decided_by: text('decided_by').references(() => users.id),
+    decided_at: at('decided_at'),
+    decision_note: text('decision_note'),
+  },
+  (t) => [
+    index('outside_hours_user').on(t.user_id),
+    index('outside_hours_institution').on(t.institution_id, t.status),
+    check('outside_hours_minutes_range', sql`${t.minutes} > 0 and ${t.minutes} <= 720`),
+  ],
+);
+
+// Certificates of confirmed hours, as they were when made (shared/types.ts Certificate).
+export const certificates = pgTable(
+  'certificates',
+  {
+    id: text('id').primaryKey(),
+    user_id: text('user_id').notNull().references(() => users.id),
+    institution_id: text('institution_id').references(() => institutions.id),
+    hours: numeric('hours', { precision: 8, scale: 2, mode: 'number' }).notNull(),
+    events: integer('events').notNull(),
+    outside_hours: numeric('outside_hours', { precision: 8, scale: 2, mode: 'number' }).notNull(),
+    issued_at: at('issued_at').notNull(),
+  },
+  (t) => [index('certificates_user').on(t.user_id)],
+);
+
 // Points are only ever added: a correction is a new row, never an edit.
 export const points_ledger = pgTable(
   'points_ledger',
   {
     id: text('id').primaryKey(),
     user_id: text('user_id').notNull().references(() => users.id),
-    event_id: text('event_id').notNull().references(() => events.id),
+    event_id: text('event_id').references(() => events.id),
+    outside_hours_id: text('outside_hours_id').references(() => outside_hours.id),
     points: points('points').notNull(),
     reason: text('reason').notNull(),
     created_at: at('created_at').notNull().defaultNow(),
   },
-  (t) => [index('points_ledger_user').on(t.user_id)],
+  (t) => [
+    index('points_ledger_user').on(t.user_id),
+    check('points_ledger_one_source', sql`(${t.event_id} is null) <> (${t.outside_hours_id} is null)`),
+  ],
 );
 
 export const levels = pgTable('levels', {

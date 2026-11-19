@@ -735,3 +735,91 @@ export function notifyMembershipConfirmed(deps: AppDeps, institutionId: string, 
     ];
   });
 }
+
+// ---------- hours outside the app's events ----------
+
+const OUTSIDE = {
+  ar: {
+    claimTitle: 'ساعات تنتظر قرارك',
+    claim: '{person} سجّل {hours} عملها لـ«{name}» خارج فعاليات التطبيق. راجعها واقبلها أو ارفضها.',
+    approvedTitle: 'قُبلت ساعاتك',
+    approved: 'قبل ممثّل «{name}» {hours} سجّلتها، وأضيفت نقاطها إليك.',
+    rejectedTitle: 'لم تُقبل ساعاتك',
+    rejected: 'لم يقبل ممثّل «{name}» {hours} سجّلتها.',
+    reason: ' السبب: {note}',
+  },
+  en: {
+    claimTitle: 'Hours waiting for you',
+    claim: '{person} logged {hours} of work for "{name}" outside the app\'s events. Review it and approve or turn it down.',
+    approvedTitle: 'Your hours were approved',
+    approved: 'A representative of "{name}" approved the {hours} you logged, and their points are yours.',
+    rejectedTitle: 'Your hours were not approved',
+    rejected: 'A representative of "{name}" did not approve the {hours} you logged.',
+    reason: ' Reason: {note}',
+  },
+};
+
+function hoursText(minutes: number, lang: Lang) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (lang === 'ar') return [h ? `${h} ساعة` : '', m ? `${m} دقيقة` : ''].filter(Boolean).join(' و');
+  return [h ? `${h} h` : '', m ? `${m} min` : ''].filter(Boolean).join(' ');
+}
+
+/** To the institution's representatives (except whoever claimed it): a claim waits for them. */
+export function notifyOutsideHoursClaimed(deps: AppDeps, claimId: string) {
+  send(deps, async () => {
+    const [row] = await deps.db
+      .select({ c: s.outside_hours, name: s.institutions.name, person: s.users.full_name })
+      .from(s.outside_hours)
+      .innerJoin(s.institutions, eq(s.institutions.id, s.outside_hours.institution_id))
+      .innerJoin(s.users, eq(s.users.id, s.outside_hours.user_id))
+      .where(eq(s.outside_hours.id, claimId));
+    if (!row) return [];
+    const reps = await deps.db
+      .select({ user_id: s.institution_members.user_id })
+      .from(s.institution_members)
+      .where(
+        and(
+          eq(s.institution_members.institution_id, row.c.institution_id),
+          eq(s.institution_members.role, 'representative'),
+          eq(s.institution_members.status, 'confirmed'),
+        ),
+      );
+    return reps
+      .filter((r) => r.user_id !== row.c.user_id)
+      .map((r) => ({
+        userId: r.user_id,
+        text: (lang: Lang) => ({
+          title: OUTSIDE[lang].claimTitle,
+          body: OUTSIDE[lang].claim.replace('{person}', row.person).replace('{hours}', hoursText(row.c.minutes, lang)).replace('{name}', row.name),
+        }),
+        data: { type: 'outside_hours_claimed', institution_id: row.c.institution_id },
+      }));
+  });
+}
+
+export function notifyOutsideHoursDecided(deps: AppDeps, claimId: string) {
+  send(deps, async () => {
+    const [row] = await deps.db
+      .select({ c: s.outside_hours, name: s.institutions.name })
+      .from(s.outside_hours)
+      .innerJoin(s.institutions, eq(s.institutions.id, s.outside_hours.institution_id))
+      .where(eq(s.outside_hours.id, claimId));
+    if (!row || row.c.status === 'pending') return [];
+    const decision = row.c.status;
+    return [
+      {
+        userId: row.c.user_id,
+        text: (lang: Lang) => {
+          const t = OUTSIDE[lang];
+          const body =
+            t[decision].replace('{name}', row.name).replace('{hours}', hoursText(row.c.minutes, lang)) +
+            (row.c.decision_note ? t.reason.replace('{note}', row.c.decision_note) : '');
+          return { title: decision === 'approved' ? t.approvedTitle : t.rejectedTitle, body };
+        },
+        data: { type: 'outside_hours_decided', claim_id: claimId },
+      },
+    ];
+  });
+}

@@ -66,9 +66,84 @@ export function Overview() {
               )}
             </div>
           )}
+          <HoursCharts />
         </>
       )}
     </>
+  );
+}
+
+const hoursText = (h: number) => `${Math.round(h * 10) / 10} ${t.overview.hoursUnit}`;
+
+/**
+ * Owner's decisions (2026-11-19): confirmed hours by month, by organiser and by
+ * city. One measure each, so one colour (the panel's primary); every bar names
+ * its value on hover, and the numbers are also there as a table.
+ */
+function HoursCharts() {
+  const query = useQuery({ queryKey: ['hoursStats'], queryFn: api.hoursStats });
+  const d = query.data;
+  if (!d) return <QueryState query={query} />;
+  const monthLabel = (m: string) => `${t.overview.monthNames[Number(m.slice(5, 7)) - 1]} ${m.slice(2, 4)}`;
+  const top = Math.max(1, ...d.months.map((m) => m.hours));
+  const any = d.months.some((m) => m.hours > 0);
+  return (
+    <section className="charts">
+      <h2>{t.overview.chartsTitle}</h2>
+      {!any ? (
+        <p className="muted">{t.overview.noHours}</p>
+      ) : (
+        <>
+          <figure className="chart">
+            <figcaption>{t.overview.byMonth}</figcaption>
+            <div className="columns" role="img" aria-label={t.overview.byMonth}>
+              {d.months.map((m) => (
+                <div key={m.month} className="column" title={`${monthLabel(m.month)}: ${hoursText(m.hours)}`}>
+                  <span className="column-bar" style={{ height: `${(m.hours / top) * 100}%` }} />
+                  <span className="column-label">{monthLabel(m.month)}</span>
+                </div>
+              ))}
+            </div>
+            <details>
+              <summary>{t.overview.showTable}</summary>
+              <table className="table">
+                <tbody>
+                  {d.months.map((m) => (
+                    <tr key={m.month}>
+                      <td>{monthLabel(m.month)}</td>
+                      <td>{hoursText(m.hours)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </details>
+          </figure>
+          <div className="chart-pair">
+            <Bars title={t.overview.byInstitution} rows={d.institutions.map((x) => ({ label: x.name || t.overview.association, hours: x.hours }))} />
+            <Bars title={t.overview.byCity} rows={d.cities.map((x) => ({ label: x.city, hours: x.hours }))} />
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+/** Horizontal bars, largest first, each with its name and value written beside it. */
+function Bars({ title, rows }: { title: string; rows: { label: string; hours: number }[] }) {
+  const top = Math.max(1, ...rows.map((r) => r.hours));
+  return (
+    <figure className="chart">
+      <figcaption>{title}</figcaption>
+      {rows.map((r) => (
+        <div key={r.label} className="hbar" title={`${r.label}: ${hoursText(r.hours)}`}>
+          <span className="hbar-label">{r.label}</span>
+          <span className="hbar-track">
+            <span className="hbar-fill" style={{ width: `${(r.hours / top) * 100}%` }} />
+          </span>
+          <span className="hbar-value">{hoursText(r.hours)}</span>
+        </div>
+      ))}
+    </figure>
   );
 }
 

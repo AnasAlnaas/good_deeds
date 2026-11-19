@@ -7,6 +7,12 @@ import { ApiError, type ApiErrorCode } from '../../../shared/errors';
 import type {
   AcceptTermResponse,
   AttendanceItem,
+  CertificateResponse,
+  MakeCertificateBody,
+  ClaimOutsideHoursBody,
+  DecideOutsideHoursBody,
+  InstitutionHoursReport,
+  OutsideHoursItem,
   AttendanceResponse,
   ConfirmResponse,
   EventDetail,
@@ -139,4 +145,15 @@ export interface Backend {
   confirmMember(id: string, userId: string): Promise<InstitutionMembersResponse>;
   /** Turns a request down, or takes a member off. */
   removeMember(id: string, userId: string): Promise<InstitutionMembersResponse>;
+  /** The person's own claims of hours outside the app's events, newest first. */
+  myOutsideHours(): Promise<OutsideHoursItem[]>;
+  /** Claims hours done outside the app's events for one of their institutions; its representatives decide. */
+  claimOutsideHours(body: ClaimOutsideHoursBody): Promise<OutsideHoursItem>;
+  /** Its representatives: claims waiting first, then the decided ones. */
+  institutionOutsideHours(id: string): Promise<OutsideHoursItem[]>;
+  decideOutsideHours(id: string, claimId: string, body: DecideOutsideHoursBody): Promise<OutsideHoursItem>;
+  /** Its representatives: its members' confirmed hours between two days (YYYY-MM-DD). */
+  institutionHoursReport(id: string, from: string, to: string): Promise<InstitutionHoursReport>;
+  /** A certificate of the person's confirmed hours, made from the server's records so its QR code can be checked. */
+  makeCertificate(body: MakeCertificateBody): Promise<CertificateResponse>;
 }

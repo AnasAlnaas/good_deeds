@@ -132,5 +132,11 @@ export function createApiBackend(opts: { baseUrl: string; token: string; onUnaut
     institutionMembers: (id) => get(`/institutions/${enc(id)}/members`),
     confirmMember: (id, userId) => send('POST', `/institutions/${enc(id)}/members/${enc(userId)}/confirm`),
     removeMember: (id, userId) => send('DELETE', `/institutions/${enc(id)}/members/${enc(userId)}`),
+    makeCertificate: (body) => send('POST', '/me/certificates', body),
+    myOutsideHours: () => get('/outside-hours'),
+    claimOutsideHours: (body) => send('POST', '/outside-hours', body),
+    institutionOutsideHours: (id) => get(`/institutions/${enc(id)}/outside-hours`),
+    decideOutsideHours: (id, claimId, body) => send('POST', `/institutions/${enc(id)}/outside-hours/${enc(claimId)}/decide`, body),
+    institutionHoursReport: (id, from, to) => get(`/institutions/${enc(id)}/hours-report?from=${enc(from)}&to=${enc(to)}`),
   };
 }

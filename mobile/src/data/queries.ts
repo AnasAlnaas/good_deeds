@@ -85,6 +85,10 @@ export const useMyLessons = () => useBackendQuery(KEYS.myLessons(), (b) => b.myL
 export const useWarning = (id: string) => useBackendQuery(['warning', id], (b) => b.warning(id));
 export const useInstitutions = () => useBackendQuery(['institutions'], (b) => b.institutions());
 export const useInstitutionMembers = (id: string) => useBackendQuery(['institutionMembers', id], (b) => b.institutionMembers(id));
+export const useMyOutsideHours = () => useBackendQuery(['myOutsideHours'], (b) => b.myOutsideHours());
+export const useInstitutionOutsideHours = (id: string) => useBackendQuery(['institutionOutsideHours', id], (b) => b.institutionOutsideHours(id));
+export const useInstitutionHoursReport = (id: string, from: string, to: string) =>
+  useBackendQuery(['institutionHoursReport', id, from, to], (b) => b.institutionHoursReport(id, from, to));
 
 /** Points, level and hours. Also keeps the stored profile current in server mode. */
 export function useMeSummary() {

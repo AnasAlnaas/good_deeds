@@ -17,6 +17,7 @@ import type {
   DisputeRow,
   EventInput,
   HandleReportBody,
+  AdminHoursStats,
   HoursReportRow,
   ResetCodeResponse,
   ResolveDisputeBody,
@@ -110,6 +111,7 @@ export const api = {
   },
   decideWarning: (id: string, body: DecideWarningBody) => call<void>('POST', `/admin/warnings/${enc(id)}/decide`, body),
 
+  hoursStats: () => call<AdminHoursStats>('GET', '/admin/stats/hours'),
   /** `institution`: an institution's id, `association` for the association's own events, empty for all. */
   hoursReport: (from: string, to: string, institution = '') =>
     call<HoursReportRow[]>('GET', `/admin/reports/hours?from=${enc(from)}&to=${enc(to)}${institution ? `&institution_id=${enc(institution)}` : ''}`),

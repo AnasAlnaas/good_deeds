@@ -221,7 +221,7 @@ expectError('withdrawn twice', 'not_found', () => server.withdrawProposal(withdr
 console.log('\n— pictures in lessons');
 {
   const picture = { data_url: 'data:image/jpeg;base64,/9j/', width: 1080, height: 1920 };
-  expectError('a member who may not write lessons sends a picture', 'cannot_create_events', () => server.addLessonImage(db, 'u_ahmad', picture, NOW));
+  expectError('a member who may not write lessons, and in no institution, sends a picture', 'cannot_create_events', () => server.addLessonImage(db, 'u_mariam', picture, NOW));
   const sent = server.addLessonImage(db, 'u_khaled', picture, NOW);
   const lessons = [{ title: 'خريطة الحديقة', body: '', image_id: sent.id, video_id: null }];
   const { db: pictured, event } = server.proposeEvent(sent.db, 'u_khaled', proposal({ lessons }), NOW);
@@ -689,6 +689,23 @@ console.log('\n— supervisors earn points too');
   const two: Db = { ...db, event_organizers: [...db.event_organizers, { event_id: 'e01', user_id: 'u_ahmad2', added_by: 'u_khaled', pledged_at: null }] };
   const withUser: Db = { ...two, users: [...two.users, { ...two.users.find((u) => u.id === 'u_ahmad')!, id: 'u_ahmad2' }] };
   expectEqual('one supervisor records another, who never joined', server.attendanceOf(server.recordStart(withUser, 'u_khaled', { eventId: 'e01', userId: 'u_ahmad2' }, NOW), 'e01', 'u_ahmad2')?.recorded_by, 'u_khaled');
+}
+
+console.log('\n— hours outside the app (as server/scripts/check-hours-records.ts)');
+{
+  const today = rules.dayIn(NOW, rules.ASSOCIATION_TIME_ZONE);
+  const input = { institution_id: 'inst_saraj', done_on: today, minutes: 90, description: 'نظّفت الساحة' };
+  expectError('one already waits for the team', 'outside_hours_pending', () => server.claimOutsideHours(db, 'u_ahmad', input, NOW));
+  expectError('not for an institution one is not in', 'not_found', () => server.claimOutsideHours(db, 'u_mariam', input, NOW));
+  expectError('a member cannot decide', 'not_representative', () => server.decideOutsideHours(db, 'u_ahmad', 'inst_saraj', 'oh_ahmad', 'approved', undefined, NOW));
+  expectError('turning down needs a reason', 'reason_required', () => server.decideOutsideHours(db, 'u_khaled', 'inst_saraj', 'oh_ahmad', 'rejected', ' ', NOW));
+  const approved = server.decideOutsideHours(db, 'u_khaled', 'inst_saraj', 'oh_ahmad', 'approved', undefined, NOW);
+  expectEqual('approved: a point a minute', server.totalPoints(approved, 'u_ahmad') - server.totalPoints(db, 'u_ahmad'), 150);
+  const ahmad = approved.users.find((u) => u.id === 'u_ahmad')!;
+  expectEqual('a certificate counts it', server.demoCertificate(approved, ahmad, 'inst_saraj', NOW).certificate.outside_hours, 2.5);
+  const own = server.claimOutsideHours(approved, 'u_khaled', input, NOW);
+  expectEqual('a representative approves his own', server.decideOutsideHours(own.db, 'u_khaled', 'inst_saraj', own.id, 'approved', undefined, NOW).outside_hours.find((c) => c.id === own.id)?.status, 'approved');
+  expectError('more than 12 hours', 'outside_hours_too_long', () => server.claimOutsideHours(approved, 'u_ahmad', { ...input, minutes: 721 }, NOW));
 }
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');

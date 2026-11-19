@@ -1,4 +1,4 @@
-// Lessons' pictures and events' cover photos (db/schema.ts lesson_images). A
+// Lessons' pictures, events' cover photos and outside-app hours' proof photos (db/schema.ts lesson_images). A
 // picture is sent before the event form that uses it, so it may never be used:
 // the form was left, or the picture replaced before saving. One no lesson and no
 // event's cover shows is removed with the last that showed it, and one never
@@ -16,6 +16,8 @@ const unused = (q: Database) =>
   and(
     notExists(q.select({ id: s.event_lessons.id }).from(s.event_lessons).where(eq(s.event_lessons.image_id, s.lesson_images.id))),
     notExists(q.select({ id: s.events.id }).from(s.events).where(eq(s.events.cover_image_id, s.lesson_images.id))),
+    // A photo sent as proof with outside-app hours stays with the claim.
+    notExists(q.select({ id: s.outside_hours.id }).from(s.outside_hours).where(eq(s.outside_hours.image_id, s.lesson_images.id))),
   );
 
 /** Removes those of these pictures no lesson shows any more. */

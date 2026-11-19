@@ -8,7 +8,7 @@
 import type { AppEvent, Attendance, Db, GenderCategory, MeetingPlatform, User } from './types';
 import { classOf } from './classes';
 import { LEVELS } from './placeholders';
-import { levelFor, pointsForHours } from './rules';
+import { ASSOCIATION_TIME_ZONE, dayIn, levelFor, pointsForHours } from './rules';
 
 // 2: reports and warnings were added; phones holding version 1 start again from this seed.
 // 3: the pillars were removed (one points total per person).
@@ -25,7 +25,7 @@ import { levelFor, pointsForHours } from './rules';
 // 14: events may have a cover photo.
 // 15: points by the half hour, levels 0–10, and supervisors' pledges.
 // 16: the point made a minute (levels ×30).
-export const SEED_VERSION = 16;
+export const SEED_VERSION = 17;
 
 /** The demo's institution: approved, with خالد as its representative. */
 export const DEMO_INSTITUTION = 'inst_saraj';
@@ -320,6 +320,14 @@ export function buildSeed(nowMs: number): Db {
       { institution_id: DEMO_INSTITUTION, user_id: 'u_ahmad', role: 'member', status: 'confirmed', created_at: created, confirmed_by: 'u_khaled', confirmed_at: created },
       { institution_id: DEMO_INSTITUTION, user_id: 'u_f1', role: 'member', status: 'pending', created_at: iso(minutes(-300)), confirmed_by: null, confirmed_at: null },
     ],
+    // Hours أحمد did for the team outside the app's events, waiting for خالد (rules.assertCanClaimOutsideHours).
+    outside_hours: [
+      {
+        id: 'oh_ahmad', user_id: 'u_ahmad', institution_id: DEMO_INSTITUTION, done_on: dayIn(minutes(-2 * 24 * 60).getTime(), ASSOCIATION_TIME_ZONE),
+        minutes: 150, description: 'تدريس ثلاثة أطفال من الحي مادة الرياضيات', place: 'حي السراج', image_id: null,
+        status: 'pending', created_at: iso(minutes(-24 * 60)), decided_by: null, decided_at: null, decision_note: null,
+      },
+    ],
   };
 
   for (const s of events) {
@@ -440,7 +448,7 @@ export function buildSeed(nowMs: number): Db {
     const points = pointsForHours(a.hours);
     if (points > 0) {
       db.points_ledger.push({
-        id: `pl_${a.id}`, user_id: a.user_id, event_id: a.event_id,
+        id: `pl_${a.id}`, user_id: a.user_id, event_id: a.event_id, outside_hours_id: null,
         points, reason: 'attendance_confirmed', created_at: a.participant_acted_at ?? iso(now),
       });
     }

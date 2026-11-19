@@ -339,3 +339,22 @@ ol.terms li::marker { color: var(--primary); font-family: var(--font-heading); f
 .map-picker-pin::after { content: ''; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: #fff; }
 /* Leaflet lays its map out left to right, whatever the page's direction. */
 .map-picker .leaflet-container { direction: ltr; font: inherit; }
+
+/* The overview's hours charts (pages/Overview.tsx HoursCharts): one measure, one colour. */
+.charts { margin-top: var(--space-lg); }
+.charts h2 { font: var(--type-section-title); margin: 0 0 var(--space-md); }
+.chart { margin: 0 0 var(--space-md); background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: var(--space-md); }
+.chart figcaption { font-weight: 600; margin-bottom: var(--space-md); }
+.chart details { margin-top: var(--space-sm); }
+.chart-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-md); }
+.columns { display: flex; align-items: flex-end; gap: 6px; height: 180px; border-bottom: 1px solid var(--border); padding-bottom: 22px; position: relative; }
+.column { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; position: relative; cursor: default; }
+.column-bar { width: 100%; max-width: 28px; min-height: 2px; background: var(--primary); border-radius: 4px 4px 0 0; }
+.column:hover .column-bar { opacity: .8; }
+.column-label { position: absolute; bottom: -20px; font-size: 11px; color: var(--ink-muted); white-space: nowrap; }
+.hbar { display: grid; grid-template-columns: minmax(80px, 1.2fr) 2fr auto; align-items: center; gap: var(--space-sm); padding: 4px 0; }
+.hbar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbar-track { height: 10px; }
+.hbar-fill { display: block; height: 100%; min-width: 2px; background: var(--primary); border-radius: 0 4px 4px 0; }
+[dir="rtl"] .hbar-fill { border-radius: 4px 0 0 4px; }
+.hbar-value { font-variant-numeric: tabular-nums; color: var(--ink-muted); font-size: 13px; }

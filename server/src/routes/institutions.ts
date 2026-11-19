@@ -5,22 +5,27 @@
 // Every change runs in a transaction: the rows are read (and locked), the
 // shared rule decides, and the result is written, or nothing is.
 
-import { and, asc, count, eq, isNull, ne } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, isNull, lte, ne } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-import type { InstitutionMembersResponse, InstitutionsResponse, MyInstitution } from '../../../shared/api';
+import type { InstitutionHoursReport, InstitutionMembersResponse, InstitutionsResponse, MyInstitution, OutsideHoursItem } from '../../../shared/api';
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
 import type { InstitutionKind, User } from '../../../shared/types';
 import { requireUser } from '../auth';
 import type { Database } from '../db/client';
-import { findInstitution, membershipOf, membershipsCount, newId, publicUser, shownTo } from '../db/queries';
+import { creditPoints, findInstitution, membershipOf, membershipsCount, newId, publicUser, shownTo } from '../db/queries';
+import { iso } from '../db/rows';
 import * as s from '../db/schema';
 import { type AppEnv, readBody } from '../http';
-import { notifyJoinRequest, notifyMembershipConfirmed } from '../notify';
+import { notifyJoinRequest, notifyMembershipConfirmed, notifyOutsideHoursDecided } from '../notify';
+import { findClaim, outsideHoursItems } from './outside-hours';
 
 // The name and kind are the rule's to check (rules.assertCanRequestInstitution), as in the offline demo.
+const decideBody = z.object({ decision: z.enum(['approved', 'rejected']), note: z.string().max(rules.OUTSIDE_HOURS_NOTE_MAX + 100).optional() });
+const reportQuery = z.object({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) });
+
 const requestBody = z.object({ name: z.string().max(rules.INSTITUTION_NAME_MAX + 50), kind: z.string().max(40) });
 
 /** The person's institutions, as GET /api/institutions lists them. */
@@ -41,11 +46,20 @@ async function myInstitutions(db: Database, userId: string): Promise<MyInstituti
         .where(and(eq(s.institution_members.institution_id, i.id), eq(s.institution_members.status, 'pending')));
       pending = row.n;
     }
+    let pendingHours = 0;
+    if (rules.isRepresentative(m)) {
+      const [row] = await db
+        .select({ n: count() })
+        .from(s.outside_hours)
+        .where(and(eq(s.outside_hours.institution_id, i.id), eq(s.outside_hours.status, 'pending')));
+      pendingHours = row.n;
+    }
     out.push({
       institution: { id: i.id, name: i.name, kind: i.kind, status: i.status, decision_note: i.decision_note },
       role: m.role,
       status: m.status,
       pending_members: pending,
+      pending_hours: pendingHours,
     });
   }
   return out;
@@ -200,4 +214,86 @@ export const institutionRoutes = new Hono<AppEnv>()
       await tx.delete(s.institution_members).where(and(eq(s.institution_members.institution_id, id), eq(s.institution_members.user_id, userId)));
     });
     return c.json<InstitutionMembersResponse>(await membersOf(db, me, id));
+  })
+
+  // ---------- hours outside the app's events, for its representatives ----------
+
+  // Waiting first (oldest first), then the decided ones (newest first).
+  .get('/:id/outside-hours', async (c) => {
+    const { db } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    await assertMayManage(db, me, id);
+    const rows = (await db.select().from(s.outside_hours).where(eq(s.outside_hours.institution_id, id)).orderBy(desc(s.outside_hours.created_at)).limit(200)).map(iso);
+    const waiting = rows.filter((r) => r.status === 'pending').reverse();
+    return c.json<OutsideHoursItem[]>(await outsideHoursItems(db, me, [...waiting, ...rows.filter((r) => r.status !== 'pending')]));
+  })
+
+  .post('/:id/outside-hours/:claimId/decide', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    const body = await readBody(c, decideBody);
+    const claimId = c.req.param('claimId');
+    const t = new Date(now());
+    await db.transaction(async (tx) => {
+      const claim = await findClaim(tx, claimId, { lock: true });
+      const note = rules.assertCanDecideOutsideHours({
+        user: me,
+        mine: await membershipOf(tx, id, me.id),
+        claim: claim?.institution_id === id ? claim : undefined,
+        decision: body.decision,
+        note: body.note,
+      });
+      await tx.update(s.outside_hours).set({ status: body.decision, decided_by: me.id, decided_at: t, decision_note: note }).where(eq(s.outside_hours.id, claimId));
+      if (body.decision === 'approved') {
+        await creditPoints(tx, { userId: claim!.user_id, eventId: null, outsideHoursId: claimId, earned: rules.pointsForOutsideHours(claim!), reason: 'outside_hours_approved', at: t });
+      }
+    });
+    notifyOutsideHoursDecided(c.var.deps, claimId);
+    return c.json<OutsideHoursItem>((await outsideHoursItems(db, me, [(await findClaim(db, claimId))!]))[0]);
+  })
+
+  // Its members' confirmed hours between two days: at its own events, and outside them for it.
+  .get('/:id/hours-report', async (c) => {
+    const { db, timeZone } = c.var.deps;
+    const me = c.var.user;
+    const id = c.req.param('id');
+    await assertMayManage(db, me, id);
+    const q = reportQuery.safeParse(c.req.query());
+    if (!q.success) throw new ApiError('not_found');
+    const { from, to } = q.data;
+    const institution = (await findInstitution(db, id))!;
+    const members = await db
+      .select(publicUser)
+      .from(s.institution_members)
+      .innerJoin(s.users, eq(s.users.id, s.institution_members.user_id))
+      .where(and(eq(s.institution_members.institution_id, id), eq(s.institution_members.status, 'confirmed'), isNull(s.users.deleted_at)));
+    const ids = members.map((m) => m.id);
+    const attended = ids.length
+      ? await db
+          .select({ user_id: s.attendance.user_id, event_id: s.attendance.event_id, hours: s.attendance.hours, started_at: s.attendance.started_at })
+          .from(s.attendance)
+          .innerJoin(s.events, eq(s.events.id, s.attendance.event_id))
+          .where(and(inArray(s.attendance.user_id, ids), eq(s.events.institution_id, id), eq(s.attendance.participant_status, 'confirmed')))
+      : [];
+    const outside = ids.length
+      ? await db
+          .select({ user_id: s.outside_hours.user_id, minutes: s.outside_hours.minutes })
+          .from(s.outside_hours)
+          .where(and(inArray(s.outside_hours.user_id, ids), eq(s.outside_hours.institution_id, id), eq(s.outside_hours.status, 'approved'), gte(s.outside_hours.done_on, from), lte(s.outside_hours.done_on, to)))
+      : [];
+    const inRange = attended.filter((a) => {
+      const d = rules.dayIn(a.started_at.getTime(), timeZone);
+      return d >= from && d <= to;
+    });
+    const rows = members
+      .map((user) => {
+        const mine = inRange.filter((a) => a.user_id === user.id);
+        const eventHours = rules.round2(mine.reduce((sum, a) => sum + (a.hours ?? 0), 0));
+        const outsideHours = rules.round2(outside.filter((o) => o.user_id === user.id).reduce((sum, o) => sum + o.minutes, 0) / 60);
+        return { user: shownTo(me, user), events: new Set(mine.map((a) => a.event_id)).size, event_hours: eventHours, outside_hours: outsideHours, hours: rules.round2(eventHours + outsideHours) };
+      })
+      .sort((a, b) => b.hours - a.hours || a.user.full_name.localeCompare(b.user.full_name, 'ar'));
+    return c.json<InstitutionHoursReport>({ institution: { id: institution.id, name: institution.name, kind: institution.kind }, from, to, rows });
   });

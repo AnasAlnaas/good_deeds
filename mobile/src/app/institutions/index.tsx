@@ -96,6 +96,21 @@ export default function InstitutionsScreen() {
                 onPress={() => router.push(`/institutions/${i.id}`)}
               />
             )}
+            {representative && i.status === 'approved' && (
+              <View style={styles.repActions}>
+                <View style={styles.flex}>
+                  <Button
+                    variant={(x.pending_hours ?? 0) > 0 ? 'primary' : 'secondary'}
+                    icon="time-outline"
+                    label={(x.pending_hours ?? 0) > 0 ? fmt(s.outsideHours.review, { n: x.pending_hours ?? 0 }) : s.outsideHours.manageHours}
+                    onPress={() => router.push(`/institutions/${i.id}/hours`)}
+                  />
+                </View>
+                <View style={styles.flex}>
+                  <Button variant="secondary" icon="document-text-outline" label={s.institutionReport.open} onPress={() => router.push(`/institutions/${i.id}/report`)} />
+                </View>
+              </View>
+            )}
             {(!representative || i.status === 'rejected') && (
               <Button
                 variant="quiet"
@@ -115,6 +130,7 @@ export default function InstitutionsScreen() {
 const styles = StyleSheet.create({
   intro: { backgroundColor: colors.primarySoft, borderColor: colors.primarySoft },
   head: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  repActions: { flexDirection: 'row', gap: space.sm },
   icon: {
     width: 44,
     height: 44,
