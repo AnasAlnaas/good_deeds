@@ -65,6 +65,12 @@ function Details({ entry: e }: { entry: AuditEntry }) {
     case 'cancel_event':
     case 'remove_cover':
       return <Link to={`/events/${e.target_id}`}>{str('title')}</Link>;
+    case 'change_skill':
+      return (
+        <>
+          {str('name')} · {str('change')}
+        </>
+      );
     case 'set_hijri_month':
       return (
         <>

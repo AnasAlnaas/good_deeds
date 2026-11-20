@@ -11,6 +11,7 @@ import { cleanKind } from '../../../shared/tags';
 import type { Database } from '../db/client';
 import { newId } from '../db/queries';
 import * as s from '../db/schema';
+import { cleanSkillIds, MAX_SKILLS_PER_EVENT, suggestedSkills } from '../../../shared/skills';
 import { HttpError } from '../http';
 import { dropUnusedImages } from '../lesson-images';
 
@@ -38,6 +39,8 @@ const proposalFields = z.object({
   institution_id: z.string().min(1).nullish(),
   // A picture sent first to POST /lesson-images; absent = unchanged (an older app), null = none.
   cover_image_id: z.string().min(1).nullish(),
+  // The skills that help (shared/skills.ts); absent = its type's suggestions on a new event, unchanged on an edit.
+  skill_ids: z.array(z.string().max(80)).max(30).optional(),
   // Absent from a form sent by an app from before the learning corner: no lessons.
   // A lesson has text, a picture (POST /lesson-images), or both; an older app sends no picture.
   lessons: z
@@ -166,4 +169,26 @@ export function kindOf(body: Pick<EventInput, 'subtype' | 'event_class'>) {
 export function placeOf(body: Pick<EventInput, 'location_type' | 'address_text' | 'lat' | 'lng' | 'meeting_platform' | 'meeting_url'>) {
   const { location_type, address_text, lat, lng, meeting_platform, meeting_url } = body;
   return { location_type, address_text, lat, lng, meeting_platform, meeting_url };
+}
+
+/** The skills still offered (an admin may hide one). */
+export async function offeredSkills(q: Database) {
+  return (await q.select({ id: s.skills.id }).from(s.skills).where(eq(s.skills.is_active, true))).map((r) => r.id);
+}
+
+/**
+ * The skills that help at the event (owner's decisions, 2026-11-20): those
+ * sent, or, when none were sent, its type's suggestions on a new event and
+ * the ones it has on an edit.
+ */
+export async function writeSkills(q: Database, eventId: string, sent: string[] | undefined, subtype: string, isNew: boolean) {
+  if (sent === undefined && !isNew) return;
+  const offered = await offeredSkills(q);
+  const ids = sent === undefined ? suggestedSkills(subtype, offered) : cleanSkillIds(sent, offered, MAX_SKILLS_PER_EVENT);
+  await q.delete(s.event_skills).where(eq(s.event_skills.event_id, eventId));
+  if (ids.length) await q.insert(s.event_skills).values(ids.map((skill_id) => ({ event_id: eventId, skill_id })));
+}
+
+export async function skillsOfEvent(q: Database, eventId: string) {
+  return (await q.select({ id: s.event_skills.skill_id }).from(s.event_skills).where(eq(s.event_skills.event_id, eventId))).map((r) => r.id);
 }

@@ -6,6 +6,7 @@ import { useAuth } from './auth';
 import { Icon, type IconName } from './icons';
 import { Audit } from './pages/Audit';
 import { Hijri } from './pages/Hijri';
+import { Skills } from './pages/Skills';
 import { Disputes } from './pages/Disputes';
 import { EventForm } from './pages/EventForm';
 import { EventPage } from './pages/EventPage';
@@ -37,6 +38,7 @@ export function App() {
           <Route path="users" element={<Users />} />
           <Route path="institutions" element={<Institutions />} />
           <Route path="report" element={<Report />} />
+          <Route path="skills" element={<Skills />} />
           <Route path="hijri" element={<Hijri />} />
           <Route path="audit" element={<Audit />} />
           <Route path="*" element={<Navigate to="/" replace />} />
@@ -82,6 +84,7 @@ function Shell() {
         {link('/users', 'people', t.nav.users)}
         {link('/institutions', 'building', t.nav.institutions, institutions)}
         {link('/report', 'time', t.nav.report)}
+        {link('/skills', 'people', t.nav.skills)}
         {link('/hijri', 'calendar', t.nav.hijri)}
         {link('/audit', 'list', t.nav.audit)}
         <div className="sidebar-foot">

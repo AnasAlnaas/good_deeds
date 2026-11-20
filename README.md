@@ -223,6 +223,16 @@ hours), for the whole association or one of the person's institutions. Nobody is
 listed until they choose "show me" on the leaderboard screen; the demo's people
 have it on.
 
+### Skills and matching
+
+Owner's decisions (2026-11-20; `shared/skills.ts`). Volunteers choose their skills
+and the classes of good works they like (Profile → مهاراتي واهتماماتي); only they
+and the admins see them. An event names the skills that help: its type's suggestions
+(`SKILLS_OF_SUBTYPE`), which the proposer may change. The starting list is put in by
+migration 0023; admins add, rename and hide skills in the panel (المهارات).
+`GET /api/me/skills/matches` ranks upcoming events for the person (a skill they have
+counts 2, a class they like 1); the main screen will show them later.
+
 ### Push notifications
 
 The app registers the phone for notifications when someone signs in to the

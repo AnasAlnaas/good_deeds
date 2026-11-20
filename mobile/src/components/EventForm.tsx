@@ -42,6 +42,7 @@ import {
   eventMaxPoints,
 } from '../../../shared/rules';
 import { nameExample as nameExampleFor } from '../../../shared/name-examples';
+import { MAX_SKILLS_PER_EVENT, suggestedSkills } from '../../../shared/skills';
 import { cleanTag, TAG_MAX, tagKey } from '../../../shared/tags';
 
 // The event form of the app: proposing an event (level 5, or a supervisor),
@@ -220,6 +221,8 @@ export function EventForm({
   const chosenInstitution = institutions.find((i) => i.id === institutionId);
   // The cover photo (design ج): the event's own when editing, the earlier event's when copying.
   const [cover, setCover] = useState<LessonImageRef | null>(() => init?.cover ?? null);
+  // The skills that help (owner's decisions, 2026-11-20): the type's suggestions until the proposer changes them (null).
+  const [chosenSkills, setChosenSkills] = useState<string[] | null>(() => init?.skill_ids ?? null);
   const [coverState, setCoverState] = useState<'idle' | 'sending' | 'too_big'>('idle');
   const chooseCover = async () => {
     setCoverState('idle');
@@ -371,6 +374,10 @@ export function EventForm({
 
   const aboutDone = v.title.trim().length >= 3 && v.description.trim().length > 0;
   const kindDone = !!v.event_class && !!subtype;
+  const offeredSkills = meta.skills ?? [];
+  const skillIds = chosenSkills ?? suggestedSkills(subtype, offeredSkills.map((x) => x.id));
+  const toggleSkill = (id: string) =>
+    setChosenSkills(skillIds.includes(id) ? skillIds.filter((x) => x !== id) : skillIds.length < MAX_SKILLS_PER_EVENT ? [...skillIds, id] : skillIds);
   // In a place, the pin is confirmed on the map: an address alone does not say where.
   const placeDone = place !== null && (online || confirmed);
   const step = !kindDone ? 0 : !aboutDone ? 1 : !placeDone ? 2 : 3;
@@ -453,6 +460,8 @@ export function EventForm({
       lessons: v.lessons.map((l) => ({ title: l.title.trim(), body: l.body.trim(), image_id: l.image_id, video_id: l.video_id })),
       institution_id: institutionId,
       cover_image_id: cover?.id ?? null,
+      // An older server offers no skills: none are sent, and it keeps what it has.
+      ...(offeredSkills.length ? { skill_ids: skillIds } : {}),
     };
     if (editing) {
       if (await run((b) => b.editProposal(editing.id, body))) goBack(`/event/${editing.id}`);
@@ -588,6 +597,19 @@ export function EventForm({
           multiline
           onChangeText={(t) => set('description', t)}
         />
+        {offeredSkills.length > 0 && (
+          <>
+            <SectionTitle>{s.newEvent.skills}</SectionTitle>
+            <Txt variant="caption" color={colors.inkMuted}>
+              {s.newEvent.skillsNote}
+            </Txt>
+            <Row>
+              {offeredSkills.map((x) => (
+                <Chip key={x.id} label={lang === 'ar' ? x.name_ar : x.name_en} selected={skillIds.includes(x.id)} onPress={() => toggleSkill(x.id)} />
+              ))}
+            </Row>
+          </>
+        )}
         <SectionTitle>{s.newEvent.cover}</SectionTitle>
         <Txt variant="caption" color={colors.inkMuted}>
           {s.newEvent.coverNote}

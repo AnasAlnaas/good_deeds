@@ -162,6 +162,13 @@
       "when": 1795126295387,
       "tag": "0022_badges_leaderboards",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1795154520706,
+      "tag": "0023_skills",
+      "breakpoints": true
     }
   ]
 }

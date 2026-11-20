@@ -259,7 +259,8 @@ export type AdminAction =
   | 'add_representative'
   | 'remove_representative'
   | 'remove_cover'
-  | 'set_hijri_month';
+  | 'set_hijri_month'
+  | 'change_skill';
 
 /** POST /api/admin/users/:id/reset-code: shown to the admin once, to give the person (by phone or in person). */
 export interface ResetCodeResponse {

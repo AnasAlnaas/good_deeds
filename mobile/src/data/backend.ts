@@ -7,6 +7,9 @@ import { ApiError, type ApiErrorCode } from '../../../shared/errors';
 import type {
   AcceptTermResponse,
   AttendanceItem,
+  EventMatch,
+  MySkillsBody,
+  MySkillsResponse,
   LeaderboardResponse,
   PersonResponse,
   CertificateResponse,
@@ -164,4 +167,9 @@ export interface Backend {
   person(id: string): Promise<PersonResponse>;
   /** This month's confirmed hours: the whole association's, or one of the person's institutions'. */
   leaderboard(institutionId: string | null): Promise<LeaderboardResponse>;
+  /** The person's skills and liked classes (only they and admins see them), with the skills offered. */
+  mySkills(): Promise<MySkillsResponse>;
+  setMySkills(body: MySkillsBody): Promise<MySkillsResponse>;
+  /** Upcoming events that fit the person, best first (for the main screen, later). */
+  skillMatches(): Promise<EventMatch[]>;
 }

@@ -52,6 +52,7 @@ export const adminAction = pgEnum('admin_action', [
   'remove_representative',
   'remove_cover',
   'set_hijri_month',
+  'change_skill',
 ]);
 export const reportCategory = pgEnum('report_category', ['behaviour', 'safety', 'event', 'app', 'other']);
 export const reportStatus = pgEnum('report_status', ['open', 'handled']);
@@ -419,6 +420,43 @@ export const hijri_adjustments = pgTable(
     set_at: at('set_at').notNull(),
   },
   (t) => [primaryKey({ columns: [t.year, t.month] }), check('hijri_adjustments_days', sql`${t.days} between -1 and 1`)],
+);
+
+// Skills (shared/skills.ts): the association's list, admins add and hide; what
+// each person can do and likes (seen only by them and admins); what helps at an event.
+export const skills = pgTable('skills', {
+  id: text('id').primaryKey(),
+  name_ar: text('name_ar').notNull(),
+  name_en: text('name_en').notNull(),
+  is_active: boolean('is_active').notNull().default(true),
+  created_at: at('created_at').notNull(),
+});
+
+export const user_skills = pgTable(
+  'user_skills',
+  {
+    user_id: text('user_id').notNull().references(() => users.id),
+    skill_id: text('skill_id').notNull().references(() => skills.id),
+  },
+  (t) => [primaryKey({ columns: [t.user_id, t.skill_id] })],
+);
+
+export const user_interests = pgTable(
+  'user_interests',
+  {
+    user_id: text('user_id').notNull().references(() => users.id),
+    event_class: text('event_class').$type<EventClassId>().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.user_id, t.event_class] })],
+);
+
+export const event_skills = pgTable(
+  'event_skills',
+  {
+    event_id: text('event_id').notNull().references(() => events.id),
+    skill_id: text('skill_id').notNull().references(() => skills.id),
+  },
+  (t) => [primaryKey({ columns: [t.event_id, t.skill_id] }), index('event_skills_skill').on(t.skill_id)],
 );
 
 // Certificates of confirmed hours, as they were when made (shared/types.ts Certificate).

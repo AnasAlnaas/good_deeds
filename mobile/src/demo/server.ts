@@ -3,7 +3,7 @@
 // in the on-phone database, calls the rule, and writes what the rule decided.
 // The screens never compute hours or points themselves.
 
-import type { CertificateResponse, EventProposal, InstitutionHoursReport, LeaderboardResponse, ProfileEdit, ReportBody } from '@/data/api';
+import type { CertificateResponse, EventMatch, MySkillsResponse, SkillRef, EventProposal, InstitutionHoursReport, LeaderboardResponse, ProfileEdit, ReportBody } from '@/data/api';
 import type {
   AppEvent,
   Attendance,
@@ -23,7 +23,8 @@ import type {
 } from '@/data/types';
 import { NOTICE_REACTIONS } from '@/data/types';
 import { badgesEarned } from '../../../shared/badges';
-import { classOfEvent } from '../../../shared/classes';
+import { classOfEvent, isEventClass } from '../../../shared/classes';
+import { cleanSkillIds, matchScore, MAX_SKILLS_PER_EVENT, MAX_SKILLS_PER_PERSON, suggestedSkills } from '../../../shared/skills';
 import { ApiError } from '../../../shared/errors';
 import { hijriMonths } from '../../../shared/hijri';
 import * as rules from '../../../shared/rules';
@@ -258,6 +259,7 @@ export function proposeEvent(db: Db, userId: string, input: EventProposal, now: 
   next.event_organizers.push({ event_id: event.id, user_id: userId, added_by: null, pledged_at: null });
   writeTerms(next, event.id, input, at);
   writeLessons(next, event.id, input, at);
+  writeSkills(next, event.id, input.skill_ids, input.subtype, true);
   return { db: next, event };
 }
 
@@ -374,6 +376,7 @@ export function editProposal(db: Db, userId: string, eventId: string, input: Eve
   if (cover !== row.cover_image_id) dropUnusedImages(next, [row.cover_image_id]);
   writeTerms(next, eventId, input, new Date(now).toISOString());
   writeLessons(next, eventId, input, new Date(now).toISOString());
+  writeSkills(next, eventId, input.skill_ids, input.subtype, false);
   return next;
 }
 
@@ -385,6 +388,7 @@ export function withdrawProposal(db: Db, userId: string, eventId: string): Db {
   next.events = next.events.filter((e) => e.id !== eventId);
   next.event_organizers = next.event_organizers.filter((x) => x.event_id !== eventId);
   next.event_terms = next.event_terms.filter((x) => x.event_id !== eventId);
+  next.event_skills = (next.event_skills ?? []).filter((x) => x.event_id !== eventId);
   dropUnusedImages(next, [...removeLessons(next, eventId), row.cover_image_id]);
   return next;
 }
@@ -1116,4 +1120,58 @@ export function leaderboard(db: Db, me: User, institutionId: string | null, now:
     rows: ranked.slice(0, 20).map((r, i) => ({ rank: rankOf(i), user: shown(r.u), hours: r.hours })),
     me: { hours: rules.round2(totals.get(me.id) ?? 0), rank: mine >= 0 ? rankOf(mine) : null, shown: me.show_on_leaderboards },
   };
+}
+
+// ---------- skills and matching (as server/src/routes/skills.ts) ----------
+
+export const offeredSkills = (db: Db) => (db.skills ?? []).filter((x) => x.is_active).map((x) => x.id);
+export const skillList = (db: Db): SkillRef[] => (db.skills ?? []).filter((x) => x.is_active).map(({ id, name_ar, name_en }) => ({ id, name_ar, name_en }));
+export const skillsOfEvent = (db: Db, eventId: string) => (db.event_skills ?? []).filter((x) => x.event_id === eventId).map((x) => x.skill_id);
+
+function writeSkills(next: Db, eventId: string, sent: string[] | undefined, subtype: string, isNew: boolean) {
+  if (sent === undefined && !isNew) return;
+  const offered = offeredSkills(next);
+  const ids = sent === undefined ? suggestedSkills(subtype, offered) : cleanSkillIds(sent, offered, MAX_SKILLS_PER_EVENT);
+  next.event_skills = [...(next.event_skills ?? []).filter((x) => x.event_id !== eventId), ...ids.map((skill_id) => ({ event_id: eventId, skill_id }))];
+}
+
+export function mySkills(db: Db, userId: string): MySkillsResponse {
+  return {
+    skill_ids: (db.user_skills ?? []).filter((x) => x.user_id === userId).map((x) => x.skill_id),
+    classes: (db.user_interests ?? []).filter((x) => x.user_id === userId).map((x) => x.event_class),
+    offered: skillList(db),
+  };
+}
+
+export function setMySkills(db: Db, userId: string, body: { skill_ids: string[]; classes: string[] }): Db {
+  const offered = offeredSkills(db);
+  const had = mySkills(db, userId).skill_ids;
+  const kept = had.filter((id) => !offered.includes(id) && body.skill_ids.includes(id));
+  const skills = [...new Set([...kept, ...cleanSkillIds(body.skill_ids, offered, MAX_SKILLS_PER_PERSON)])].slice(0, MAX_SKILLS_PER_PERSON);
+  const classes = [...new Set(body.classes.filter(isEventClass))];
+  const next = clone(db);
+  next.user_skills = [...(next.user_skills ?? []).filter((x) => x.user_id !== userId), ...skills.map((skill_id) => ({ user_id: userId, skill_id }))];
+  next.user_interests = [...(next.user_interests ?? []).filter((x) => x.user_id !== userId), ...classes.map((event_class) => ({ user_id: userId, event_class }))];
+  return next;
+}
+
+export function skillMatches(db: Db, me: User, now: number): EventMatch[] {
+  const mine = mySkills(db, me.id);
+  if (mine.skill_ids.length === 0 && mine.classes.length === 0) return [];
+  return db.events
+    .filter((e) => effectiveStatus(e, now) === 'published' && rules.toMs(e.starts_at) > now)
+    .filter((e) => registrationOf(db, e.id, me.id)?.status !== 'joined' && canUserJoinCategory(me, e))
+    .map((e) => {
+      const skillIds = skillsOfEvent(db, e.id);
+      return {
+        event_id: e.id,
+        starts_at: e.starts_at,
+        score: matchScore({ event_class: classOfEvent(e), skill_ids: skillIds }, mine),
+        matched_skill_ids: skillIds.filter((id) => mine.skill_ids.includes(id)),
+        class_liked: mine.classes.includes(classOfEvent(e)),
+      };
+    })
+    .filter((m) => m.score > 0)
+    .sort((a, b) => b.score - a.score || a.starts_at.localeCompare(b.starts_at))
+    .slice(0, 20);
 }
