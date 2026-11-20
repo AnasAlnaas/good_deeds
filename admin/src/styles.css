@@ -358,3 +358,6 @@ ol.terms li::marker { color: var(--primary); font-family: var(--font-heading); f
 .hbar-fill { display: block; height: 100%; min-width: 2px; background: var(--primary); border-radius: 0 4px 4px 0; }
 [dir="rtl"] .hbar-fill { border-radius: 4px 0 0 4px; }
 .hbar-value { font-variant-numeric: tabular-nums; color: var(--ink-muted); font-size: 13px; }
+
+/* The Hijri months page: Ramadan and Dhul Hijjah, which badges use. */
+tr.highlight td { background: var(--primary-soft); }

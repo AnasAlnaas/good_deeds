@@ -575,8 +575,11 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
         const { db, me } = read();
         const total = server.totalPoints(db, me.id);
         const level = server.levelFor(db, total);
+        const badges = (db.user_badges ?? []).filter((b) => b.user_id === me.id).sort((a, b) => rules.toMs(b.earned_at) - rules.toMs(a.earned_at));
         return {
           user: me,
+          badges: badges.map((b) => ({ badge_id: b.badge_id, earned_at: b.earned_at })),
+          new_badges: badges.filter((b) => !b.seen_at).map((b) => b.badge_id),
           total_points: total,
           level,
           next_level: server.nextLevel(db, total) ?? null,
@@ -717,6 +720,26 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
       async(() => {
         const { db, me } = change((d, t) => server.decideOutsideHours(d, meId, id, claimId, body.decision, body.note, t));
         return outsideHoursItems(db, me, [db.outside_hours.find((c) => c.id === claimId)!])[0];
+      }),
+
+    markBadgesSeen: () =>
+      async(() => {
+        change((d, t) => server.markBadgesSeen(d, meId, t));
+      }),
+
+    person: (id) =>
+      async(() => {
+        const { db, me } = read();
+        const u = server.getUser(db, id);
+        if (!u || u.deleted_at) throw new ApiError('not_found');
+        const badges = (db.user_badges ?? []).filter((b) => b.user_id === id).sort((a, b) => rules.toMs(b.earned_at) - rules.toMs(a.earned_at));
+        return { user: publicUser(me, u), level: u.level, badges: badges.map((b) => ({ badge_id: b.badge_id, earned_at: b.earned_at })) };
+      }),
+
+    leaderboard: (institutionId) =>
+      async(() => {
+        const { db, me } = read();
+        return server.leaderboard(db, me, institutionId, Date.now());
       }),
 
     // The demo has no server to check a certificate: it has no QR code.

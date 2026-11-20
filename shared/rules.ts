@@ -278,8 +278,13 @@ export function cleanCity(input: string): string | null {
  * their photo), nor does the phone (it is how they sign in).
  * null = nothing to change, or a name or city that does not fit.
  */
-export function cleanProfileEdit(edit: { full_name?: string; city?: string }): { full_name?: string; city?: string } | null {
-  const out: { full_name?: string; city?: string } = {};
+export function cleanProfileEdit(edit: {
+  full_name?: string;
+  city?: string;
+  show_on_leaderboards?: boolean;
+}): { full_name?: string; city?: string; show_on_leaderboards?: boolean } | null {
+  const out: { full_name?: string; city?: string; show_on_leaderboards?: boolean } = {};
+  if (typeof edit.show_on_leaderboards === 'boolean') out.show_on_leaderboards = edit.show_on_leaderboards;
   if (edit.full_name !== undefined) {
     const name = cleanName(edit.full_name);
     if (!name) return null;

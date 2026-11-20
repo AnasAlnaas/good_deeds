@@ -23,6 +23,7 @@
 
 import { and, eq, gt, inArray, isNull, lte, ne } from 'drizzle-orm';
 
+import { badgeName } from '../../shared/badges';
 import { dueReminder, MEETING_LINK_OPENS_MINUTES, REMINDER_DAY_BEFORE_HOURS } from '../../shared/rules';
 
 import { closeDueAttendance, creditSoleSupervisors } from './db/queries';
@@ -113,6 +114,7 @@ export async function closeDueAndNotify(deps: AppDeps) {
   await remindEvents(deps);
   await offerWaitlistPlaces(deps);
   await sweepLessonImages(deps.db, deps.now());
+  await pushNewBadges(deps);
   return closed.length + supervised.length;
 }
 
@@ -822,4 +824,28 @@ export function notifyOutsideHoursDecided(deps: AppDeps, claimId: string) {
       },
     ];
   });
+}
+
+// ---------- badges ----------
+
+const BADGE = {
+  ar: { title: 'وسام جديد', body: 'حصلت على وسام «{name}». بارك الله في عملك.' },
+  en: { title: 'A new badge', body: 'You earned the badge "{name}". May God bless your work.' },
+};
+
+/** The scheduled job's part: each badge earned and not yet told, once (claiming it first). */
+export async function pushNewBadges(deps: AppDeps) {
+  const due = await deps.db
+    .update(s.user_badges)
+    .set({ pushed_at: new Date(deps.now()) })
+    .where(isNull(s.user_badges.pushed_at))
+    .returning({ user_id: s.user_badges.user_id, badge_id: s.user_badges.badge_id });
+  if (due.length === 0) return;
+  send(deps, async () =>
+    due.map((b) => ({
+      userId: b.user_id,
+      text: (lang: Lang) => ({ title: BADGE[lang].title, body: BADGE[lang].body.replace('{name}', badgeName(b.badge_id, lang)) }),
+      data: { type: 'badge_earned', badge_id: b.badge_id },
+    })),
+  );
 }

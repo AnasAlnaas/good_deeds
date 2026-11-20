@@ -8,6 +8,8 @@
 import type { AppEvent, Attendance, Db, GenderCategory, MeetingPlatform, User } from './types';
 import { classOf } from './classes';
 import { LEVELS } from './placeholders';
+import { badgesEarned } from './badges';
+import { hijriMonths } from './hijri';
 import { ASSOCIATION_TIME_ZONE, dayIn, levelFor, pointsForHours } from './rules';
 
 // 2: reports and warnings were added; phones holding version 1 start again from this seed.
@@ -25,7 +27,7 @@ import { ASSOCIATION_TIME_ZONE, dayIn, levelFor, pointsForHours } from './rules'
 // 14: events may have a cover photo.
 // 15: points by the half hour, levels 0–10, and supervisors' pledges.
 // 16: the point made a minute (levels ×30).
-export const SEED_VERSION = 17;
+export const SEED_VERSION = 18;
 
 /** The demo's institution: approved, with خالد as its representative. */
 export const DEMO_INSTITUTION = 'inst_saraj';
@@ -283,6 +285,8 @@ export function buildSeed(nowMs: number): Db {
     level: 0,
     total_points: 0,
     is_association_member: true,
+    // The demo's people show on the leaderboards, so there is something to see (a real account starts with it off).
+    show_on_leaderboards: true,
     created_at: created,
     deleted_at: null,
   }));
@@ -320,6 +324,8 @@ export function buildSeed(nowMs: number): Db {
       { institution_id: DEMO_INSTITUTION, user_id: 'u_ahmad', role: 'member', status: 'confirmed', created_at: created, confirmed_by: 'u_khaled', confirmed_at: created },
       { institution_id: DEMO_INSTITUTION, user_id: 'u_f1', role: 'member', status: 'pending', created_at: iso(minutes(-300)), confirmed_by: null, confirmed_at: null },
     ],
+    user_badges: [],
+    hijri_adjustments: [],
     // Hours أحمد did for the team outside the app's events, waiting for خالد (rules.assertCanClaimOutsideHours).
     outside_hours: [
       {
@@ -451,6 +457,20 @@ export function buildSeed(nowMs: number): Db {
         id: `pl_${a.id}`, user_id: a.user_id, event_id: a.event_id, outside_hours_id: null,
         points, reason: 'attendance_confirmed', created_at: a.participant_acted_at ?? iso(now),
       });
+    }
+  }
+
+  // Badges for that record (shared/badges.ts), as the server gives them. أحمد's are not celebrated yet, so the demo shows the celebration.
+  for (const u of db.users) {
+    const confirmed = db.attendance
+      .filter((a) => a.user_id === u.id && a.participant_status === 'confirmed')
+      .map((a) => {
+        const e = db.events.find((x) => x.id === a.event_id)!;
+        return { event_id: e.id, event_class: e.event_class, day: dayIn(Date.parse(a.started_at), ASSOCIATION_TIME_ZONE) };
+      });
+    for (const badge_id of badgesEarned({ confirmed, lessonsLearned: 0, hijri: hijriMonths() })) {
+      const at = iso(now);
+      db.user_badges.push({ user_id: u.id, badge_id, earned_at: at, seen_at: u.id === 'u_ahmad' ? null : at, pushed_at: at });
     }
   }
   for (const u of db.users) {

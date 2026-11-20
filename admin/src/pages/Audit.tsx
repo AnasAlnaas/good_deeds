@@ -65,6 +65,12 @@ function Details({ entry: e }: { entry: AuditEntry }) {
     case 'cancel_event':
     case 'remove_cover':
       return <Link to={`/events/${e.target_id}`}>{str('title')}</Link>;
+    case 'set_hijri_month':
+      return (
+        <>
+          {t.hijri.months[Number(d.month) - 1]} {String(d.year)}: {Number(d.days) === 0 ? t.hijri.asIs : Number(d.days) < 0 ? t.hijri.earlier : t.hijri.later}
+        </>
+      );
     case 'remove_photo':
     case 'issue_reset_code':
       return <>{str('name')}</>;

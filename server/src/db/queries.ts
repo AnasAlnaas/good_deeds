@@ -6,7 +6,10 @@ import { randomUUID } from 'node:crypto';
 
 import { and, asc, count, desc, eq, gte, inArray, isNull, lte, ne } from 'drizzle-orm';
 
+import { badgesEarned } from '../../../shared/badges';
+import { classOfEvent } from '../../../shared/classes';
 import { ApiError } from '../../../shared/errors';
+import { hijriMonths } from '../../../shared/hijri';
 import * as rules from '../../../shared/rules';
 import {
   type AppEvent,
@@ -279,6 +282,7 @@ export async function creditPoints(
       created_at: args.at,
     });
   }
+  await awardBadges(q, args.userId, args.at);
   const total = rules.totalPoints(await ledgerOf(q, args.userId));
   const level = rules.levelFor(await allLevels(q), total);
   await q.update(s.users).set({ total_points: total, level: level.level }).where(eq(s.users.id, args.userId));
@@ -452,4 +456,35 @@ export async function belongsToAny(q: Database, userId: string) {
     .where(and(eq(s.institution_members.user_id, userId), eq(s.institution_members.status, 'confirmed'), eq(s.institutions.status, 'approved')))
     .limit(1);
   return !!row;
+}
+
+/** The admins' moves of Hijri months (shared/hijri.ts), applied to the table. */
+export async function hijriCalendar(q: Database) {
+  return hijriMonths(await q.select({ year: s.hijri_adjustments.year, month: s.hijri_adjustments.month, days: s.hijri_adjustments.days }).from(s.hijri_adjustments));
+}
+
+/**
+ * Stores the badges the person's record now earns and they did not have
+ * (shared/badges.ts). Runs where points are credited and where a lesson is
+ * learned; the scheduled job tells them (notify.ts pushNewBadges).
+ */
+export async function awardBadges(q: Database, userId: string, at: Date): Promise<string[]> {
+  const attended = await q
+    .select({ event_id: s.events.id, subtype: s.events.subtype, event_class: s.events.event_class, started_at: s.attendance.started_at })
+    .from(s.attendance)
+    .innerJoin(s.events, eq(s.events.id, s.attendance.event_id))
+    .where(and(eq(s.attendance.user_id, userId), eq(s.attendance.participant_status, 'confirmed')));
+  const [lessons] = await q.select({ n: count() }).from(s.lesson_completions).where(eq(s.lesson_completions.user_id, userId));
+  const earned = badgesEarned({
+    confirmed: attended.map((a) => ({ event_id: a.event_id, event_class: classOfEvent(a), day: rules.dayIn(a.started_at.getTime(), rules.ASSOCIATION_TIME_ZONE) })),
+    lessonsLearned: lessons.n,
+    hijri: await hijriCalendar(q),
+  });
+  if (earned.length === 0) return [];
+  const added = await q
+    .insert(s.user_badges)
+    .values(earned.map((badge_id) => ({ user_id: userId, badge_id, earned_at: at })))
+    .onConflictDoNothing()
+    .returning({ badge_id: s.user_badges.badge_id });
+  return added.map((b) => b.badge_id);
 }

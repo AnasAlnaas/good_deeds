@@ -62,8 +62,7 @@ import {
   supervisorsOf,
   termsOf,
   waitingProposals,
-  warnedBy,
-} from '../db/queries';
+  warnedBy, awardBadges } from '../db/queries';
 import { iso } from '../db/rows';
 import * as s from '../db/schema';
 import { type AppEnv, readBody } from '../http';
@@ -513,6 +512,8 @@ export const eventRoutes = new Hono<AppEnv>()
       const learned = [...(await learnedAt(tx, me.id, lesson ? [lesson.id] : [])).keys()];
       if (rules.decideLearnLesson({ event, lesson, learnedLessonIds: learned }) === 'learn') {
         await tx.insert(s.lesson_completions).values({ lesson_id: lessonId, user_id: me.id, learned_at: new Date(t) }).onConflictDoNothing();
+        // Lessons learned earn badges too (shared/badges.ts).
+        await awardBadges(tx, me.id, new Date(t));
       }
     });
     const lesson = (await lessonItems(db, me.id, id)).find((l) => l.id === lessonId)!;

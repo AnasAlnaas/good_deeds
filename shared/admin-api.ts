@@ -258,7 +258,8 @@ export type AdminAction =
   | 'reject_institution'
   | 'add_representative'
   | 'remove_representative'
-  | 'remove_cover';
+  | 'remove_cover'
+  | 'set_hijri_month';
 
 /** POST /api/admin/users/:id/reset-code: shown to the admin once, to give the person (by phone or in person). */
 export interface ResetCodeResponse {
@@ -275,4 +276,17 @@ export interface AuditEntry {
   /** What changed, e.g. { from: 'member', to: 'supervisor' }. */
   details: Record<string, unknown>;
   created_at: string;
+}
+
+/**
+ * GET /api/admin/hijri: the Hijri months around now, with the admins' moves
+ * (shared/hijri.ts). PUT /api/admin/hijri/:year/:month { days: -1 | 0 | 1 }.
+ */
+export interface AdminHijriMonth {
+  year: number;
+  month: number;
+  /** Umm al-Qura's first day, and the one used after the move. */
+  base_start: string;
+  start: string;
+  days: number;
 }

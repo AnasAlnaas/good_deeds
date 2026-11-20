@@ -155,6 +155,13 @@
       "when": 1795079191357,
       "tag": "0021_hours_records",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1795126295387,
+      "tag": "0022_badges_leaderboards",
+      "breakpoints": true
     }
   ]
 }
