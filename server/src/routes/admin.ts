@@ -18,6 +18,7 @@ import type {
   AdminWarningRow,
   AuditEntry,
   DisputeRow,
+  AdminHijriMonth,
   AdminHoursStats,
   HoursReportRow,
   ResetCodeResponse,
@@ -25,6 +26,7 @@ import type {
 import * as adminRules from '../../../shared/admin-rules';
 import { eventSubtypes } from '../../../shared/classes';
 import { AdminError, ApiError } from '../../../shared/errors';
+import { HIJRI_ADJUST_MAX, hijriMonths } from '../../../shared/hijri';
 import * as rules from '../../../shared/rules';
 import { promotedTags } from '../../../shared/tags';
 import { type AppEvent, type Attendance } from '../../../shared/types';
@@ -755,6 +757,47 @@ export const adminRoutes = new Hono<AppEnv>()
   })
 
   // ---------- hours report ----------
+
+  // ---------- Hijri months (owner's decisions, 2026-11-20) ----------
+
+  // From two months ago to a year ahead: enough to set this year's Ramadan and Dhul Hijjah.
+  .get('/hijri', async (c) => {
+    const { db, now, timeZone } = c.var.deps;
+    const today = rules.dayIn(now(), timeZone);
+    const adjustments = await db.select().from(s.hijri_adjustments);
+    const base = hijriMonths();
+    const moved = hijriMonths(adjustments);
+    const i = Math.max(0, base.findIndex((m, k) => m.start <= today && (base[k + 1]?.start ?? '9999') > today) - 2);
+    return c.json<AdminHijriMonth[]>(
+      base.slice(i, i + 15).map((m, k) => ({
+        year: m.year,
+        month: m.month,
+        base_start: m.start,
+        start: moved[i + k].start,
+        days: adjustments.find((a) => a.year === m.year && a.month === m.month)?.days ?? 0,
+      })),
+    );
+  })
+
+  .put('/hijri/:year/:month', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const year = Number(c.req.param('year'));
+    const month = Number(c.req.param('month'));
+    const { days } = await readBody(c, z.object({ days: z.number().int().min(-HIJRI_ADJUST_MAX).max(HIJRI_ADJUST_MAX) }));
+    if (!hijriMonths().some((m) => m.year === year && m.month === month)) throw new ApiError('not_found');
+    const t = new Date(now());
+    await db.transaction(async (tx) => {
+      if (days === 0) await tx.delete(s.hijri_adjustments).where(and(eq(s.hijri_adjustments.year, year), eq(s.hijri_adjustments.month, month)));
+      else
+        await tx
+          .insert(s.hijri_adjustments)
+          .values({ year, month, days, set_by: me.id, set_at: t })
+          .onConflictDoUpdate({ target: [s.hijri_adjustments.year, s.hijri_adjustments.month], set: { days, set_by: me.id, set_at: t } });
+      await audit(tx, { actorId: me.id, action: 'set_hijri_month', targetId: `${year}-${month}`, details: { year, month, days }, at: t });
+    });
+    return c.body(null, 204);
+  })
 
   .get('/stats/hours', async (c) => {
     const { db, now, timeZone } = c.var.deps;

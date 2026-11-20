@@ -708,5 +708,19 @@ console.log('\n— hours outside the app (as server/scripts/check-hours-records.
   expectError('more than 12 hours', 'outside_hours_too_long', () => server.claimOutsideHours(approved, 'u_ahmad', { ...input, minutes: 721 }, NOW));
 }
 
+console.log('\n— badges and leaderboards (as server/scripts/check-engagement.ts)');
+{
+  const ahmad = db.users.find((u) => u.id === 'u_ahmad')!;
+  expectEqual('the demo gives ahmad his first step, waiting to be celebrated', db.user_badges.some((b) => b.user_id === 'u_ahmad' && b.badge_id === 'events_1' && !b.seen_at), true);
+  expectEqual('celebrated, it is seen', server.markBadgesSeen(db, 'u_ahmad', NOW).user_badges.filter((b) => b.user_id === 'u_ahmad').every((b) => b.seen_at), true);
+  const copy = structuredClone(db);
+  expectEqual('nothing new to award twice', server.awardBadges(copy, 'u_ahmad', NOW), []);
+  const board = server.leaderboard(db, ahmad, null, NOW);
+  expectEqual('the board: this month, places from 1', [board.month, board.rows[0]?.rank], [rules.dayIn(NOW, rules.ASSOCIATION_TIME_ZONE).slice(0, 7), 1]);
+  const hidden = server.updateProfile(db, 'u_ahmad', { show_on_leaderboards: false });
+  expectEqual('hidden, he is not on it', server.leaderboard(hidden, hidden.users.find((u) => u.id === 'u_ahmad')!, null, NOW).rows.some((r) => r.user.id === 'u_ahmad'), false);
+  expectError('not the board of an institution one is not in', 'not_found', () => server.leaderboard(db, db.users.find((u) => u.id === 'u_mariam')!, 'inst_saraj', NOW));
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');
 process.exit(failed ? 1 : 0);

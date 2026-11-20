@@ -449,8 +449,18 @@ export interface ConfirmResponse {
 }
 
 /** GET /api/me */
+/** A badge someone earned (shared/badges.ts names it). */
+export interface BadgeItem {
+  badge_id: string;
+  earned_at: string;
+}
+
 export interface MeResponse {
   user: User;
+  /** The badges earned, newest first (older servers send none). */
+  badges?: BadgeItem[];
+  /** Badges the app has not celebrated yet; POST /api/me/badges/seen marks them. */
+  new_badges?: string[];
   total_points: number;
   level: Level;
   next_level: Level | null;
@@ -476,6 +486,8 @@ export interface MeResponse {
 export interface ProfileEdit {
   full_name?: string;
   city?: string;
+  /** Owner's decision (2026-11-20): off until the person turns it on. */
+  show_on_leaderboards?: boolean;
 }
 export interface ProfileResponse {
   user: User;
@@ -669,4 +681,27 @@ export interface InstitutionHoursReport {
   from: string;
   to: string;
   rows: { user: PublicUser; events: number; event_hours: number; outside_hours: number; hours: number }[];
+}
+
+// ---------- people, badges and leaderboards (owner's decisions, 2026-11-20) ----------
+
+/** GET /api/users/:id: someone as everyone signed in sees them: name, photo, level and badges. */
+export interface PersonResponse {
+  user: PublicUser;
+  level: number;
+  badges: BadgeItem[];
+}
+
+/**
+ * GET /api/leaderboards?institution_id=…: this month's confirmed hours (events
+ * and approved outside-app hours), the whole association's or one of the
+ * person's institutions'. Only those who turned "show me" on are listed.
+ */
+export interface LeaderboardResponse {
+  /** null = the whole association. */
+  institution: InstitutionRef | null;
+  /** YYYY-MM, where the association is. */
+  month: string;
+  rows: { rank: number; user: PublicUser; hours: number }[];
+  me: { hours: number; rank: number | null; shown: boolean };
 }

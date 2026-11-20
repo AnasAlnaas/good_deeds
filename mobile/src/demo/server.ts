@@ -3,7 +3,7 @@
 // in the on-phone database, calls the rule, and writes what the rule decided.
 // The screens never compute hours or points themselves.
 
-import type { CertificateResponse, EventProposal, InstitutionHoursReport, ProfileEdit, ReportBody } from '@/data/api';
+import type { CertificateResponse, EventProposal, InstitutionHoursReport, LeaderboardResponse, ProfileEdit, ReportBody } from '@/data/api';
 import type {
   AppEvent,
   Attendance,
@@ -22,7 +22,10 @@ import type {
   Warning,
 } from '@/data/types';
 import { NOTICE_REACTIONS } from '@/data/types';
+import { badgesEarned } from '../../../shared/badges';
+import { classOfEvent } from '../../../shared/classes';
 import { ApiError } from '../../../shared/errors';
+import { hijriMonths } from '../../../shared/hijri';
 import * as rules from '../../../shared/rules';
 import { cleanKind } from '../../../shared/tags';
 
@@ -394,6 +397,7 @@ export function updateProfile(db: Db, userId: string, edit: ProfileEdit): Db {
   const u = next.users.find((x) => x.id === userId)!;
   if (edit.full_name !== undefined) u.full_name = edit.full_name;
   if (edit.city !== undefined) u.city = edit.city;
+  if (edit.show_on_leaderboards !== undefined) u.show_on_leaderboards = edit.show_on_leaderboards;
   return next;
 }
 
@@ -419,6 +423,7 @@ export function learnLesson(db: Db, userId: string, eventId: string, lessonId: s
   if (action === 'nothing') return db;
   const next = clone(db);
   next.lesson_completions.push({ lesson_id: lessonId, user_id: userId, learned_at: new Date(now).toISOString() });
+  awardBadges(next, userId, now);
   return next;
 }
 
@@ -649,6 +654,7 @@ export function confirmAttendance(db: Db, userId: string, attendanceId: string, 
   const u = next.users.find((x) => x.id === userId)!;
   u.total_points = totalPoints(next, userId);
   u.level = levelFor(next, u.total_points).level;
+  awardBadges(next, userId, now);
   return next;
 }
 
@@ -997,6 +1003,7 @@ export function decideOutsideHours(db: Db, userId: string, institutionId: string
     const u = next.users.find((x) => x.id === row.user_id)!;
     u.total_points = totalPoints(next, row.user_id);
     u.level = levelFor(next, u.total_points).level;
+    awardBadges(next, row.user_id, now);
   }
   return next;
 }
@@ -1047,5 +1054,66 @@ export function demoCertificate(db: Db, me: User, institutionId: string | null, 
     certificate: { id: 'DEMO', user_id: me.id, institution_id: institutionId, hours, events: new Set(attended.map((a) => a.event_id)).size, outside_hours: outsideHours, issued_at: new Date(now).toISOString() },
     institution: institution ? { id: institution.id, name: institution.name, kind: institution.kind } : null,
     verify_url: null,
+  };
+}
+
+// ---------- badges (as server/src/db/queries.ts awardBadges) ----------
+
+/** Adds to `next` (a copy being changed) the badges the person's record now earns. Returns the new ones. */
+export function awardBadges(next: Db, userId: string, now: number): string[] {
+  next.user_badges ??= [];
+  const confirmed = next.attendance
+    .filter((a) => a.user_id === userId && a.participant_status === 'confirmed')
+    .flatMap((a) => {
+      const e = next.events.find((x) => x.id === a.event_id);
+      return e ? [{ event_id: e.id, event_class: classOfEvent(e), day: rules.dayIn(rules.toMs(a.started_at), rules.ASSOCIATION_TIME_ZONE) }] : [];
+    });
+  const earned = badgesEarned({
+    confirmed,
+    lessonsLearned: next.lesson_completions.filter((l) => l.user_id === userId).length,
+    hijri: hijriMonths(next.hijri_adjustments ?? []),
+  });
+  const had = new Set(next.user_badges.filter((b) => b.user_id === userId).map((b) => b.badge_id));
+  const added = earned.filter((id) => !had.has(id));
+  // The demo sends no push: the celebration in the app tells them.
+  for (const badge_id of added) next.user_badges.push({ user_id: userId, badge_id, earned_at: new Date(now).toISOString(), seen_at: null, pushed_at: new Date(now).toISOString() });
+  return added;
+}
+
+export function markBadgesSeen(db: Db, userId: string, now: number): Db {
+  const next = clone(db);
+  for (const b of next.user_badges ?? []) if (b.user_id === userId && !b.seen_at) b.seen_at = new Date(now).toISOString();
+  return next;
+}
+
+// ---------- leaderboards (as server/src/routes/leaderboards.ts) ----------
+
+export function leaderboard(db: Db, me: User, institutionId: string | null, now: number): LeaderboardResponse {
+  const institution = institutionId ? institutionOf(db, institutionId) : undefined;
+  if (institutionId && (!institution || institution.status !== 'approved' || membershipOf(db, institutionId, me.id)?.status !== 'confirmed')) throw new ApiError('not_found');
+  const tz = rules.ASSOCIATION_TIME_ZONE;
+  const month = rules.dayIn(now, tz).slice(0, 7);
+  const members = institutionId ? new Set(db.institution_members.filter((m) => m.institution_id === institutionId && m.status === 'confirmed').map((m) => m.user_id)) : null;
+  const totals = new Map<string, number>();
+  for (const a of db.attendance) {
+    if (a.participant_status !== 'confirmed' || (members && !members.has(a.user_id))) continue;
+    if (rules.dayIn(rules.toMs(a.started_at), tz).slice(0, 7) === month) totals.set(a.user_id, (totals.get(a.user_id) ?? 0) + (a.hours ?? 0));
+  }
+  for (const o of db.outside_hours ?? []) {
+    if (o.status !== 'approved' || (members && !members.has(o.user_id)) || o.done_on.slice(0, 7) !== month) continue;
+    totals.set(o.user_id, (totals.get(o.user_id) ?? 0) + o.minutes / 60);
+  }
+  const ranked = [...totals]
+    .map(([id, hours]) => ({ u: getUser(db, id), hours: rules.round2(hours) }))
+    .filter((r): r is { u: User; hours: number } => !!r.u && !r.u.deleted_at && r.u.show_on_leaderboards && r.hours > 0)
+    .sort((a, b) => b.hours - a.hours || a.u.full_name.localeCompare(b.u.full_name, 'ar'));
+  const rankOf = (i: number) => ranked.findIndex((r) => r.hours === ranked[i].hours) + 1;
+  const mine = ranked.findIndex((r) => r.u.id === me.id);
+  const shown = (u: User) => ({ id: u.id, full_name: u.full_name, avatar_url: !u.avatar_url || rules.canSeePhoto(me, u) ? u.avatar_url : null, gender: u.gender });
+  return {
+    institution: institution ? { id: institution.id, name: institution.name, kind: institution.kind } : null,
+    month,
+    rows: ranked.slice(0, 20).map((r, i) => ({ rank: rankOf(i), user: shown(r.u), hours: r.hours })),
+    me: { hours: rules.round2(totals.get(me.id) ?? 0), rank: mine >= 0 ? rankOf(mine) : null, shown: me.show_on_leaderboards },
   };
 }

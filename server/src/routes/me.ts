@@ -15,6 +15,7 @@ import type {
   MyLesson,
   MyReport,
   MyWarning,
+  PersonResponse,
   PhotoResponse,
   ProfileResponse,
   RequestCodeResponse,
@@ -27,6 +28,7 @@ import type { Database } from '../db/client';
 import {
   allLevels,
   attendanceById,
+  awardBadges,
   creditPoints,
   findEvent,
   findUser,
@@ -49,7 +51,7 @@ const pushToken = z.string().regex(/^Expo(nent)?PushToken\[[^\]]+\]$/);
 const pushTokenBody = z.object({ token: pushToken, lang: z.enum(['ar', 'en']) });
 const photoBody = z.object({ jpeg_base64: z.string().min(1) });
 // Anything else (gender, phone, role) is refused, not quietly dropped; the lengths are the rule's (rules.cleanProfileEdit).
-const profileBody = z.object({ full_name: z.string().optional(), city: z.string().optional() }).strict();
+const profileBody = z.object({ full_name: z.string().optional(), city: z.string().optional(), show_on_leaderboards: z.boolean().optional() }).strict();
 const email = z
   .string()
   .max(rules.EMAIL_MAX + 20)
@@ -123,8 +125,10 @@ export const meRoutes = new Hono<AppEnv>()
   .use(requireUser)
 
   .get('/', async (c) => {
-    const { db } = c.var.deps;
+    const { db, now } = c.var.deps;
     const user = c.var.user;
+    // Events confirmed before badges existed count too: anything earned and not stored is stored now.
+    await awardBadges(db, user.id, new Date(now()));
     const total = rules.totalPoints(await ledgerOf(db, user.id));
     const levels = await allLevels(db);
     const level = rules.levelFor(levels, total);
@@ -133,13 +137,21 @@ export const meRoutes = new Hono<AppEnv>()
       .from(s.attendance)
       .where(and(eq(s.attendance.user_id, user.id), eq(s.attendance.participant_status, 'confirmed')));
     const [warnings] = await db.select({ n: count() }).from(s.warnings).where(eq(s.warnings.user_id, user.id));
+    // Approved hours outside the app's events count with the events' (owner's decisions, 2026-11-19).
+    const outside = await db
+      .select({ minutes: s.outside_hours.minutes })
+      .from(s.outside_hours)
+      .where(and(eq(s.outside_hours.user_id, user.id), eq(s.outside_hours.status, 'approved')));
+    const badges = await db.select().from(s.user_badges).where(eq(s.user_badges.user_id, user.id)).orderBy(desc(s.user_badges.earned_at));
     return c.json<MeResponse>({
       user,
+      badges: badges.map((b) => ({ badge_id: b.badge_id, earned_at: b.earned_at.toISOString() })),
+      new_badges: badges.filter((b) => !b.seen_at).map((b) => b.badge_id),
       total_points: total,
       level,
       next_level: rules.nextLevel(levels, total) ?? null,
       levels,
-      confirmed_hours: rules.round2(confirmed.reduce((sum, r) => sum + (r.hours ?? 0), 0)),
+      confirmed_hours: rules.round2(confirmed.reduce((sum, r) => sum + (r.hours ?? 0), 0) + outside.reduce((sum, o) => sum + o.minutes, 0) / 60),
       // Representatives of institutions open the form too, for events in their institutions' names.
       can_create_events: rules.mayProposeEvents(user, level, (await representedInstitutions(db, user.id)).length > 0),
       create_events_level: levels.find((l) => l.can_create_events)?.level ?? null,
@@ -193,7 +205,17 @@ export const meRoutes = new Hono<AppEnv>()
     return c.json<MyWarning[]>(await asMyWarnings(db, c.var.user, rows.map(iso)));
   })
 
-  // The name and the city, checked as at sign-up. Gender and phone stay as they are.
+  // The app celebrated these badges (or all new ones): they are not shown again.
+  .post('/badges/seen', async (c) => {
+    const { db, now } = c.var.deps;
+    await db
+      .update(s.user_badges)
+      .set({ seen_at: new Date(now()) })
+      .where(and(eq(s.user_badges.user_id, c.var.user.id), isNull(s.user_badges.seen_at)));
+    return c.body(null, 204);
+  })
+
+  // The name and the city, checked as at sign-up, and whether to show on the leaderboards. Gender and phone stay as they are.
   .patch('/', async (c) => {
     const { db } = c.var.deps;
     const edit = rules.cleanProfileEdit(await readBody(c, profileBody));
@@ -361,6 +383,19 @@ export const attendanceRoutes = new Hono<AppEnv>()
 
 export const userRoutes = new Hono<AppEnv>()
   .use(requireUser)
+
+  // Someone as everyone signed in sees them (owner's decision, 2026-11-20: badges are seen by everyone).
+  .get('/:id', async (c) => {
+    const { db } = c.var.deps;
+    const person = await findUser(db, c.req.param('id'));
+    if (!person || person.deleted_at) throw new ApiError('not_found');
+    const badges = await db.select().from(s.user_badges).where(eq(s.user_badges.user_id, person.id)).orderBy(desc(s.user_badges.earned_at));
+    return c.json<PersonResponse>({
+      user: shownTo(c.var.user, { id: person.id, full_name: person.full_name, avatar_url: person.avatar_url, gender: person.gender }),
+      level: person.level,
+      badges: badges.map((b) => ({ badge_id: b.badge_id, earned_at: b.earned_at.toISOString() })),
+    });
+  })
 
   // Someone's photo, for whoever may see it (rules.canSeePhoto). Anyone else is
   // told there is none, so the answer does not reveal that a photo exists.

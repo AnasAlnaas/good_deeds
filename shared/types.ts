@@ -21,6 +21,8 @@ export interface User {
   level: number;
   total_points: number;
   is_association_member: boolean;
+  /** Owner's decision (2026-11-20): off until the person turns it on (on the leaderboards screen). */
+  show_on_leaderboards: boolean;
   created_at: string;
   deleted_at: string | null;
 }
@@ -348,6 +350,25 @@ export interface Certificate {
   issued_at: string;
 }
 
+/** A badge a person earned (shared/badges.ts). `seen_at` null: the app has not celebrated it yet. */
+export interface UserBadge {
+  user_id: string;
+  badge_id: string;
+  earned_at: string;
+  seen_at: string | null;
+  /** When the person was told by push (the scheduled job); null = not yet. */
+  pushed_at: string | null;
+}
+
+/** An admin moved a Hijri month's start by a day after the moon was sighted (shared/hijri.ts). */
+export interface HijriAdjustmentRow {
+  year: number;
+  month: number;
+  days: number;
+  set_by: string;
+  set_at: string;
+}
+
 export interface Level {
   level: number;
   min_points: number;
@@ -431,4 +452,6 @@ export interface Db {
   institutions: Institution[];
   institution_members: InstitutionMember[];
   outside_hours: OutsideHours[];
+  user_badges: UserBadge[];
+  hijri_adjustments: HijriAdjustmentRow[];
 }

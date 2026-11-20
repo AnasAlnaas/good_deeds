@@ -51,6 +51,7 @@ export const adminAction = pgEnum('admin_action', [
   'add_representative',
   'remove_representative',
   'remove_cover',
+  'set_hijri_month',
 ]);
 export const reportCategory = pgEnum('report_category', ['behaviour', 'safety', 'event', 'app', 'other']);
 export const reportStatus = pgEnum('report_status', ['open', 'handled']);
@@ -83,6 +84,7 @@ export const users = pgTable(
     level: integer('level').notNull().default(0),
     total_points: points('total_points').notNull().default(0),
     is_association_member: boolean('is_association_member').notNull().default(false),
+    show_on_leaderboards: boolean('show_on_leaderboards').notNull().default(false),
     created_at: at('created_at').notNull().defaultNow(),
     deleted_at: at('deleted_at'),
   },
@@ -391,6 +393,32 @@ export const outside_hours = pgTable(
     index('outside_hours_institution').on(t.institution_id, t.status),
     check('outside_hours_minutes_range', sql`${t.minutes} > 0 and ${t.minutes} <= 720`),
   ],
+);
+
+// Badges earned (shared/badges.ts), each once; seen_at: the app celebrated it.
+export const user_badges = pgTable(
+  'user_badges',
+  {
+    user_id: text('user_id').notNull().references(() => users.id),
+    badge_id: text('badge_id').notNull(),
+    earned_at: at('earned_at').notNull(),
+    seen_at: at('seen_at'),
+    pushed_at: at('pushed_at'),
+  },
+  (t) => [primaryKey({ columns: [t.user_id, t.badge_id] }), index('user_badges_to_push').on(t.earned_at).where(sql`${t.pushed_at} is null`)],
+);
+
+// The admins' moves of Hijri months' starts (shared/hijri.ts), a day either way.
+export const hijri_adjustments = pgTable(
+  'hijri_adjustments',
+  {
+    year: integer('year').notNull(),
+    month: integer('month').notNull(),
+    days: integer('days').notNull(),
+    set_by: text('set_by').notNull().references(() => users.id),
+    set_at: at('set_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.year, t.month] }), check('hijri_adjustments_days', sql`${t.days} between -1 and 1`)],
 );
 
 // Certificates of confirmed hours, as they were when made (shared/types.ts Certificate).

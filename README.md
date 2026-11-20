@@ -203,6 +203,26 @@ code. Representatives download their institution's hours report as a CSV
 (Institutions → تقرير الساعات); the admin panel's report counts outside hours too,
 and its overview shows hours by month, organiser and city.
 
+### Badges and leaderboards
+
+Owner's decisions (2026-11-20; `shared/badges.ts`). Badges come from a person's own
+record: confirmed events (1, 5, 10, 25, 50), events in one class (5, 10, 20: seed,
+sapling, fruitful tree), classes tried (2, 3, all 4), months in a row (3, 6, 12),
+lessons learned (10, 25), and a confirmed event in Ramadan or in the first ten days
+of Dhul Hijjah. They are awarded where points are credited, where a lesson is
+learned and when the profile loads; the timer pushes each new one once, and the app
+celebrates it the next time the profile opens. Everyone sees them (Profile, and a
+person's page from the leaderboard).
+
+Hijri dates follow Umm al-Qura (`shared/hijri.ts`, a table to 1457 / 2035, extend
+before then). After the moon is sighted an admin moves a month's start a day either
+way in the panel (الأشهر الهجرية).
+
+Leaderboards rank this month's confirmed hours (events and approved outside-app
+hours), for the whole association or one of the person's institutions. Nobody is
+listed until they choose "show me" on the leaderboard screen; the demo's people
+have it on.
+
 ### Push notifications
 
 The app registers the phone for notifications when someone signs in to the

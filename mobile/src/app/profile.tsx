@@ -4,6 +4,7 @@ import { ActivityIndicator, Alert, Platform, StyleSheet, View } from 'react-nati
 import { Avatar } from '@/components/Avatar';
 import { LogoMark } from '@/components/brand';
 import { Button } from '@/components/Button';
+import { BadgeCelebration, BadgeGrid } from '@/components/Badges';
 import { LevelRoad, useLevelName } from '@/components/LevelRoad';
 import { ProgressBar } from '@/components/ProgressBar';
 import { Screen } from '@/components/Screen';
@@ -131,6 +132,16 @@ export default function ProfileScreen() {
         </Card>
       ) : null}
 
+      {/* Badges (owner's decisions, 2026-11-20): seen by everyone; new ones are celebrated once. */}
+      {summary.data.badges && (
+        <Card>
+          <Txt variant="sectionTitle">{s.badges.title}</Txt>
+          <BadgeGrid badges={summary.data.badges} />
+          <Button variant="quiet" icon="ribbon-outline" label={s.badges.showAll} onPress={() => router.push('/badges')} />
+        </Card>
+      )}
+      <BadgeCelebration ids={summary.data.new_badges ?? []} />
+
       <Card>
         <InfoRow icon="call-outline" label={s.profile.phone} value={ltr(me.phone)} />
         <InfoRow icon="business-outline" label={s.profile.city} value={cityName(me.city, lang)} />
@@ -140,6 +151,8 @@ export default function ProfileScreen() {
       <Button variant="secondary" icon="ribbon-outline" label={s.profile.hoursRecord} onPress={() => router.push('/hours')} />
 
       <Button variant="secondary" icon="school-outline" label={s.profile.lessons} onPress={() => router.push('/lessons')} />
+
+      <Button variant="secondary" icon="trophy-outline" label={s.leaderboards.open} onPress={() => router.push('/leaderboards')} />
 
       {/* Representatives see the requests waiting for them on the button. */}
       <Button

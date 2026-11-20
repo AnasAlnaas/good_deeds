@@ -17,6 +17,7 @@ import type {
   DisputeRow,
   EventInput,
   HandleReportBody,
+  AdminHijriMonth,
   AdminHoursStats,
   HoursReportRow,
   ResetCodeResponse,
@@ -111,6 +112,8 @@ export const api = {
   },
   decideWarning: (id: string, body: DecideWarningBody) => call<void>('POST', `/admin/warnings/${enc(id)}/decide`, body),
 
+  hijri: () => call<AdminHijriMonth[]>('GET', '/admin/hijri'),
+  setHijri: (year: number, month: number, days: number) => call<void>('PUT', `/admin/hijri/${year}/${month}`, { days }),
   hoursStats: () => call<AdminHoursStats>('GET', '/admin/stats/hours'),
   /** `institution`: an institution's id, `association` for the association's own events, empty for all. */
   hoursReport: (from: string, to: string, institution = '') =>

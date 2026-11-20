@@ -524,6 +524,39 @@ const ar = {
     line: '{name}: {hours} ({events} فعالية، {outside} خارج التطبيق)',
   },
 
+  badges: {
+    title: 'الأوسمة',
+    none: 'لا أوسمة بعد. أول فعالية مؤكدة تمنحك وسام «الخطوة الأولى».',
+    earnedOn: 'نالها {day}',
+    allTitle: 'كل الأوسمة',
+    locked: 'لم تُنل بعد',
+    celebrateTitle: 'وسام جديد',
+    celebrateMany: 'أوسمة جديدة',
+    celebrateBody: 'بارك الله في عملك وتقبّله.',
+    celebrateOk: 'الحمد لله',
+    showAll: 'اعرض كل الأوسمة',
+  },
+
+  leaderboards: {
+    title: 'لوحة المتصدّرين',
+    open: 'لوحة المتصدّرين',
+    association: 'الجمعية كلها',
+    month: 'ساعات هذا الشهر المؤكدة',
+    empty: 'لا أحد في اللوحة هذا الشهر بعد.',
+    you: 'أنت',
+    yourHours: 'ساعاتك هذا الشهر: {hours}',
+    yourRank: 'ترتيبك: {rank}',
+    hidden: 'لا تظهر في اللوحة. يراك الآخرون فيها إن أردت.',
+    showMe: 'أظهرني في اللوحة',
+    hideMe: 'لا تظهرني',
+    note: 'تبدأ اللوحة من جديد أول كل شهر. لا يظهر فيها إلا من اختار ذلك.',
+  },
+
+  person: {
+    title: 'الملف',
+    level: 'المستوى {n}',
+  },
+
   myLessons: {
     title: 'ما تعلّمته',
     picture: 'درس مصوّر',
@@ -1480,6 +1513,39 @@ const en: Strings = {
     share: 'Share the report',
     header: 'Hours report of "{name}" from {from} to {to}',
     line: '{name}: {hours} ({events} events, {outside} outside the app)',
+  },
+
+  badges: {
+    title: 'Badges',
+    none: 'No badges yet. Your first confirmed event earns "First step".',
+    earnedOn: 'Earned {day}',
+    allTitle: 'All badges',
+    locked: 'Not earned yet',
+    celebrateTitle: 'A new badge',
+    celebrateMany: 'New badges',
+    celebrateBody: 'May God bless your work and accept it.',
+    celebrateOk: 'Alhamdulillah',
+    showAll: 'See all badges',
+  },
+
+  leaderboards: {
+    title: 'Leaderboards',
+    open: 'Leaderboards',
+    association: 'Whole association',
+    month: "This month's confirmed hours",
+    empty: 'Nobody is on the board this month yet.',
+    you: 'You',
+    yourHours: 'Your hours this month: {hours}',
+    yourRank: 'Your place: {rank}',
+    hidden: 'You are not on the board. Others see you there if you want.',
+    showMe: 'Show me on the board',
+    hideMe: 'Hide me',
+    note: 'The board starts again on the first of each month. Only those who chose it are listed.',
+  },
+
+  person: {
+    title: 'Profile',
+    level: 'Level {n}',
   },
 
   myLessons: {

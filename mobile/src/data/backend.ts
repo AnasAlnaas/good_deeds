@@ -7,6 +7,8 @@ import { ApiError, type ApiErrorCode } from '../../../shared/errors';
 import type {
   AcceptTermResponse,
   AttendanceItem,
+  LeaderboardResponse,
+  PersonResponse,
   CertificateResponse,
   MakeCertificateBody,
   ClaimOutsideHoursBody,
@@ -156,4 +158,10 @@ export interface Backend {
   institutionHoursReport(id: string, from: string, to: string): Promise<InstitutionHoursReport>;
   /** A certificate of the person's confirmed hours, made from the server's records so its QR code can be checked. */
   makeCertificate(body: MakeCertificateBody): Promise<CertificateResponse>;
+  /** The app celebrated the new badges: they are not shown again. */
+  markBadgesSeen(): Promise<void>;
+  /** Someone as everyone sees them: name, photo, level and badges. */
+  person(id: string): Promise<PersonResponse>;
+  /** This month's confirmed hours: the whole association's, or one of the person's institutions'. */
+  leaderboard(institutionId: string | null): Promise<LeaderboardResponse>;
 }

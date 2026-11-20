@@ -16,6 +16,7 @@ import { authRoutes } from './routes/auth';
 import { certificateRoutes, verifyRoutes } from './routes/certificates';
 import { eventRoutes } from './routes/events';
 import { institutionRoutes } from './routes/institutions';
+import { leaderboardRoutes } from './routes/leaderboards';
 import { outsideHoursRoutes } from './routes/outside-hours';
 import { attendanceRoutes, meRoutes, userRoutes } from './routes/me';
 import { lessonImageRoutes } from './routes/lesson-images';
@@ -44,6 +45,7 @@ export function createApp(deps: AppDeps) {
   app.route('/events', eventRoutes);
   app.route('/institutions', institutionRoutes);
   app.route('/outside-hours', outsideHoursRoutes);
+  app.route('/leaderboards', leaderboardRoutes);
   app.route('/me/certificates', certificateRoutes);
   app.route('/me', meRoutes);
   app.route('/verify', verifyRoutes);
