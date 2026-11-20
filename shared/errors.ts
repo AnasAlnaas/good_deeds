@@ -94,7 +94,8 @@ export type AdminErrorCode =
   | 'institution_not_waiting'
   | 'institution_not_approved'
   | 'no_such_user'
-  | 'already_representative';
+  | 'already_representative'
+  | 'skill_exists';
 
 export class AdminError extends Error {
   readonly code: AdminErrorCode;

@@ -9,6 +9,7 @@ import type { AppEvent, Attendance, Db, GenderCategory, MeetingPlatform, User } 
 import { classOf } from './classes';
 import { LEVELS } from './placeholders';
 import { badgesEarned } from './badges';
+import { SKILLS_OF_SUBTYPE, STARTING_SKILLS } from './skills';
 import { hijriMonths } from './hijri';
 import { ASSOCIATION_TIME_ZONE, dayIn, levelFor, pointsForHours } from './rules';
 
@@ -27,7 +28,7 @@ import { ASSOCIATION_TIME_ZONE, dayIn, levelFor, pointsForHours } from './rules'
 // 14: events may have a cover photo.
 // 15: points by the half hour, levels 0–10, and supervisors' pledges.
 // 16: the point made a minute (levels ×30).
-export const SEED_VERSION = 18;
+export const SEED_VERSION = 19;
 
 /** The demo's institution: approved, with خالد as its representative. */
 export const DEMO_INSTITUTION = 'inst_saraj';
@@ -326,6 +327,17 @@ export function buildSeed(nowMs: number): Db {
     ],
     user_badges: [],
     hijri_adjustments: [],
+    skills: STARTING_SKILLS.map((x) => ({ ...x, is_active: true, created_at: created })),
+    // أحمد teaches and likes learning and the environment, so the matching has someone to match.
+    user_skills: [
+      { user_id: 'u_ahmad', skill_id: 'teaching' },
+      { user_id: 'u_ahmad', skill_id: 'children' },
+    ],
+    user_interests: [
+      { user_id: 'u_ahmad', event_class: 'learning' },
+      { user_id: 'u_ahmad', event_class: 'environment' },
+    ],
+    event_skills: [],
     // Hours أحمد did for the team outside the app's events, waiting for خالد (rules.assertCanClaimOutsideHours).
     outside_hours: [
       {
@@ -448,6 +460,9 @@ export function buildSeed(nowMs: number): Db {
   // Waiting for the participant to confirm or dispute.
   att('e15', 'u_ahmad', day(-2, 9, 10), day(-2, 11, 40), 'live', 'pending');
   att('e15', 'u_mariam', day(-2, 9, 30), day(-2, 12), 'auto_closed', 'pending');
+
+  // Each event names the skills its type suggests (shared/skills.ts).
+  for (const e of db.events) for (const skill_id of SKILLS_OF_SUBTYPE[e.subtype] ?? []) db.event_skills.push({ event_id: e.id, skill_id });
 
   // Ledger rows for already-confirmed attendance, computed with the same formula as the server.
   for (const a of db.attendance.filter((x) => x.participant_status === 'confirmed')) {

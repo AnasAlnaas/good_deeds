@@ -722,5 +722,15 @@ console.log('\n— badges and leaderboards (as server/scripts/check-engagement.t
   expectError('not the board of an institution one is not in', 'not_found', () => server.leaderboard(db, db.users.find((u) => u.id === 'u_mariam')!, 'inst_saraj', NOW));
 }
 
+console.log('\n— skills and matching (as server/scripts/check-skills.ts)');
+{
+  const ahmad = db.users.find((u) => u.id === 'u_ahmad')!;
+  const matches = server.skillMatches(db, ahmad, NOW);
+  expectEqual('ahmad\'s best fit: the demo\'s tutoring', [matches[0]?.event_id, matches[0]?.score], ['e05', 5]);
+  const saved = server.setMySkills(db, 'u_mariam', { skill_ids: ['nursing', 'flying', 'nursing'], classes: ['health', 'space'] });
+  expectEqual('mariam\'s, cleaned', [server.mySkills(saved, 'u_mariam').skill_ids, server.mySkills(saved, 'u_mariam').classes], [['nursing'], ['health']]);
+  expectEqual('an event names its type\'s skills (a Quran circle)', server.skillsOfEvent(db, 'e05').sort(), ['children', 'quran', 'teaching']);
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');
 process.exit(failed ? 1 : 0);

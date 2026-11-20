@@ -286,6 +286,7 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
             : null,
           meeting_link_opens_at: e.location_type === 'online' ? rules.meetingLinkOpensAt(e) : null,
           terms: server.eventTerms(db, id),
+          skill_ids: server.skillsOfEvent(db, id),
           lessons: lessonItems(db, me.id, id),
           participants: server.joinedUsers(db, id).map((u) => publicUser(me, u)),
           my_registration: reg ?? null,
@@ -315,6 +316,7 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
           waiting: server.waitingProposals(db, me.id),
           max_waiting: rules.MAX_WAITING_PROPOSALS,
           lesson_library: libraryItems(db, me.id),
+          skills: server.skillList(db),
           own_events: server.canCreateEvents(db, me),
           institutions: server.representedInstitutions(db, me.id).map((i) => ({
             id: i.id,
@@ -720,6 +722,24 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
       async(() => {
         const { db, me } = change((d, t) => server.decideOutsideHours(d, meId, id, claimId, body.decision, body.note, t));
         return outsideHoursItems(db, me, [db.outside_hours.find((c) => c.id === claimId)!])[0];
+      }),
+
+    mySkills: () =>
+      async(() => {
+        const { db, me } = read();
+        return server.mySkills(db, me.id);
+      }),
+
+    setMySkills: (body) =>
+      async(() => {
+        const { db } = change((d) => server.setMySkills(d, meId, body));
+        return server.mySkills(db, meId);
+      }),
+
+    skillMatches: () =>
+      async(() => {
+        const { db, me } = read();
+        return server.skillMatches(db, me, Date.now());
       }),
 
     markBadgesSeen: () =>

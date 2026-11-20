@@ -39,6 +39,7 @@ export const t = {
     users: 'الأعضاء',
     institutions: 'المؤسسات',
     report: 'تقرير الساعات',
+    skills: 'المهارات',
     hijri: 'الأشهر الهجرية',
     audit: 'سجل الإجراءات',
   },
@@ -404,6 +405,23 @@ export const t = {
     fileName: 'ساعات-التطوع',
   },
 
+  skills: {
+    title: 'المهارات',
+    body: 'المهارات التي يختارها المتطوعون وتذكرها الفعاليات، لاقتراح الفعاليات المناسبة. من يملك أي مهارة لا يراه إلا هو والإدارة.',
+    nameAr: 'اسم المهارة بالعربية',
+    nameEn: 'اسمها بالإنجليزية (اختياري)',
+    add: 'أضف مهارة',
+    name: 'المهارة',
+    people: 'اختارها',
+    events: 'فعاليات تذكرها',
+    rename: 'غيّر الاسم',
+    renameAr: 'الاسم بالعربية',
+    renameEn: 'الاسم بالإنجليزية',
+    hide: 'أخفها',
+    offer: 'اعرضها من جديد',
+    hidden: 'مخفية: لا تُعرض، ويبقيها من اختارها.',
+  },
+
   hijri: {
     title: 'الأشهر الهجرية',
     body: 'تتبع الأشهر تقويم أم القرى. بعد رؤية الهلال قدّم بداية الشهر يوماً أو أخّرها يوماً. يحدّد رمضان والعشر من ذي الحجة أوسمة الأوقات المباركة.',
@@ -447,6 +465,7 @@ export const t = {
       remove_representative: 'إزالة ممثّل من مؤسسة',
       remove_cover: 'إزالة صورة غلاف',
       set_hijri_month: 'تعديل بداية شهر هجري',
+      change_skill: 'تعديل قائمة المهارات',
     } satisfies Record<AdminAction, string>,
     decisions: { accept: 'اعتُمدت كما سُجّلت', correct: 'عُدّلت', reject: 'لم تُحتسب' } as Record<string, string>,
     fields: {
@@ -609,5 +628,6 @@ export const t = {
     institution_not_approved: 'لم تُعتمد هذه المؤسسة بعد.',
     no_such_user: 'لا عضو بهذا الرقم في التطبيق. يسجّل الشخص في التطبيق أولاً.',
     already_representative: 'هذا العضو ممثّل لهذه المؤسسة.',
+    skill_exists: 'هذه المهارة في القائمة.',
   } satisfies Record<ErrorCode, string>,
 };

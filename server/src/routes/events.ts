@@ -28,6 +28,7 @@ import type {
 } from '../../../shared/api';
 import { classOfEvent, eventSubtypes } from '../../../shared/classes';
 import { ApiError } from '../../../shared/errors';
+import { skillList } from './skills';
 import * as rules from '../../../shared/rules';
 import { inLessonLibrary, lessonLibrary } from '../../../shared/lesson-library';
 import { promotedTags } from '../../../shared/tags';
@@ -68,7 +69,7 @@ import * as s from '../db/schema';
 import { type AppEnv, readBody } from '../http';
 import { notifyEventNotice, notifyHoursToConfirm, notifyPlaceOffered, notifySupervisorAdded, notifyWarningGiven } from '../notify';
 import { fillOpenPlaces, waitlistOf } from '../waitlist';
-import { assertCoverExists, kindOf, placeOf, proposalInput, removeLessons, writeLessons, writeLinks, writeTerms } from './event-input';
+import { assertCoverExists, kindOf, placeOf, proposalInput, removeLessons, writeLessons, writeLinks, writeTerms, skillsOfEvent, writeSkills } from './event-input';
 import { dropUnusedImages } from '../lesson-images';
 
 // `recorded_at`: the record was made on the phone without a connection, at that time (rules.decideRecordStart).
@@ -213,6 +214,7 @@ export const eventRoutes = new Hono<AppEnv>()
       lesson_library: await lessonLibraryFor(db, me),
       own_events: rules.canCreateEvents(me, level),
       institutions,
+      skills: await skillList(db),
     });
   })
 
@@ -257,6 +259,7 @@ export const eventRoutes = new Hono<AppEnv>()
       await writeLinks(tx, id, [me.id]);
       await writeTerms(tx, id, body.terms, new Date(t));
       await writeLessons(tx, id, body.lessons, new Date(t));
+      await writeSkills(tx, id, body.skill_ids, body.subtype, true);
       return status;
     });
     return c.json<ProposeEventResponse>({ id, status }, 201);
@@ -313,6 +316,7 @@ export const eventRoutes = new Hono<AppEnv>()
       // Nobody can join a draft, so nobody has accepted its terms or learned its lessons yet.
       await writeTerms(tx, id, body.terms, new Date(t));
       await writeLessons(tx, id, body.lessons, new Date(t));
+      await writeSkills(tx, id, body.skill_ids, body.subtype, false);
     });
     return c.json<ProposeEventResponse>({ id, status: 'draft' });
   })
@@ -332,6 +336,7 @@ export const eventRoutes = new Hono<AppEnv>()
       const [row] = await tx.select().from(s.events).where(eq(s.events.id, id)).for('update');
       rules.assertCanChangeProposal(me, row);
       await tx.delete(s.event_terms).where(eq(s.event_terms.event_id, id));
+      await tx.delete(s.event_skills).where(eq(s.event_skills.event_id, id));
       await removeLessons(tx, id);
       await tx.delete(s.event_organizers).where(eq(s.event_organizers.event_id, id));
       await tx.delete(s.events).where(eq(s.events.id, id));
@@ -360,6 +365,7 @@ export const eventRoutes = new Hono<AppEnv>()
       meeting_url: showLink ? event.meeting_url : null,
       meeting_link_opens_at: online ? rules.meetingLinkOpensAt(event) : null,
       terms: await termsOf(db, id),
+      skill_ids: await skillsOfEvent(db, id),
       lessons: await lessonItems(db, me.id, id),
       participants: (await joinedUsers(db, id)).map((u) => shownTo(me, u)),
       my_registration: registration ?? null,

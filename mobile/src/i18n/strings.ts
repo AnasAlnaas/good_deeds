@@ -239,6 +239,8 @@ const ar = {
     videoInvalid: 'هذا ليس رابط فيديو على يوتيوب.',
     addLesson: 'أضف درساً',
     removeLesson: 'احذف الدرس {n}',
+    skills: 'مهارات تساعد في الفعالية',
+    skillsNote: 'اقترحناها من نوع الفعالية؛ غيّرها كما ترى. يراها من تناسبه مهاراته.',
     cover: 'صورة الغلاف (اختيارية)',
     coverNote: 'اختر صورة للمكان أو للعمل، لا لوجوه الناس.',
     addCover: 'اختر صورة الغلاف',
@@ -555,6 +557,17 @@ const ar = {
   person: {
     title: 'الملف',
     level: 'المستوى {n}',
+  },
+
+  skills: {
+    title: 'مهاراتي واهتماماتي',
+    open: 'مهاراتي واهتماماتي',
+    intro: 'اختر ما تحسنه وما تحبه من العمل الصالح، فنقترح عليك الفعاليات المناسبة. لا يراها إلا أنت وإدارة الجمعية.',
+    skillsTitle: 'مهاراتي',
+    classesTitle: 'أحب العمل في',
+    max: 'حتى {n} مهارات.',
+    save: 'احفظ',
+    saved: 'حُفظت مهاراتك واهتماماتك.',
   },
 
   myLessons: {
@@ -1231,6 +1244,8 @@ const en: Strings = {
     videoInvalid: "That isn't a link to a YouTube video.",
     addLesson: 'Add a lesson',
     removeLesson: 'Remove lesson {n}',
+    skills: 'Skills that help',
+    skillsNote: 'Suggested from the event type; change them as you see fit. Those whose skills fit will see it.',
     cover: 'Cover photo (optional)',
     coverNote: 'Choose a photo of the place or the work, not of people\'s faces.',
     addCover: 'Choose a cover photo',
@@ -1546,6 +1561,17 @@ const en: Strings = {
   person: {
     title: 'Profile',
     level: 'Level {n}',
+  },
+
+  skills: {
+    title: 'My skills and interests',
+    open: 'My skills and interests',
+    intro: 'Choose what you are good at and the good works you like, and we will suggest events that fit. Only you and the association see them.',
+    skillsTitle: 'My skills',
+    classesTitle: 'I like working in',
+    max: 'Up to {n} skills.',
+    save: 'Save',
+    saved: 'Your skills and interests were saved.',
   },
 
   myLessons: {

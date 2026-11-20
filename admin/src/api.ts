@@ -24,7 +24,7 @@ import type {
   ResolveDisputeBody,
   StatusChangeBody,
 } from '../../shared/admin-api';
-import type { LessonImageResponse, LoginResponse, ResetPasswordBody, SignInBody } from '../../shared/api';
+import type { AdminSkillRow, LessonImageResponse, LoginResponse, ResetPasswordBody, SignInBody } from '../../shared/api';
 import type { ReportStatus, WarningStatus } from '../../shared/types';
 import type { ErrorCode } from './strings';
 
@@ -112,6 +112,9 @@ export const api = {
   },
   decideWarning: (id: string, body: DecideWarningBody) => call<void>('POST', `/admin/warnings/${enc(id)}/decide`, body),
 
+  skills: () => call<AdminSkillRow[]>('GET', '/admin/skills'),
+  addSkill: (name_ar: string, name_en: string) => call<AdminSkillRow[]>('POST', '/admin/skills', { name_ar, name_en }),
+  editSkill: (id: string, edit: { name_ar?: string; name_en?: string; is_active?: boolean }) => call<AdminSkillRow[]>('PATCH', `/admin/skills/${enc(id)}`, edit),
   hijri: () => call<AdminHijriMonth[]>('GET', '/admin/hijri'),
   setHijri: (year: number, month: number, days: number) => call<void>('PUT', `/admin/hijri/${year}/${month}`, { days }),
   hoursStats: () => call<AdminHoursStats>('GET', '/admin/stats/hours'),

@@ -154,6 +154,8 @@ export default function ProfileScreen() {
 
       <Button variant="secondary" icon="trophy-outline" label={s.leaderboards.open} onPress={() => router.push('/leaderboards')} />
 
+      <Button variant="secondary" icon="construct-outline" label={s.skills.open} onPress={() => router.push('/skills')} />
+
       {/* Representatives see the requests waiting for them on the button. */}
       <Button
         variant={summary.data.institution_requests ? 'primary' : 'secondary'}

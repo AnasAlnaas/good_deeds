@@ -197,6 +197,8 @@ export interface EventProposal {
    * rules.COVER_WIDTH_PX). Absent = unchanged (an older app); null = none.
    */
   cover_image_id?: string | null;
+  /** The skills that help (shared/skills.ts); absent = its type's suggestions on a new event, unchanged on an edit. */
+  skill_ids?: string[];
 }
 
 export interface LessonInput {
@@ -226,6 +228,8 @@ export interface EventFormMeta {
    * form then offers the types only.
    */
   tags?: EventTag[];
+  /** The skills offered, for "skills that help" (older servers send none). */
+  skills?: SkillRef[];
   /** false = the event waits for an admin's approval (in the proposer's own name; an institution's says so itself). */
   publishes_directly: boolean;
   /**
@@ -272,6 +276,8 @@ export interface EventDetail extends EventSummary {
   meeting_url: string | null;
   /** An online event: when those who joined see its link (rules.meetingLinkOpensAt). null in a place. */
   meeting_link_opens_at: string | null;
+  /** The skills that help (older servers send none). */
+  skill_ids?: string[];
   terms: EventTerm[];
   /** In order (rules.sortLessons), each with whether the signed-in user learned it. */
   lessons: EventLessonItem[];
@@ -704,4 +710,41 @@ export interface LeaderboardResponse {
   month: string;
   rows: { rank: number; user: PublicUser; hours: number }[];
   me: { hours: number; rank: number | null; shown: boolean };
+}
+
+// ---------- skills and matching (owner's decisions, 2026-11-20) ----------
+
+export interface SkillRef {
+  id: string;
+  name_ar: string;
+  name_en: string;
+}
+
+/** GET /api/me/skills: the person's skills and liked classes (only they and admins see them), and the skills offered. */
+export interface MySkillsResponse {
+  skill_ids: string[];
+  classes: EventClassId[];
+  offered: SkillRef[];
+}
+
+/** PUT /api/me/skills: replaces them. Answers MySkillsResponse. */
+export interface MySkillsBody {
+  skill_ids: string[];
+  classes: string[];
+}
+
+/** GET /api/me/skills/matches: upcoming events that fit the person, best first (for the main screen, later). */
+export interface EventMatch {
+  event_id: string;
+  starts_at: string;
+  score: number;
+  matched_skill_ids: string[];
+  class_liked: boolean;
+}
+
+/** GET/POST /api/admin/skills, PATCH /api/admin/skills/:id: the list, with how many chose each. */
+export interface AdminSkillRow extends SkillRef {
+  is_active: boolean;
+  people: number;
+  events: number;
 }

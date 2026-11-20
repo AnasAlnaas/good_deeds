@@ -369,6 +369,34 @@ export interface HijriAdjustmentRow {
   set_at: string;
 }
 
+/** A skill volunteers choose and events name (shared/skills.ts). Admins add and hide them. */
+export interface Skill {
+  id: string;
+  name_ar: string;
+  name_en: string;
+  /** Hidden skills are no longer offered; those who chose them keep them. */
+  is_active: boolean;
+  created_at: string;
+}
+
+/** A person's skill. Seen only by them and the admins. */
+export interface UserSkill {
+  user_id: string;
+  skill_id: string;
+}
+
+/** A class of good works a person likes. */
+export interface UserInterest {
+  user_id: string;
+  event_class: EventClassId;
+}
+
+/** A skill that helps at an event. */
+export interface EventSkill {
+  event_id: string;
+  skill_id: string;
+}
+
 export interface Level {
   level: number;
   min_points: number;
@@ -454,4 +482,8 @@ export interface Db {
   outside_hours: OutsideHours[];
   user_badges: UserBadge[];
   hijri_adjustments: HijriAdjustmentRow[];
+  skills: Skill[];
+  user_skills: UserSkill[];
+  user_interests: UserInterest[];
+  event_skills: EventSkill[];
 }
