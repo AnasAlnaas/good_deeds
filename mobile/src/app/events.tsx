@@ -4,10 +4,12 @@ import { useState } from 'react';
 import { Button } from '@/components/Button';
 import { EventCard } from '@/components/EventCard';
 import { Screen } from '@/components/Screen';
+import { FollowButton } from '@/components/FollowButton';
+import { fmt } from '@/i18n/format';
 import { Chip, ClassFilter, EmptyState, Field, type NextStep, QueryState, Row } from '@/components/ui';
-import { useEvents, useMeSummary } from '@/data/queries';
+import { useEvents, useMeSummary, useFollows } from '@/data/queries';
 import { useApp } from '@/state/app';
-import type { EventClassId } from '@/theme/classes';
+import { className, type EventClassId } from '@/theme/classes';
 import type { LocationType } from '@/data/types';
 
 const t = (iso: string) => new Date(iso).getTime();
@@ -16,7 +18,8 @@ type Tab = 'upcoming' | 'mine' | 'organize';
 type Where = 'all' | LocationType;
 
 export default function EventsScreen() {
-  const { s } = useApp();
+  const { s, lang } = useApp();
+  const follows = useFollows();
   // The map's search button opens this list with the search box ready; its online bar, with online events only.
   const params = useLocalSearchParams<{ search?: string; where?: string }>();
   const { search } = params;
@@ -90,6 +93,10 @@ export default function EventsScreen() {
         {showOrganize && <Chip label={s.events.organize} selected={tab === 'organize'} onPress={() => setTab('organize')} />}
       </Row>
       <ClassFilter value={kind} onChange={setKind} />
+      {/* A class chosen: follow it, to hear of its new events (owner's decisions, 2026-11-21). */}
+      {kind && follows.data && (
+        <FollowButton kind="class" id={kind} following={follows.data.classes.includes(kind)} label={fmt(s.follows.followName, { name: className(kind, lang) })} />
+      )}
       <Row>
         <Chip label={s.events.whereAll} selected={where === 'all'} onPress={() => setWhere('all')} />
         <Chip label={s.events.inPerson} icon="location-outline" selected={where === 'in_person'} onPress={() => setWhere('in_person')} />

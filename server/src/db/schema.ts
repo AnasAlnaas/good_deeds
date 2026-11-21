@@ -60,6 +60,7 @@ export const warningStatus = pgEnum('warning_status', ['active', 'appealed', 'up
 export const institutionKind = pgEnum('institution_kind', ['association', 'foundation', 'school', 'university', 'mosque', 'company', 'team', 'other']);
 export const institutionStatus = pgEnum('institution_status', ['pending', 'approved', 'rejected']);
 export const outsideHoursStatus = pgEnum('outside_hours_status', ['pending', 'approved', 'rejected']);
+export const followKind = pgEnum('follow_kind', ['institution', 'person', 'class']);
 export const institutionRole = pgEnum('institution_role', ['representative', 'member']);
 export const membershipStatus = pgEnum('membership_status', ['pending', 'confirmed']);
 
@@ -458,6 +459,24 @@ export const event_skills = pgTable(
   },
   (t) => [primaryKey({ columns: [t.event_id, t.skill_id] }), index('event_skills_skill').on(t.skill_id)],
 );
+
+// Following (shared/follows.ts): private; target_id is an institution, a user or a class id.
+export const follows = pgTable(
+  'follows',
+  {
+    user_id: text('user_id').notNull().references(() => users.id),
+    kind: followKind('kind').notNull(),
+    target_id: text('target_id').notNull(),
+    created_at: at('created_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.user_id, t.kind, t.target_id] }), index('follows_target').on(t.kind, t.target_id)],
+);
+
+// Each published event is announced to followers once.
+export const follow_notices = pgTable('follow_notices', {
+  event_id: text('event_id').primaryKey().references(() => events.id),
+  sent_at: at('sent_at').notNull(),
+});
 
 // Certificates of confirmed hours, as they were when made (shared/types.ts Certificate).
 export const certificates = pgTable(

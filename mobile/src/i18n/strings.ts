@@ -570,6 +570,24 @@ const ar = {
     saved: 'حُفظت مهاراتك واهتماماتك.',
   },
 
+  follows: {
+    title: 'ما أتابعه',
+    open: 'ما أتابعه',
+    intro: 'تابع مجالاً أو مؤسسة أو مشرفاً، فنخبرك بكل فعالية جديدة منها حين تُنشر، إن كانت لفئتك. لا يرى أحد من تتابع.',
+    follow: 'تابِع',
+    followName: 'تابِع {name}',
+    following: 'تتابعه · أوقف المتابعة',
+    unfollow: 'أوقف المتابعة',
+    topics: 'المجالات',
+    institutions: 'المؤسسات',
+    people: 'المشرفون',
+    noInstitutions: 'لا تتابع مؤسسة بعد. تجد زر المتابعة في صفحة فعالياتها.',
+    noPeople: 'لا تتابع مشرفاً بعد. تجد زر المتابعة في صفحة فعالياته.',
+    proposedBy: 'اقترحها {name}',
+    institutionTitle: 'مؤسسة',
+    institutionNote: 'تابعها لنخبرك بفعالياتها الجديدة حين تُنشر.',
+  },
+
   myLessons: {
     title: 'ما تعلّمته',
     picture: 'درس مصوّر',
@@ -1572,6 +1590,24 @@ const en: Strings = {
     max: 'Up to {n} skills.',
     save: 'Save',
     saved: 'Your skills and interests were saved.',
+  },
+
+  follows: {
+    title: 'Following',
+    open: 'Following',
+    intro: 'Follow a field, an institution or a supervisor, and we will tell you of each new event from it when it is published, if it is for you. Nobody sees whom you follow.',
+    follow: 'Follow',
+    followName: 'Follow {name}',
+    following: 'Following · stop',
+    unfollow: 'Stop following',
+    topics: 'Fields',
+    institutions: 'Institutions',
+    people: 'Supervisors',
+    noInstitutions: 'You follow no institution yet. The follow button is on its events.',
+    noPeople: 'You follow no supervisor yet. The follow button is on their events.',
+    proposedBy: 'Proposed by {name}',
+    institutionTitle: 'Institution',
+    institutionNote: 'Follow it to hear of its new events when they are published.',
   },
 
   myLessons: {

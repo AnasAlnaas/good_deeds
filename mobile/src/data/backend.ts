@@ -4,9 +4,12 @@
 // Both return the shapes in shared/api.ts, so a screen never knows which one it uses.
 
 import { ApiError, type ApiErrorCode } from '../../../shared/errors';
+import type { FollowKind } from '../../../shared/follows';
 import type {
   AcceptTermResponse,
   AttendanceItem,
+  FollowsResponse,
+  InstitutionPublic,
   EventMatch,
   MySkillsBody,
   MySkillsResponse,
@@ -172,4 +175,10 @@ export interface Backend {
   setMySkills(body: MySkillsBody): Promise<MySkillsResponse>;
   /** Upcoming events that fit the person, best first (for the main screen, later). */
   skillMatches(): Promise<EventMatch[]>;
+  /** What the person follows: institutions, supervisors and classes. Private. */
+  follows(): Promise<FollowsResponse>;
+  follow(kind: FollowKind, id: string): Promise<FollowsResponse>;
+  unfollow(kind: FollowKind, id: string): Promise<FollowsResponse>;
+  /** An approved institution as anyone sees it, to follow it. */
+  institutionPublic(id: string): Promise<InstitutionPublic>;
 }

@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/components/Avatar';
 import { BadgeGrid } from '@/components/Badges';
+import { FollowButton } from '@/components/FollowButton';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
 import { Card, QueryState } from '@/components/ui';
@@ -34,6 +35,7 @@ export default function PersonScreen() {
           <Txt color={colors.primary}>{fmt(s.person.level, { n: num(level) })}</Txt>
         </View>
       </View>
+      {query.data.followable && <FollowButton kind="person" id={user.id} following={!!query.data.following} />}
       <Card>
         <Txt variant="sectionTitle">{s.badges.title}</Txt>
         <BadgeGrid badges={badges} />

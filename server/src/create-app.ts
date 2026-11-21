@@ -16,6 +16,7 @@ import { authRoutes } from './routes/auth';
 import { certificateRoutes, verifyRoutes } from './routes/certificates';
 import { eventRoutes } from './routes/events';
 import { institutionRoutes } from './routes/institutions';
+import { followRoutes } from './routes/follows';
 import { leaderboardRoutes } from './routes/leaderboards';
 import { skillRoutes } from './routes/skills';
 import { outsideHoursRoutes } from './routes/outside-hours';
@@ -47,6 +48,7 @@ export function createApp(deps: AppDeps) {
   app.route('/institutions', institutionRoutes);
   app.route('/outside-hours', outsideHoursRoutes);
   app.route('/leaderboards', leaderboardRoutes);
+  app.route('/follows', followRoutes);
   app.route('/me/certificates', certificateRoutes);
   app.route('/me/skills', skillRoutes);
   app.route('/me', meRoutes);

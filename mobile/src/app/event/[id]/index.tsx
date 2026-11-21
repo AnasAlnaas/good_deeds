@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect } from 'react';
-import { Linking, StyleSheet, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/components/Avatar';
 import { Button } from '@/components/Button';
 import { EventCover } from '@/components/EventCover';
+import { FollowButton } from '@/components/FollowButton';
 import { NoticeReactions, withReaction } from '@/components/NoticeReactions';
 import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
@@ -278,11 +279,26 @@ export default function EventDetail() {
       </Row>
       <Txt variant="screenTitle">{event.title}</Txt>
       {event.institution && (
-        <View style={styles.organizer}>
+        <Pressable accessibilityRole="button" style={styles.organizer} onPress={() => router.push(`/institution/${event.institution!.id}`)}>
           <Ionicons name="business" size={18} color={colors.primary} />
           <Txt variant="bodyStrong" color={colors.primary} style={styles.flex}>
             {fmt(s.institutions.organizedBy, { name: event.institution.name })}
           </Txt>
+        </Pressable>
+      )}
+      {/* Following (owner's decisions, 2026-11-21): its institution, and its proposer when a supervisor. */}
+      {event.following && event.institution && (
+        <FollowButton kind="institution" id={event.institution.id} following={event.following.institution} label={fmt(s.follows.followName, { name: event.institution.name })} />
+      )}
+      {event.following && event.proposer && (
+        <View style={styles.organizer}>
+          <Pressable accessibilityRole="button" style={styles.proposer} onPress={() => router.push(`/person/${event.proposer!.id}`)}>
+            <Avatar user={event.proposer} size={28} />
+            <Txt variant="caption" color={colors.inkMuted} style={styles.flex}>
+              {fmt(s.follows.proposedBy, { name: event.proposer.full_name })}
+            </Txt>
+          </Pressable>
+          <FollowButton kind="person" id={event.proposer.id} following={event.following.proposer} />
         </View>
       )}
       <Txt>{event.description}</Txt>
@@ -418,6 +434,7 @@ export default function EventDetail() {
 }
 
 const styles = StyleSheet.create({
+  proposer: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm },
   people: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   organizer: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
   cover: { borderRadius: 16, overflow: 'hidden' },

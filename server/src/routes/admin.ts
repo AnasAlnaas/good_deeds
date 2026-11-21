@@ -60,8 +60,7 @@ import {
   notifyPhotoRemoved,
   notifyProposalDecided,
   notifyReportHandled,
-  notifyWarningDecided,
-} from '../notify';
+  notifyWarningDecided, notifyFollowers } from '../notify';
 import { issueResetCode } from './auth';
 import { fillOpenPlaces } from '../waitlist';
 import { assertCoverExists, assertIdsExist, createEventInput, eventInput, isoTime, kindOf, placeOf, writeLessons, writeLinks, writeTerms, writeSkills } from './event-input';
@@ -482,6 +481,7 @@ export const adminRoutes = new Hono<AppEnv>()
       await writeSkills(tx, id, body.skill_ids, body.subtype, true);
       await audit(tx, { actorId: me.id, action: 'create_event', targetId: id, details: { title: body.title, published: body.publish }, at: t });
     });
+    if (body.publish) notifyFollowers(c.var.deps, id);
     return c.json({ id }, 201);
   })
 
@@ -591,6 +591,7 @@ export const adminRoutes = new Hono<AppEnv>()
     if (action === 'cancel') notifyEventCancelled(c.var.deps, id, me.id);
     // Proposed in the app by someone else: tell them what was decided.
     if (event.created_by !== me.id && action === 'publish') notifyProposalDecided(c.var.deps, id, 'approved');
+    if (action === 'publish') notifyFollowers(c.var.deps, id);
     if (event.created_by !== me.id && action === 'reject') notifyProposalDecided(c.var.deps, id, 'rejected', note);
     return c.body(null, 204);
   })

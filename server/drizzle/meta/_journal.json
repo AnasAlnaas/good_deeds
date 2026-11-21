@@ -169,6 +169,13 @@
       "when": 1795154520706,
       "tag": "0023_skills",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1795259390959,
+      "tag": "0024_follows",
+      "breakpoints": true
     }
   ]
 }

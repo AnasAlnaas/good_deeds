@@ -9,7 +9,7 @@ import { and, asc, count, desc, eq, gte, inArray, isNull, lte, ne } from 'drizzl
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-import type { InstitutionHoursReport, InstitutionMembersResponse, InstitutionsResponse, MyInstitution, OutsideHoursItem } from '../../../shared/api';
+import type { InstitutionHoursReport, InstitutionMembersResponse, InstitutionPublic, InstitutionsResponse, MyInstitution, OutsideHoursItem } from '../../../shared/api';
 import { ApiError } from '../../../shared/errors';
 import * as rules from '../../../shared/rules';
 import type { InstitutionKind, User } from '../../../shared/types';
@@ -21,6 +21,7 @@ import * as s from '../db/schema';
 import { type AppEnv, readBody } from '../http';
 import { notifyJoinRequest, notifyMembershipConfirmed, notifyOutsideHoursDecided } from '../notify';
 import { findClaim, outsideHoursItems } from './outside-hours';
+import { isFollowing } from './follows';
 
 // The name and kind are the rule's to check (rules.assertCanRequestInstitution), as in the offline demo.
 const decideBody = z.object({ decision: z.enum(['approved', 'rejected']), note: z.string().max(rules.OUTSIDE_HOURS_NOTE_MAX + 100).optional() });
@@ -172,6 +173,17 @@ export const institutionRoutes = new Hono<AppEnv>()
       await tx.delete(s.institution_members).where(and(eq(s.institution_members.institution_id, id), eq(s.institution_members.user_id, me.id)));
     });
     return c.body(null, 204);
+  })
+
+  // An approved institution as anyone sees it, to follow it (owner's decisions, 2026-11-21).
+  .get('/:id/public', async (c) => {
+    const { db } = c.var.deps;
+    const institution = await findInstitution(db, c.req.param('id'));
+    if (!institution || institution.status !== 'approved') throw new ApiError('not_found');
+    return c.json<InstitutionPublic>({
+      institution: { id: institution.id, name: institution.name, kind: institution.kind },
+      following: await isFollowing(db, c.var.user.id, 'institution', institution.id),
+    });
   })
 
   // ---------- its representatives ----------
