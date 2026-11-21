@@ -68,7 +68,14 @@
       ],
       "@sentry/react-native",
       "expo-sharing",
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "يعرض التطبيق الفعاليات القريبة منك. Good Deeds shows events near you.",
+          "isAndroidBackgroundLocationEnabled": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": false,

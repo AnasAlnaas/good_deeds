@@ -256,7 +256,7 @@ export function QueryState({ query }: { query: UseQueryResult<unknown> }) {
         </Txt>
         {retryable && <Button variant="secondary" icon="refresh" label={s.retry} onPress={() => query.refetch()} />}
         {/* A refusal (the event was withdrawn, say) won't change by trying again: the map is the way on. */}
-        {!retryable && pathname !== '/map' && <Button variant="quiet" icon="map-outline" label={s.next.toMap} onPress={() => router.dismissTo('/map')} />}
+        {!retryable && pathname !== '/home' && <Button variant="quiet" icon="home-outline" label={s.next.toHome} onPress={() => router.dismissTo('/home')} />}
       </View>
     );
   }

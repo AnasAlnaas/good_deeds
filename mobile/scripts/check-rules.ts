@@ -12,6 +12,8 @@ import { buildSeed } from '../src/demo/seed';
 import * as server from '../src/demo/server';
 import { cityInText, cityName, LIBYAN_CITIES, placeInCity, splitAddress } from '../../shared/cities';
 import { LEVELS } from '../../shared/placeholders';
+import { greetingFor } from '../../shared/greeting';
+import { hijriMonths } from '../../shared/hijri';
 import * as rules from '../../shared/rules';
 import { lessonLibrary } from '../../shared/lesson-library';
 import { cleanKind, promotedTags } from '../../shared/tags';
@@ -730,6 +732,24 @@ console.log('\n— skills and matching (as server/scripts/check-skills.ts)');
   const saved = server.setMySkills(db, 'u_mariam', { skill_ids: ['nursing', 'flying', 'nursing'], classes: ['health', 'space'] });
   expectEqual('mariam\'s, cleaned', [server.mySkills(saved, 'u_mariam').skill_ids, server.mySkills(saved, 'u_mariam').classes], [['nursing'], ['health']]);
   expectEqual('an event names its type\'s skills (a Quran circle)', server.skillsOfEvent(db, 'e05').sort(), ['children', 'quran', 'teaching']);
+}
+
+console.log('\n— the home screen\'s greeting (shared/greeting.ts)');
+{
+  const tz = rules.ASSOCIATION_TIME_ZONE;
+  const months = hijriMonths();
+  // Tripoli is UTC+2: 07:00Z is 09:00 there.
+  const at = (iso: string) => Date.parse(iso);
+  expectEqual('09:00 on an ordinary day: good morning', greetingFor(at('2026-10-21T07:00:00Z'), tz, months), 'morning');
+  expectEqual('14:00: good afternoon', greetingFor(at('2026-10-21T12:00:00Z'), tz, months), 'afternoon');
+  expectEqual('21:00: good evening', greetingFor(at('2026-10-21T19:00:00Z'), tz, months), 'evening');
+  expectEqual('03:00 is still evening', greetingFor(at('2026-10-21T01:00:00Z'), tz, months), 'evening');
+  expectEqual('a day in Ramadan 1447', greetingFor(at('2026-03-01T07:00:00Z'), tz, months), 'ramadan');
+  expectEqual('1 Shawwal 1447: Eid al-Fitr', greetingFor(at('2026-03-20T07:00:00Z'), tz, months), 'eid_fitr');
+  expectEqual('4 Shawwal: back to the time of day', greetingFor(at('2026-03-23T07:00:00Z'), tz, months), 'morning');
+  expectEqual('10 Dhul Hijjah 1447: Eid al-Adha', greetingFor(at('2026-05-27T07:00:00Z'), tz, months), 'eid_adha');
+  expectEqual('1 Muharram 1448: the Hijri new year', greetingFor(at('2026-06-16T07:00:00Z'), tz, months), 'hijri_new_year');
+  expectEqual('an admin moves Shawwal a day later: the 20th is still Ramadan', greetingFor(at('2026-03-20T07:00:00Z'), tz, hijriMonths([{ year: 1447, month: 10, days: 1 }])), 'ramadan');
 }
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');

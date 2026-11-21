@@ -149,6 +149,7 @@ export const meRoutes = new Hono<AppEnv>()
       user,
       badges: badges.map((b) => ({ badge_id: b.badge_id, earned_at: b.earned_at.toISOString() })),
       new_badges: badges.filter((b) => !b.seen_at).map((b) => b.badge_id),
+      hijri_adjustments: await db.select({ year: s.hijri_adjustments.year, month: s.hijri_adjustments.month, days: s.hijri_adjustments.days }).from(s.hijri_adjustments),
       total_points: total,
       level,
       next_level: rules.nextLevel(levels, total) ?? null,

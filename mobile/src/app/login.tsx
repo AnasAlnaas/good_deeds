@@ -75,7 +75,7 @@ function DemoAccounts() {
 
   const choose = (id: string) => {
     signInDemo(id);
-    router.replace('/map');
+    router.replace('/home');
   };
 
   return (
@@ -175,7 +175,7 @@ function PasswordSignIn({ baseUrl }: { baseUrl: string }) {
     try {
       const r = await call();
       signInApi(r.token, r.user);
-      router.replace('/map');
+      router.replace('/home');
     } catch (e) {
       const c = errorCode(e);
       if (c === 'password_not_set') {
