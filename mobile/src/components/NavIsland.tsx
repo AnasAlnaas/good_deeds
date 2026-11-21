@@ -33,9 +33,10 @@ export const NAV_HEIGHT = 64;
 /** The gap between the island and the bottom of the screen (above the safe area). */
 export const NAV_GAP = space.md;
 
-const MAIN = ['/map', '/events', '/activity'] as const;
+const MAIN = ['/home', '/map', '/events', '/activity'] as const;
 type MainPath = (typeof MAIN)[number];
 const ICONS: Record<MainPath, { off: keyof typeof Ionicons.glyphMap; on: keyof typeof Ionicons.glyphMap }> = {
+  '/home': { off: 'home-outline', on: 'home' },
   '/map': { off: 'map-outline', on: 'map' },
   '/events': { off: 'list-outline', on: 'list' },
   '/activity': { off: 'pulse-outline', on: 'pulse' },
@@ -95,7 +96,7 @@ export function NavIsland() {
 
   const visible = !!me && isMainPath(pathname);
   // While it is hidden, the last main screen stays chosen, so it sinks and rises unchanged.
-  const [current, setCurrent] = useState<MainPath>('/map');
+  const [current, setCurrent] = useState<MainPath>('/home');
   if (isMainPath(pathname) && pathname !== current) setCurrent(pathname);
 
   const shown = useSharedValue(0);
@@ -114,15 +115,15 @@ export function NavIsland() {
     };
   });
 
-  // The map is the home: from it, the others open on top; between them, one replaces the other.
+  // The home screen (owner's decisions, 2026-11-21): from it, the others open on top; between them, one replaces the other.
   const go = (to: MainPath) => {
     if (to === pathname) return;
-    if (to === '/map') router.dismissTo('/map');
-    else if (pathname === '/map') router.push(to);
+    if (to === '/home') router.dismissTo('/home');
+    else if (pathname === '/home') router.push(to);
     else router.replace(to);
   };
 
-  const labels: Record<MainPath, string> = { '/map': s.tabs.map, '/events': s.tabs.events, '/activity': s.tabs.activity };
+  const labels: Record<MainPath, string> = { '/home': s.tabs.home, '/map': s.tabs.map, '/events': s.tabs.events, '/activity': s.tabs.activity };
 
   return (
     <Animated.View

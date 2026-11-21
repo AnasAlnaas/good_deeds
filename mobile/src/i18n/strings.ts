@@ -112,7 +112,7 @@ const ar = {
     close: 'أغلق',
   },
 
-  tabs: { map: 'الخريطة', events: 'الفعاليات', activity: 'نشاطي', profile: 'حسابي' },
+  tabs: { home: 'الرئيسية', map: 'الخريطة', events: 'الفعاليات', activity: 'نشاطي', profile: 'حسابي' },
 
   category: { male: 'للذكور', female: 'للإناث', mixed: 'مختلط' },
   // In the app a draft is always an event someone proposed, seen only by them.
@@ -588,6 +588,35 @@ const ar = {
     institutionNote: 'تابعها لنخبرك بفعالياتها الجديدة حين تُنشر.',
   },
 
+  home: {
+    greetings: {
+      morning: 'صباح الخير يا {name}',
+      afternoon: 'نهارك سعيد يا {name}',
+      evening: 'مساء الخير يا {name}',
+      ramadan: 'رمضان مبارك يا {name}',
+      eid_fitr: 'عيد فطر مبارك يا {name}',
+      eid_adha: 'عيد أضحى مبارك يا {name}',
+      hijri_new_year: 'عام هجري مبارك يا {name}',
+    },
+    nextAt: 'فعاليتك القادمة · {when}',
+    noNext: 'لا فعالية قادمة لك. اختر واحدة تناسبك.',
+    points: '{n} نقطة',
+    toNext: 'بقي {n} نقطة للوصول إلى {level}',
+    topLevel: 'بلغت أعلى مستوى ظاهر.',
+    hoursWaiting: 'لك ساعات تنتظر تأكيدك ({n}).',
+    fits: 'يناسب مهاراتك',
+    fitsEmpty: 'اختر مهاراتك واهتماماتك لنقترح عليك ما يناسبك.',
+    near: 'قريب منك',
+    openMap: 'الخريطة',
+    nearPhone: 'خلال {km} كم من مكانك',
+    nearCity: 'خلال {km} كم من وسط {city} (لم تسمح بمعرفة مكانك)',
+    nearEmpty: 'لا فعاليات قريبة الآن.',
+    km: '{km} كم',
+    locating: 'نبحث عن مكانك…',
+    followed: 'ممن تتابعهم',
+    followedEmpty: 'لا جديد ممن تتابعهم. تابع مجالاً أو مؤسسة لتصلك فعالياتها.',
+  },
+
   myLessons: {
     title: 'ما تعلّمته',
     picture: 'درس مصوّر',
@@ -917,6 +946,7 @@ const ar = {
     clearFilters: 'امسح البحث والتصفية',
     seeUpcoming: 'اعرض الفعاليات القادمة',
     toMap: 'ارجع إلى الخريطة',
+    toHome: 'إلى الرئيسية',
     toEvent: 'ارجع إلى الفعالية',
     reviewHours: 'راجع ساعاتك وأكّدها',
     hoursWaiting: 'سجّل المشرف ساعات لك تنتظر تأكيدك. لا تُحسب هنا قبل أن تؤكدها.',
@@ -1138,7 +1168,7 @@ const en: Strings = {
     close: 'Close',
   },
 
-  tabs: { map: 'Map', events: 'Events', activity: 'My activity', profile: 'Profile' },
+  tabs: { home: 'Home', map: 'Map', events: 'Events', activity: 'My activity', profile: 'Profile' },
 
   category: { male: 'Men only', female: 'Women only', mixed: 'Mixed' },
   status: { draft: 'Waiting for approval', published: 'Upcoming', running: 'Happening now', finished: 'Finished', cancelled: 'Cancelled', rejected: 'Not approved' },
@@ -1610,6 +1640,35 @@ const en: Strings = {
     institutionNote: 'Follow it to hear of its new events when they are published.',
   },
 
+  home: {
+    greetings: {
+      morning: 'Good morning, {name}',
+      afternoon: 'Good afternoon, {name}',
+      evening: 'Good evening, {name}',
+      ramadan: 'Ramadan Mubarak, {name}',
+      eid_fitr: 'Eid al-Fitr Mubarak, {name}',
+      eid_adha: 'Eid al-Adha Mubarak, {name}',
+      hijri_new_year: 'Happy Hijri new year, {name}',
+    },
+    nextAt: 'Your next event · {when}',
+    noNext: 'You have no event coming up. Pick one that suits you.',
+    points: '{n} points',
+    toNext: '{n} points to {level}',
+    topLevel: 'You reached the highest level shown.',
+    hoursWaiting: 'You have hours waiting for your confirmation ({n}).',
+    fits: 'Fits your skills',
+    fitsEmpty: 'Choose your skills and interests and we will suggest what fits.',
+    near: 'Near you',
+    openMap: 'Map',
+    nearPhone: 'Within {km} km of you',
+    nearCity: 'Within {km} km of central {city} (location not allowed)',
+    nearEmpty: 'No events nearby right now.',
+    km: '{km} km',
+    locating: 'Finding where you are…',
+    followed: 'From those you follow',
+    followedEmpty: 'Nothing new from those you follow. Follow a field or an institution to hear of its events.',
+  },
+
   myLessons: {
     title: 'What I learned',
     picture: 'A lesson in pictures',
@@ -1931,6 +1990,7 @@ const en: Strings = {
     clearFilters: 'Clear search and filters',
     seeUpcoming: 'See upcoming events',
     toMap: 'Back to the map',
+    toHome: 'To the home screen',
     toEvent: 'Back to the event',
     reviewHours: 'Review and confirm your hours',
     hoursWaiting: "A supervisor recorded hours for you that wait for your confirmation. They don't count here until you confirm them.",

@@ -594,6 +594,7 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
           user: me,
           badges: badges.map((b) => ({ badge_id: b.badge_id, earned_at: b.earned_at })),
           new_badges: badges.filter((b) => !b.seen_at).map((b) => b.badge_id),
+          hijri_adjustments: (db.hijri_adjustments ?? []).map(({ year, month, days }) => ({ year, month, days })),
           total_points: total,
           level,
           next_level: server.nextLevel(db, total) ?? null,

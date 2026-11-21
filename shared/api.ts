@@ -471,6 +471,8 @@ export interface MeResponse {
   badges?: BadgeItem[];
   /** Badges the app has not celebrated yet; POST /api/me/badges/seen marks them. */
   new_badges?: string[];
+  /** The admins' moves of Hijri month starts (shared/hijri.ts), for the home screen's greeting. */
+  hijri_adjustments?: { year: number; month: number; days: number }[];
   total_points: number;
   level: Level;
   next_level: Level | null;

@@ -37,7 +37,7 @@ export function Screen({ title, back, scroll = true, scrollEnabled, background =
       {(title || back) && (
         <View style={styles.header}>
           {back && (
-            <IconButton icon={isRTL ? 'arrow-forward' : 'arrow-back'} label={s.back} look="dark" onPress={() => goBack('/map')} />
+            <IconButton icon={isRTL ? 'arrow-forward' : 'arrow-back'} label={s.back} look="dark" onPress={() => goBack('/home')} />
           )}
           {title && (
             <Txt variant={back ? 'sectionTitle' : 'screenTitle'} style={styles.title} numberOfLines={2}>

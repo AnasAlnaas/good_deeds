@@ -85,6 +85,7 @@ export const useMyLessons = () => useBackendQuery(KEYS.myLessons(), (b) => b.myL
 export const useWarning = (id: string) => useBackendQuery(['warning', id], (b) => b.warning(id));
 export const useInstitutions = () => useBackendQuery(['institutions'], (b) => b.institutions());
 export const useInstitutionMembers = (id: string) => useBackendQuery(['institutionMembers', id], (b) => b.institutionMembers(id));
+export const useSkillMatches = () => useBackendQuery(['skillMatches'], (b) => b.skillMatches());
 export const useFollows = () => useBackendQuery(['follows'], (b) => b.follows());
 export const useInstitutionPublic = (id: string) => useBackendQuery(['institutionPublic', id], (b) => b.institutionPublic(id));
 export const useMySkills = () => useBackendQuery(['mySkills'], (b) => b.mySkills());

@@ -243,6 +243,18 @@ following its class, its institution or its proposer (if a supervisor) are told 
 in one notification, if they may join it; its proposer is never told. Nobody sees who
 follows whom. The demo's مريم follows learning.
 
+### The home screen
+
+Owner's decisions (2026-11-21; prototype A «اليوم»). After sign-in the app opens on
+`/home`, the first tab; the map is the second. It greets by the time of day where the
+association is (صباح الخير 4–12, نهارك سعيد 12–17, مساء الخير 17–4) or, on an
+occasion, by the occasion instead: Ramadan, Eid al-Fitr (1–3 Shawwal), Eid al-Adha
+(10–13 Dhul Hijjah) and the Hijri new year (`shared/greeting.ts`, Hijri days with the
+admins' moves). Then: the next event, the level card with the person's photo, hours
+waiting, what fits their skills, events within 10 km (the phone's location, asked once
+with expo-location; their city's centre if refused), and new events from what they
+follow.
+
 ### Push notifications
 
 The app registers the phone for notifications when someone signs in to the
