@@ -27,6 +27,7 @@ import { badgeName } from '../../shared/badges';
 import { dueReminder, MEETING_LINK_OPENS_MINUTES, REMINDER_DAY_BEFORE_HOURS } from '../../shared/rules';
 
 import { closeDueAttendance, creditSoleSupervisors } from './db/queries';
+import { followersToTell } from './routes/follows';
 import { fillOpenPlaces } from './waitlist';
 import { sweepLessonImages } from './lesson-images';
 import * as s from './db/schema';
@@ -848,4 +849,28 @@ export async function pushNewBadges(deps: AppDeps) {
       data: { type: 'badge_earned', badge_id: b.badge_id },
     })),
   );
+}
+
+// ---------- following (routes/follows.ts) ----------
+
+const NEW_EVENT = {
+  ar: { title: 'فعالية جديدة مما تتابعه', body: '«{event}» {when}. افتحها لتنضم.' },
+  en: { title: 'A new event you follow', body: '"{event}" {when}. Open it to join.' },
+};
+
+/** To those following the event's institution, proposer or class, once, when it is published. */
+export function notifyFollowers(deps: AppDeps, eventId: string) {
+  send(deps, async () => {
+    const found = await followersToTell(deps.db, eventId);
+    if (!found || found.userIds.length === 0) return [];
+    const [event] = await deps.db.select({ starts_at: s.events.starts_at, ends_at: s.events.ends_at }).from(s.events).where(eq(s.events.id, eventId));
+    return found.userIds.map((userId) => ({
+      userId,
+      text: (lang: Lang) => ({
+        title: NEW_EVENT[lang].title,
+        body: NEW_EVENT[lang].body.replace('{event}', found.title).replace('{when}', when(event.starts_at, event.ends_at, lang, deps.timeZone)),
+      }),
+      data: { type: 'followed_event', event_id: eventId },
+    }));
+  });
 }

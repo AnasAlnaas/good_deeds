@@ -397,6 +397,14 @@ export interface EventSkill {
   skill_id: string;
 }
 
+/** Someone follows an institution, a supervisor or a class of good works (shared/follows.ts). Private. */
+export interface Follow {
+  user_id: string;
+  kind: 'institution' | 'person' | 'class';
+  target_id: string;
+  created_at: string;
+}
+
 export interface Level {
   level: number;
   min_points: number;
@@ -486,4 +494,5 @@ export interface Db {
   user_skills: UserSkill[];
   user_interests: UserInterest[];
   event_skills: EventSkill[];
+  follows: Follow[];
 }

@@ -28,7 +28,7 @@ import { ASSOCIATION_TIME_ZONE, dayIn, levelFor, pointsForHours } from './rules'
 // 14: events may have a cover photo.
 // 15: points by the half hour, levels 0–10, and supervisors' pledges.
 // 16: the point made a minute (levels ×30).
-export const SEED_VERSION = 19;
+export const SEED_VERSION = 20;
 
 /** The demo's institution: approved, with خالد as its representative. */
 export const DEMO_INSTITUTION = 'inst_saraj';
@@ -338,6 +338,8 @@ export function buildSeed(nowMs: number): Db {
       { user_id: 'u_ahmad', event_class: 'environment' },
     ],
     event_skills: [],
+    // مريم follows learning, so a new learning event tells her (shared/follows.ts).
+    follows: [{ user_id: 'u_mariam', kind: 'class', target_id: 'learning', created_at: created }],
     // Hours أحمد did for the team outside the app's events, waiting for خالد (rules.assertCanClaimOutsideHours).
     outside_hours: [
       {

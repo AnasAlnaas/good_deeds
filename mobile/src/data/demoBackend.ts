@@ -7,6 +7,7 @@ import { REPORT_CATEGORIES } from '@/data/types';
 import * as server from '@/demo/server';
 import { classOfEvent, eventSubtypes } from '../../../shared/classes';
 import { ApiError } from '../../../shared/errors';
+import { canFollowPerson } from '../../../shared/follows';
 import * as rules from '../../../shared/rules';
 import { lessonLibrary } from '../../../shared/lesson-library';
 import { cleanKind, promotedTags } from '../../../shared/tags';
@@ -97,6 +98,16 @@ function outsideHoursItems(db: Db, me: User, claims: OutsideHours[]): OutsideHou
       decided_by: decider ? publicUser(me, decider) : null,
     };
   });
+}
+
+/** Its proposer when a supervisor, and what the person follows of it (as server/src/routes/events.ts). */
+function followInfo(db: Db, me: User, e: AppEvent) {
+  const creator = server.getUser(db, e.created_by);
+  const proposer = creator && !creator.deleted_at && canFollowPerson(creator) && creator.id !== me.id ? creator : null;
+  return {
+    proposer: proposer ? publicUser(me, proposer) : null,
+    following: { institution: server.isFollowing(db, me.id, 'institution', e.institution_id), proposer: server.isFollowing(db, me.id, 'person', proposer?.id) },
+  };
 }
 
 /** Who belongs to the institution, for its representatives. */
@@ -287,6 +298,7 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
           meeting_link_opens_at: e.location_type === 'online' ? rules.meetingLinkOpensAt(e) : null,
           terms: server.eventTerms(db, id),
           skill_ids: server.skillsOfEvent(db, id),
+          ...followInfo(db, me, e),
           lessons: lessonItems(db, me.id, id),
           participants: server.joinedUsers(db, id).map((u) => publicUser(me, u)),
           my_registration: reg ?? null,
@@ -724,6 +736,32 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
         return outsideHoursItems(db, me, [db.outside_hours.find((c) => c.id === claimId)!])[0];
       }),
 
+    follows: () =>
+      async(() => {
+        const { db, me } = read();
+        return server.followsOf(db, me);
+      }),
+
+    follow: (kind, id) =>
+      async(() => {
+        const { db, me } = change((d, t) => server.follow(d, meId, kind, id, t));
+        return server.followsOf(db, me);
+      }),
+
+    unfollow: (kind, id) =>
+      async(() => {
+        const { db, me } = change((d) => server.unfollow(d, meId, kind, id));
+        return server.followsOf(db, me);
+      }),
+
+    institutionPublic: (id) =>
+      async(() => {
+        const { db, me } = read();
+        const i = server.institutionOf(db, id);
+        if (!i || i.status !== 'approved') throw new ApiError('not_found');
+        return { institution: { id: i.id, name: i.name, kind: i.kind }, following: server.isFollowing(db, me.id, 'institution', id) };
+      }),
+
     mySkills: () =>
       async(() => {
         const { db, me } = read();
@@ -753,7 +791,12 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
         const u = server.getUser(db, id);
         if (!u || u.deleted_at) throw new ApiError('not_found');
         const badges = (db.user_badges ?? []).filter((b) => b.user_id === id).sort((a, b) => rules.toMs(b.earned_at) - rules.toMs(a.earned_at));
-        return { user: publicUser(me, u), level: u.level, badges: badges.map((b) => ({ badge_id: b.badge_id, earned_at: b.earned_at })) };
+        return {
+          user: publicUser(me, u),
+          level: u.level,
+          followable: canFollowPerson(u) && u.id !== me.id,
+          following: server.isFollowing(db, me.id, 'person', u.id),
+          badges: badges.map((b) => ({ badge_id: b.badge_id, earned_at: b.earned_at })) };
       }),
 
     leaderboard: (institutionId) =>

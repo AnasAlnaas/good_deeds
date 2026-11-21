@@ -3,7 +3,7 @@
 // in the on-phone database, calls the rule, and writes what the rule decided.
 // The screens never compute hours or points themselves.
 
-import type { CertificateResponse, EventMatch, MySkillsResponse, SkillRef, EventProposal, InstitutionHoursReport, LeaderboardResponse, ProfileEdit, ReportBody } from '@/data/api';
+import type { CertificateResponse, FollowsResponse, EventMatch, MySkillsResponse, SkillRef, EventProposal, InstitutionHoursReport, LeaderboardResponse, ProfileEdit, ReportBody } from '@/data/api';
 import type {
   AppEvent,
   Attendance,
@@ -24,6 +24,7 @@ import type {
 import { NOTICE_REACTIONS } from '@/data/types';
 import { badgesEarned } from '../../../shared/badges';
 import { classOfEvent, isEventClass } from '../../../shared/classes';
+import { canFollowPerson, type FollowKind } from '../../../shared/follows';
 import { cleanSkillIds, matchScore, MAX_SKILLS_PER_EVENT, MAX_SKILLS_PER_PERSON, suggestedSkills } from '../../../shared/skills';
 import { ApiError } from '../../../shared/errors';
 import { hijriMonths } from '../../../shared/hijri';
@@ -1174,4 +1175,47 @@ export function skillMatches(db: Db, me: User, now: number): EventMatch[] {
     .filter((m) => m.score > 0)
     .sort((a, b) => b.score - a.score || a.starts_at.localeCompare(b.starts_at))
     .slice(0, 20);
+}
+
+// ---------- following (as server/src/routes/follows.ts; the demo sends no push) ----------
+
+export const isFollowing = (db: Db, userId: string, kind: FollowKind, targetId: string | null | undefined) =>
+  !!targetId && (db.follows ?? []).some((f) => f.user_id === userId && f.kind === kind && f.target_id === targetId);
+
+export function followsOf(db: Db, me: User): FollowsResponse {
+  const mine = (db.follows ?? []).filter((f) => f.user_id === me.id);
+  const ids = (kind: FollowKind) => mine.filter((f) => f.kind === kind).map((f) => f.target_id);
+  return {
+    institutions: ids('institution')
+      .map((id) => institutionOf(db, id))
+      .filter((i): i is NonNullable<typeof i> => !!i && i.status === 'approved')
+      .map((i) => ({ id: i.id, name: i.name, kind: i.kind }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ar')),
+    people: ids('person')
+      .map((id) => getUser(db, id))
+      .filter((u): u is User => !!u && !u.deleted_at)
+      .map((u) => ({ id: u.id, full_name: u.full_name, avatar_url: !u.avatar_url || rules.canSeePhoto(me, u) ? u.avatar_url : null, gender: u.gender }))
+      .sort((a, b) => a.full_name.localeCompare(b.full_name, 'ar')),
+    classes: ids('class').filter(isEventClass),
+  };
+}
+
+export function follow(db: Db, userId: string, kind: FollowKind, id: string, now: number): Db {
+  const ok =
+    kind === 'class'
+      ? isEventClass(id)
+      : kind === 'institution'
+        ? institutionOf(db, id)?.status === 'approved'
+        : id !== userId && !!getUser(db, id) && !getUser(db, id)!.deleted_at && canFollowPerson(getUser(db, id)!);
+  if (!ok) throw new ApiError('not_found');
+  if (isFollowing(db, userId, kind, id)) return db;
+  const next = clone(db);
+  next.follows = [...(next.follows ?? []), { user_id: userId, kind, target_id: id, created_at: new Date(now).toISOString() }];
+  return next;
+}
+
+export function unfollow(db: Db, userId: string, kind: FollowKind, id: string): Db {
+  const next = clone(db);
+  next.follows = (next.follows ?? []).filter((f) => !(f.user_id === userId && f.kind === kind && f.target_id === id));
+  return next;
 }

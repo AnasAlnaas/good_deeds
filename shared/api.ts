@@ -278,6 +278,10 @@ export interface EventDetail extends EventSummary {
   meeting_link_opens_at: string | null;
   /** The skills that help (older servers send none). */
   skill_ids?: string[];
+  /** Its proposer, when a supervisor (who may be followed); null otherwise. Older servers send none. */
+  proposer?: PublicUser | null;
+  /** Whether the person follows its institution and its proposer. */
+  following?: { institution: boolean; proposer: boolean };
   terms: EventTerm[];
   /** In order (rules.sortLessons), each with whether the signed-in user learned it. */
   lessons: EventLessonItem[];
@@ -694,6 +698,9 @@ export interface InstitutionHoursReport {
 /** GET /api/users/:id: someone as everyone signed in sees them: name, photo, level and badges. */
 export interface PersonResponse {
   user: PublicUser;
+  /** A supervisor may be followed (shared/follows.ts); whether the viewer does. */
+  followable?: boolean;
+  following?: boolean;
   level: number;
   badges: BadgeItem[];
 }
@@ -747,4 +754,19 @@ export interface AdminSkillRow extends SkillRef {
   is_active: boolean;
   people: number;
   events: number;
+}
+
+// ---------- following (owner's decisions, 2026-11-21) ----------
+
+/** GET /api/follows, and the answer to PUT/DELETE /api/follows/:kind/:id (kind: institution | person | class). Private. */
+export interface FollowsResponse {
+  institutions: InstitutionRef[];
+  people: PublicUser[];
+  classes: EventClassId[];
+}
+
+/** GET /api/institutions/:id/public: an approved institution as anyone sees it, to follow it. */
+export interface InstitutionPublic {
+  institution: InstitutionRef;
+  following: boolean;
 }

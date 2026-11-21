@@ -233,6 +233,16 @@ migration 0023; admins add, rename and hide skills in the panel (المهارا�
 `GET /api/me/skills/matches` ranks upcoming events for the person (a skill they have
 counts 2, a class they like 1); the main screen will show them later.
 
+### Following
+
+Owner's decisions (2026-11-21; `shared/follows.ts`). A member follows a class of good
+works (Profile → ما أتابعه, or the bell under the events filter), an institution (its
+page, opened from an event in its name) or a supervisor (the event page, or their
+page). When an event is published (at once, or when an admin approves it), those
+following its class, its institution or its proposer (if a supervisor) are told once,
+in one notification, if they may join it; its proposer is never told. Nobody sees who
+follows whom. The demo's مريم follows learning.
+
 ### Push notifications
 
 The app registers the phone for notifications when someone signs in to the

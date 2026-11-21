@@ -29,6 +29,8 @@ import type {
 import { classOfEvent, eventSubtypes } from '../../../shared/classes';
 import { ApiError } from '../../../shared/errors';
 import { skillList } from './skills';
+import { isFollowing } from './follows';
+import { canFollowPerson } from '../../../shared/follows';
 import * as rules from '../../../shared/rules';
 import { inLessonLibrary, lessonLibrary } from '../../../shared/lesson-library';
 import { promotedTags } from '../../../shared/tags';
@@ -63,11 +65,11 @@ import {
   supervisorsOf,
   termsOf,
   waitingProposals,
-  warnedBy, awardBadges } from '../db/queries';
+  warnedBy, awardBadges, findUser } from '../db/queries';
 import { iso } from '../db/rows';
 import * as s from '../db/schema';
 import { type AppEnv, readBody } from '../http';
-import { notifyEventNotice, notifyHoursToConfirm, notifyPlaceOffered, notifySupervisorAdded, notifyWarningGiven } from '../notify';
+import { notifyEventNotice, notifyHoursToConfirm, notifyPlaceOffered, notifySupervisorAdded, notifyWarningGiven, notifyFollowers } from '../notify';
 import { fillOpenPlaces, waitlistOf } from '../waitlist';
 import { assertCoverExists, kindOf, placeOf, proposalInput, removeLessons, writeLessons, writeLinks, writeTerms, skillsOfEvent, writeSkills } from './event-input';
 import { dropUnusedImages } from '../lesson-images';
@@ -175,6 +177,19 @@ async function summarize(db: Database, me: User, events: AppEvent[], now: number
  * The institution an event is to be in the name of, and the proposer's place in
  * it, for rules.assertCanProposeEvent; null = their own name.
  */
+/** Its proposer when a supervisor (who may be followed), and what the person follows of it (owner's decisions, 2026-11-21). */
+async function followInfo(db: Database, me: User, event: AppEvent) {
+  const creator = await findUser(db, event.created_by);
+  const proposer = creator && !creator.deleted_at && canFollowPerson(creator) && creator.id !== me.id ? creator : null;
+  return {
+    proposer: proposer ? shownTo(me, { id: proposer.id, full_name: proposer.full_name, avatar_url: proposer.avatar_url, gender: proposer.gender }) : null,
+    following: {
+      institution: await isFollowing(db, me.id, 'institution', event.institution_id),
+      proposer: await isFollowing(db, me.id, 'person', proposer?.id),
+    },
+  };
+}
+
 async function institutionFor(db: Database, me: User, institutionId: string | null | undefined) {
   if (!institutionId) return null;
   return { id: institutionId, institution: await findInstitution(db, institutionId), membership: await membershipOf(db, institutionId, me.id) };
@@ -262,6 +277,7 @@ export const eventRoutes = new Hono<AppEnv>()
       await writeSkills(tx, id, body.skill_ids, body.subtype, true);
       return status;
     });
+    if (status === 'published') notifyFollowers(c.var.deps, id);
     return c.json<ProposeEventResponse>({ id, status }, 201);
   })
 
@@ -372,6 +388,7 @@ export const eventRoutes = new Hono<AppEnv>()
       my_accepted_term_ids: await acceptedTermIds(db, registration?.id),
       my_attendance: (await attendanceOf(db, id, me.id)) ?? null,
       supervisors: await supervisorsFor(db, me, id),
+      ...(await followInfo(db, me, event)),
       notices,
       can_manage: canManage,
       waitlist: {

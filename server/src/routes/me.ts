@@ -46,6 +46,8 @@ import { EMAIL_CODE_MINUTES, sendEmailCode, takeEmailCode } from '../email-codes
 import { type AppEnv, HttpError, readBody } from '../http';
 import { photoUrl, readPhoto } from '../photo';
 import { asMyReports, asMyWarnings } from './reports';
+import { isFollowing } from './follows';
+import { canFollowPerson } from '../../../shared/follows';
 
 const pushToken = z.string().regex(/^Expo(nent)?PushToken\[[^\]]+\]$/);
 const pushTokenBody = z.object({ token: pushToken, lang: z.enum(['ar', 'en']) });
@@ -393,6 +395,8 @@ export const userRoutes = new Hono<AppEnv>()
     return c.json<PersonResponse>({
       user: shownTo(c.var.user, { id: person.id, full_name: person.full_name, avatar_url: person.avatar_url, gender: person.gender }),
       level: person.level,
+      followable: canFollowPerson(person) && person.id !== c.var.user.id,
+      following: await isFollowing(db, c.var.user.id, 'person', person.id),
       badges: badges.map((b) => ({ badge_id: b.badge_id, earned_at: b.earned_at.toISOString() })),
     });
   })

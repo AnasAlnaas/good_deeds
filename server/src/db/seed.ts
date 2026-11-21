@@ -11,7 +11,7 @@ import { dated } from './rows';
 import * as s from './schema';
 
 const ALL_TABLES = [
-  'institution_members', 'institutions', 'reports', 'warnings', 'admin_actions', 'user_photos', 'push_tokens', 'login_codes', 'user_passwords', 'points_ledger', 'event_skills', 'user_skills', 'user_interests', 'skills', 'user_badges', 'hijri_adjustments', 'certificates', 'outside_hours', 'attendance', 'term_acceptances', 'registrations', 'event_terms',
+  'institution_members', 'institutions', 'reports', 'warnings', 'admin_actions', 'user_photos', 'push_tokens', 'login_codes', 'user_passwords', 'points_ledger', 'follow_notices', 'follows', 'event_skills', 'user_skills', 'user_interests', 'skills', 'user_badges', 'hijri_adjustments', 'certificates', 'outside_hours', 'attendance', 'term_acceptances', 'registrations', 'event_terms',
   'lesson_completions', 'event_lessons', 'lesson_images', 'event_reminders', 'waitlist',
   'notice_reactions', 'event_notices', 'event_organizers', 'events', 'levels', 'branches', 'users',
 ];
@@ -64,6 +64,7 @@ export async function seedDemo(db: Database, nowMs: number) {
     await tx.insert(s.events).values(d.events.map(dated));
     if (d.event_skills.length) await tx.insert(s.event_skills).values(d.event_skills);
     if (d.user_skills.length) await tx.insert(s.user_skills).values(d.user_skills);
+    if (d.follows.length) await tx.insert(s.follows).values(d.follows.map(dated));
     if (d.user_interests.length) await tx.insert(s.user_interests).values(d.user_interests);
     await tx.insert(s.event_organizers).values(d.event_organizers.map(dated));
     if (d.event_notices.length) await tx.insert(s.event_notices).values(d.event_notices.map(dated));

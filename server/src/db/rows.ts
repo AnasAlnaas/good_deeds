@@ -55,5 +55,6 @@ export type SchemaMatchesSharedTypes = [
   Assert<Same<Row<typeof s.user_skills>, T.UserSkill>>,
   Assert<Same<Row<typeof s.user_interests>, T.UserInterest>>,
   Assert<Same<Row<typeof s.event_skills>, T.EventSkill>>,
+  Assert<Same<Row<typeof s.follows>, T.Follow>>,
   Assert<Same<Row<typeof s.hijri_adjustments>, T.HijriAdjustmentRow>>,
 ];
