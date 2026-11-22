@@ -377,6 +377,8 @@ export interface Skill {
   /** Hidden skills are no longer offered; those who chose them keep them. */
   is_active: boolean;
   created_at: string;
+  /** Words that name it in an event's description, one per line (shared/smart.ts). */
+  keywords: string;
 }
 
 /** A person's skill. Seen only by them and the admins. */
@@ -403,6 +405,13 @@ export interface Follow {
   kind: 'institution' | 'person' | 'class';
   target_id: string;
   created_at: string;
+}
+
+export interface FollowPrompt {
+  user_id: string;
+  kind: 'institution' | 'person' | 'class';
+  target_id: string;
+  answered_at: string;
 }
 
 export interface Level {
@@ -495,4 +504,6 @@ export interface Db {
   user_interests: UserInterest[];
   event_skills: EventSkill[];
   follows: Follow[];
+  /** "Follow this?" answered (shared/smart.ts); absent in a demo saved before. */
+  follow_prompts?: FollowPrompt[];
 }

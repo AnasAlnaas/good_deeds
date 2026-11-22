@@ -13,10 +13,11 @@ import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
 import { Card, QueryState, SectionTitle } from '@/components/ui';
 import type { EventSummary } from '@/data/api';
-import { useEvents, useFollows, useMeSummary, useMyAttendance, useSkillMatches } from '@/data/queries';
+import { useEvents, useFollowSuggestion, useFollows, useMeSummary, useMyAttendance, usePrefetchTop, useSkillMatches } from '@/data/queries';
 import { day, fmt, num, time } from '@/i18n/format';
 import { useMyLocation } from '@/lib/myLocation';
 import { useApp, useMe } from '@/state/app';
+import { useAction } from '@/state/useAction';
 import { colors, radius, space } from '@/theme/tokens';
 import { distanceKm } from '../../../shared/geocode';
 import { greetingFor } from '../../../shared/greeting';
@@ -45,6 +46,16 @@ export default function HomeScreen() {
   const follows = useFollows();
   const where = useMyLocation(me.city);
   const levelName = useLevelName();
+  const suggestion = useFollowSuggestion();
+  const { run, busy } = useAction();
+
+  // The likeliest taps: the next event and the first of the lists below (owner's decision, 2026-11-22).
+  usePrefetchTop(
+    (events.data ?? [])
+      .filter((e) => (e.status === 'published' || e.status === 'running') && Date.parse(e.ends_at) > now)
+      .sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at))
+      .map((e) => e.id),
+  );
 
   if (!summary.data || !events.data) {
     return (
@@ -147,6 +158,27 @@ export default function HomeScreen() {
         </Card>
       )}
 
+      {/* "Follow this?" after two confirmed events from it, asked once (shared/smart.ts). */}
+      {suggestion.data?.suggestion && (
+        <Card>
+          <Txt>{fmt(s.home.followAsk, { n: num(suggestion.data.suggestion.events), name: suggestion.data.suggestion.name })}</Txt>
+          <View style={styles.answer}>
+            <Button
+              icon="notifications-outline"
+              label={s.home.followYes}
+              disabled={busy}
+              onPress={() => run((b) => b.answerFollowSuggestion({ kind: suggestion.data!.suggestion!.kind, id: suggestion.data!.suggestion!.id, follow: true }))}
+            />
+            <Button
+              variant="quiet"
+              label={s.home.followNo}
+              disabled={busy}
+              onPress={() => run((b) => b.answerFollowSuggestion({ kind: suggestion.data!.suggestion!.kind, id: suggestion.data!.suggestion!.id, follow: false }))}
+            />
+          </View>
+        </Card>
+      )}
+
       <SectionTitle>{s.home.fits}</SectionTitle>
       {row(fits, s.home.fitsEmpty, fits.length === 0 ? { label: s.skills.open, to: '/skills' } : undefined)}
 
@@ -211,6 +243,7 @@ const styles = StyleSheet.create({
   next: { backgroundColor: colors.primary, borderRadius: radius.card, padding: space.md, gap: space.xs },
   level: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   waiting: { borderColor: colors.accent, borderWidth: 3 },
+  answer: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   row: { gap: space.sm, paddingVertical: space.xs },
   cardSlot: { width: 260 },
   titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

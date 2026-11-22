@@ -4,6 +4,7 @@
 // request, 401 not signed in, 403 not allowed, 404 not found, 409 a rule
 // refused it, 429 too soon, 503 not configured.
 
+import type { PostingHint } from './smart';
 import type { EventClassId } from './classes';
 import type { AdminErrorCode, ApiErrorCode } from './errors';
 import type { EventTag } from './tags';
@@ -230,6 +231,8 @@ export interface EventFormMeta {
   tags?: EventTag[];
   /** The skills offered, for "skills that help" (older servers send none). */
   skills?: SkillRef[];
+  /** When events posted fill fastest (shared/smart.ts); null until there is enough data. */
+  posting_hint?: PostingHint | null;
   /** false = the event waits for an admin's approval (in the proposer's own name; an institution's says so itself). */
   publishes_directly: boolean;
   /**
@@ -727,6 +730,8 @@ export interface SkillRef {
   id: string;
   name_ar: string;
   name_en: string;
+  /** Words that name it in an event's description (shared/smart.ts skillsInText); older servers send none. */
+  keywords?: string[];
 }
 
 /** GET /api/me/skills: the person's skills and liked classes (only they and admins see them), and the skills offered. */
@@ -759,6 +764,27 @@ export interface AdminSkillRow extends SkillRef {
 }
 
 // ---------- following (owner's decisions, 2026-11-21) ----------
+
+/**
+ * GET /api/follows/suggestion: an institution or supervisor whose events the
+ * person attended (confirmed) at least FOLLOW_SUGGEST_AFTER times, not yet
+ * followed nor asked about before; null = none.
+ */
+export interface FollowSuggestion {
+  kind: 'institution' | 'person';
+  id: string;
+  name: string;
+  events: number;
+}
+export interface FollowSuggestionResponse {
+  suggestion: FollowSuggestion | null;
+}
+/** POST /api/follows/suggestion: their answer; asked once either way. Answers 204. */
+export interface FollowSuggestionAnswer {
+  kind: 'institution' | 'person';
+  id: string;
+  follow: boolean;
+}
 
 /** GET /api/follows, and the answer to PUT/DELETE /api/follows/:kind/:id (kind: institution | person | class). Private. */
 export interface FollowsResponse {

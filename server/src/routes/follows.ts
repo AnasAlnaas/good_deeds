@@ -5,8 +5,9 @@
 
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { z } from 'zod';
 
-import type { FollowsResponse } from '../../../shared/api';
+import type { FollowSuggestionAnswer, FollowSuggestionResponse, FollowsResponse } from '../../../shared/api';
 import { classOfEvent, isEventClass } from '../../../shared/classes';
 import { ApiError } from '../../../shared/errors';
 import { canFollowPerson, type FollowKind } from '../../../shared/follows';
@@ -15,10 +16,12 @@ import { requireUser } from '../auth';
 import type { Database } from '../db/client';
 import { findInstitution, findUser, publicUser, shownTo } from '../db/queries';
 import * as s from '../db/schema';
-import type { AppEnv } from '../http';
+import { type AppEnv, readBody } from '../http';
+import { followSuggestion } from '../smart';
 import type { User } from '../../../shared/types';
 
 const KINDS: FollowKind[] = ['institution', 'person', 'class'];
+const suggestionAnswer = z.object({ kind: z.enum(['institution', 'person']), id: z.string().max(80), follow: z.boolean() });
 
 export async function followsOf(db: Database, me: User): Promise<FollowsResponse> {
   const rows = await db.select().from(s.follows).where(eq(s.follows.user_id, me.id));
@@ -65,6 +68,21 @@ export const followRoutes = new Hono<AppEnv>()
   .use(requireUser)
 
   .get('/', async (c) => c.json<FollowsResponse>(await followsOf(c.var.deps.db, c.var.user)))
+
+  // "Follow this?" (shared/smart.ts): what they keep coming back to, asked once.
+  .get('/suggestion', async (c) => c.json<FollowSuggestionResponse>({ suggestion: await followSuggestion(c.var.deps.db, c.var.user) }))
+
+  .post('/suggestion', async (c) => {
+    const { db, now } = c.var.deps;
+    const me = c.var.user;
+    const body: FollowSuggestionAnswer = await readBody(c, suggestionAnswer);
+    if (body.follow) {
+      await assertFollowable(db, body.kind, body.id);
+      await db.insert(s.follows).values({ user_id: me.id, kind: body.kind, target_id: body.id, created_at: new Date(now()) }).onConflictDoNothing();
+    }
+    await db.insert(s.follow_prompts).values({ user_id: me.id, kind: body.kind, target_id: body.id, answered_at: new Date(now()) }).onConflictDoNothing();
+    return c.body(null, 204);
+  })
 
   .put('/:kind/:id', async (c) => {
     const { db, now } = c.var.deps;

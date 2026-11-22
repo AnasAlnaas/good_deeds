@@ -3,7 +3,7 @@
 // in the on-phone database, calls the rule, and writes what the rule decided.
 // The screens never compute hours or points themselves.
 
-import type { CertificateResponse, FollowsResponse, EventMatch, MySkillsResponse, SkillRef, EventProposal, InstitutionHoursReport, LeaderboardResponse, ProfileEdit, ReportBody } from '@/data/api';
+import type { CertificateResponse, FollowSuggestion, FollowsResponse, EventMatch, MySkillsResponse, SkillRef, EventProposal, InstitutionHoursReport, LeaderboardResponse, ProfileEdit, ReportBody } from '@/data/api';
 import type {
   AppEvent,
   Attendance,
@@ -29,6 +29,7 @@ import { cleanSkillIds, matchScore, MAX_SKILLS_PER_EVENT, MAX_SKILLS_PER_PERSON,
 import { ApiError } from '../../../shared/errors';
 import { hijriMonths } from '../../../shared/hijri';
 import * as rules from '../../../shared/rules';
+import { FOLLOW_SUGGEST_AFTER, parseKeywords, STARTING_SKILL_KEYWORDS } from '../../../shared/smart';
 import { cleanKind } from '../../../shared/tags';
 
 export { ApiError } from '../../../shared/errors';
@@ -1126,7 +1127,11 @@ export function leaderboard(db: Db, me: User, institutionId: string | null, now:
 // ---------- skills and matching (as server/src/routes/skills.ts) ----------
 
 export const offeredSkills = (db: Db) => (db.skills ?? []).filter((x) => x.is_active).map((x) => x.id);
-export const skillList = (db: Db): SkillRef[] => (db.skills ?? []).filter((x) => x.is_active).map(({ id, name_ar, name_en }) => ({ id, name_ar, name_en }));
+// A demo saved before skills had words takes the starting ones.
+export const skillList = (db: Db): SkillRef[] =>
+  (db.skills ?? [])
+    .filter((x) => x.is_active)
+    .map(({ id, name_ar, name_en, keywords }) => ({ id, name_ar, name_en, keywords: parseKeywords(keywords ?? (STARTING_SKILL_KEYWORDS[id] ?? []).join('\n')) }));
 export const skillsOfEvent = (db: Db, eventId: string) => (db.event_skills ?? []).filter((x) => x.event_id === eventId).map((x) => x.skill_id);
 
 function writeSkills(next: Db, eventId: string, sent: string[] | undefined, subtype: string, isNew: boolean) {
@@ -1218,4 +1223,44 @@ export function unfollow(db: Db, userId: string, kind: FollowKind, id: string): 
   const next = clone(db);
   next.follows = (next.follows ?? []).filter((f) => !(f.user_id === userId && f.kind === kind && f.target_id === id));
   return next;
+}
+
+// ---------- "follow this?" (as server/src/smart.ts followSuggestion) ----------
+
+export function followSuggestion(db: Db, me: User): FollowSuggestion | null {
+  const tally = new Map<string, { kind: 'institution' | 'person'; id: string; events: Set<string> }>();
+  const add = (kind: 'institution' | 'person', id: string, eventId: string) => {
+    const entry = tally.get(`${kind}|${id}`) ?? { kind, id, events: new Set<string>() };
+    entry.events.add(eventId);
+    tally.set(`${kind}|${id}`, entry);
+  };
+  for (const a of db.attendance.filter((x) => x.user_id === me.id && x.participant_status === 'confirmed')) {
+    const e = db.events.find((x) => x.id === a.event_id);
+    if (!e) continue;
+    if (e.institution_id) add('institution', e.institution_id, e.id);
+    if (e.created_by !== me.id) add('person', e.created_by, e.id);
+  }
+  const done = new Set([...(db.follows ?? []), ...(db.follow_prompts ?? [])].filter((r) => r.user_id === me.id).map((r) => `${r.kind}|${r.target_id}`));
+  const candidates = [...tally.values()]
+    .filter((x) => x.events.size >= FOLLOW_SUGGEST_AFTER && !done.has(`${x.kind}|${x.id}`))
+    .sort((a, b) => b.events.size - a.events.size || (a.kind === 'institution' ? -1 : 1) - (b.kind === 'institution' ? -1 : 1));
+  for (const c of candidates) {
+    if (c.kind === 'institution') {
+      const i = institutionOf(db, c.id);
+      if (i?.status === 'approved') return { kind: c.kind, id: c.id, name: i.name, events: c.events.size };
+    } else {
+      const u = getUser(db, c.id);
+      if (u && !u.deleted_at && canFollowPerson(u)) return { kind: c.kind, id: c.id, name: u.full_name, events: c.events.size };
+    }
+  }
+  return null;
+}
+
+export function answerFollowSuggestion(db: Db, userId: string, kind: 'institution' | 'person', id: string, yes: boolean, now: number): Db {
+  const next = yes ? follow(db, userId, kind, id, now) : clone(db);
+  const prompts = next.follow_prompts ?? [];
+  if (!prompts.some((p) => p.user_id === userId && p.kind === kind && p.target_id === id)) {
+    next.follow_prompts = [...prompts, { user_id: userId, kind, target_id: id, answered_at: new Date(now).toISOString() }];
+  }
+  return next === db ? clone(db) : next;
 }

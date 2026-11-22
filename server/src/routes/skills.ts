@@ -10,6 +10,7 @@ import type { EventMatch, MySkillsBody, MySkillsResponse, SkillRef } from '../..
 import { classOfEvent, isEventClass, type EventClassId } from '../../../shared/classes';
 import * as rules from '../../../shared/rules';
 import { cleanSkillIds, matchScore, MAX_SKILLS_PER_PERSON } from '../../../shared/skills';
+import { parseKeywords } from '../../../shared/smart';
 import { requireUser } from '../auth';
 import type { Database } from '../db/client';
 import * as s from '../db/schema';
@@ -20,11 +21,12 @@ const mySkillsBody = z.object({ skill_ids: z.array(z.string().max(80)).max(50), 
 
 /** The skills offered, as the forms show them. */
 export async function skillList(db: Database): Promise<SkillRef[]> {
-  return db
-    .select({ id: s.skills.id, name_ar: s.skills.name_ar, name_en: s.skills.name_en })
+  const rows = await db
+    .select({ id: s.skills.id, name_ar: s.skills.name_ar, name_en: s.skills.name_en, keywords: s.skills.keywords })
     .from(s.skills)
     .where(eq(s.skills.is_active, true))
     .orderBy(s.skills.created_at, s.skills.id);
+  return rows.map((r) => ({ ...r, keywords: parseKeywords(r.keywords) }));
 }
 
 async function mySkills(db: Database, userId: string): Promise<MySkillsResponse> {

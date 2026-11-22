@@ -8,6 +8,8 @@ import type { FollowKind } from '../../../shared/follows';
 import type {
   AcceptTermResponse,
   AttendanceItem,
+  FollowSuggestionAnswer,
+  FollowSuggestionResponse,
   FollowsResponse,
   InstitutionPublic,
   EventMatch,
@@ -179,6 +181,9 @@ export interface Backend {
   follows(): Promise<FollowsResponse>;
   follow(kind: FollowKind, id: string): Promise<FollowsResponse>;
   unfollow(kind: FollowKind, id: string): Promise<FollowsResponse>;
+  /** "Follow this?": what they keep coming back to (shared/smart.ts), and their answer (asked once). */
+  followSuggestion(): Promise<FollowSuggestionResponse>;
+  answerFollowSuggestion(body: FollowSuggestionAnswer): Promise<void>;
   /** An approved institution as anyone sees it, to follow it. */
   institutionPublic(id: string): Promise<InstitutionPublic>;
 }

@@ -10,6 +10,7 @@ import { classOf } from './classes';
 import { LEVELS } from './placeholders';
 import { badgesEarned } from './badges';
 import { SKILLS_OF_SUBTYPE, STARTING_SKILLS } from './skills';
+import { STARTING_SKILL_KEYWORDS } from './smart';
 import { hijriMonths } from './hijri';
 import { ASSOCIATION_TIME_ZONE, dayIn, levelFor, pointsForHours } from './rules';
 
@@ -327,7 +328,7 @@ export function buildSeed(nowMs: number): Db {
     ],
     user_badges: [],
     hijri_adjustments: [],
-    skills: STARTING_SKILLS.map((x) => ({ ...x, is_active: true, created_at: created })),
+    skills: STARTING_SKILLS.map((x) => ({ ...x, is_active: true, created_at: created, keywords: (STARTING_SKILL_KEYWORDS[x.id] ?? []).join('\n') })),
     // أحمد teaches and likes learning and the environment, so the matching has someone to match.
     user_skills: [
       { user_id: 'u_ahmad', skill_id: 'teaching' },

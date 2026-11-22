@@ -87,6 +87,7 @@ export const useInstitutions = () => useBackendQuery(['institutions'], (b) => b.
 export const useInstitutionMembers = (id: string) => useBackendQuery(['institutionMembers', id], (b) => b.institutionMembers(id));
 export const useSkillMatches = () => useBackendQuery(['skillMatches'], (b) => b.skillMatches());
 export const useFollows = () => useBackendQuery(['follows'], (b) => b.follows());
+export const useFollowSuggestion = () => useBackendQuery(['followSuggestion'], (b) => b.followSuggestion());
 export const useInstitutionPublic = (id: string) => useBackendQuery(['institutionPublic', id], (b) => b.institutionPublic(id));
 export const useMySkills = () => useBackendQuery(['mySkills'], (b) => b.mySkills());
 export const usePerson = (id: string) => useBackendQuery(['person', id], (b) => b.person(id));
@@ -139,6 +140,18 @@ export function usePrefetchEvent() {
     },
     [backend, sessionKey, client],
   );
+}
+
+/** How many events from the top of a list are fetched ahead (owner's decision, 2026-11-22: always, the top 3). */
+const TOP_AHEAD = 3;
+
+/** Fetches the pages of the first few events a list shows, so the likeliest taps open at once. */
+export function usePrefetchTop(ids: string[]) {
+  const prefetch = usePrefetchEvent();
+  const top = ids.slice(0, TOP_AHEAD).join('|');
+  useEffect(() => {
+    if (top) for (const id of top.split('|')) prefetch(id);
+  }, [top, prefetch]);
 }
 
 // How many of the person's own events are fetched ahead: the next ones first.

@@ -28,6 +28,7 @@ import { dueReminder, MEETING_LINK_OPENS_MINUTES, REMINDER_DAY_BEFORE_HOURS } fr
 
 import { closeDueAttendance, creditSoleSupervisors } from './db/queries';
 import { followersToTell } from './routes/follows';
+import { almostFullToTell } from './smart';
 import { fillOpenPlaces } from './waitlist';
 import { sweepLessonImages } from './lesson-images';
 import * as s from './db/schema';
@@ -871,6 +872,33 @@ export function notifyFollowers(deps: AppDeps, eventId: string) {
         body: NEW_EVENT[lang].body.replace('{event}', found.title).replace('{when}', when(event.starts_at, event.ends_at, lang, deps.timeZone)),
       }),
       data: { type: 'followed_event', event_id: eventId },
+    }));
+  });
+}
+
+// ---------- almost full (shared/smart.ts) ----------
+
+const ALMOST_FULL = {
+  ar: { title: 'أماكن قليلة متبقية', one: 'بقي مكان واحد في «{event}» {when}.', many: 'بقيت {n} أماكن في «{event}» {when}.' },
+  en: { title: 'Only a few places left', one: 'One place left at "{event}" {when}.', many: '{n} places left at "{event}" {when}.' },
+};
+
+/** After someone joins: if the event is now almost full, to those it fits (smart.ts almostFullToTell). */
+export function notifyAlmostFull(deps: AppDeps, eventId: string) {
+  send(deps, async () => {
+    const found = await almostFullToTell(deps.db, eventId, deps.now());
+    if (!found || found.userIds.length === 0) return [];
+    const [event] = await deps.db.select({ starts_at: s.events.starts_at, ends_at: s.events.ends_at }).from(s.events).where(eq(s.events.id, eventId));
+    return found.userIds.map((userId) => ({
+      userId,
+      text: (lang: Lang) => ({
+        title: ALMOST_FULL[lang].title,
+        body: (found.left === 1 ? ALMOST_FULL[lang].one : ALMOST_FULL[lang].many)
+          .replace('{n}', String(found.left))
+          .replace('{event}', found.title)
+          .replace('{when}', when(event.starts_at, event.ends_at, lang, deps.timeZone)),
+      }),
+      data: { type: 'almost_full', event_id: eventId },
     }));
   });
 }

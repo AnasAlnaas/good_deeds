@@ -69,7 +69,8 @@ import {
 import { iso } from '../db/rows';
 import * as s from '../db/schema';
 import { type AppEnv, readBody } from '../http';
-import { notifyEventNotice, notifyHoursToConfirm, notifyPlaceOffered, notifySupervisorAdded, notifyWarningGiven, notifyFollowers } from '../notify';
+import { notifyEventNotice, notifyHoursToConfirm, notifyPlaceOffered, notifySupervisorAdded, notifyWarningGiven, notifyFollowers, notifyAlmostFull } from '../notify';
+import { postingHint } from '../smart';
 import { fillOpenPlaces, waitlistOf } from '../waitlist';
 import { assertCoverExists, kindOf, placeOf, proposalInput, removeLessons, writeLessons, writeLinks, writeTerms, skillsOfEvent, writeSkills } from './event-input';
 import { dropUnusedImages } from '../lesson-images';
@@ -230,6 +231,7 @@ export const eventRoutes = new Hono<AppEnv>()
       own_events: rules.canCreateEvents(me, level),
       institutions,
       skills: await skillList(db),
+      posting_hint: await postingHint(db, c.var.deps.now(), c.var.deps.timeZone),
     });
   })
 
@@ -630,6 +632,7 @@ export const eventRoutes = new Hono<AppEnv>()
       await tx.delete(s.waitlist).where(and(eq(s.waitlist.event_id, id), eq(s.waitlist.user_id, me.id)));
       return iso(row) as Registration;
     });
+    notifyAlmostFull(c.var.deps, id);
     return c.json<RegistrationResponse>({ registration });
   })
 
