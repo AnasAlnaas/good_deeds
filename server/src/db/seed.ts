@@ -11,7 +11,7 @@ import { dated } from './rows';
 import * as s from './schema';
 
 const ALL_TABLES = [
-  'institution_members', 'institutions', 'reports', 'warnings', 'admin_actions', 'user_photos', 'push_tokens', 'login_codes', 'user_passwords', 'points_ledger', 'follow_notices', 'follows', 'event_skills', 'user_skills', 'user_interests', 'skills', 'user_badges', 'hijri_adjustments', 'certificates', 'outside_hours', 'attendance', 'term_acceptances', 'registrations', 'event_terms',
+  'institution_members', 'institutions', 'reports', 'warnings', 'admin_actions', 'user_photos', 'push_tokens', 'login_codes', 'user_passwords', 'points_ledger', 'follow_notices', 'follow_prompts', 'almost_full_notices', 'follows', 'event_skills', 'user_skills', 'user_interests', 'skills', 'user_badges', 'hijri_adjustments', 'certificates', 'outside_hours', 'attendance', 'term_acceptances', 'registrations', 'event_terms',
   'lesson_completions', 'event_lessons', 'lesson_images', 'event_reminders', 'waitlist',
   'notice_reactions', 'event_notices', 'event_organizers', 'events', 'levels', 'branches', 'users',
 ];

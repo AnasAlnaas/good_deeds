@@ -17,7 +17,7 @@ import { LessonPicture } from '@/components/LessonPicture';
 import { LessonVideo } from '@/components/LessonVideo';
 import type { EventDetail, EventFormMeta, EventProposal, LessonImageRef, LessonInput, LessonLibraryItem, ProposeEventResponse } from '@/data/api';
 import { type GenderCategory, type LocationType, MEETING_PLATFORMS, type MeetingPlatform } from '@/data/types';
-import { count, fmt } from '@/i18n/format';
+import { count, fmt, num } from '@/i18n/format';
 import { cityTarget, locateInCity } from '@/lib/geocode';
 import { goBack } from '@/lib/goBack';
 import { institutionIcon } from '@/lib/institutions';
@@ -43,6 +43,7 @@ import {
 } from '../../../shared/rules';
 import { nameExample as nameExampleFor } from '../../../shared/name-examples';
 import { MAX_SKILLS_PER_EVENT, suggestedSkills } from '../../../shared/skills';
+import { skillsInText } from '../../../shared/smart';
 import { cleanTag, TAG_MAX, tagKey } from '../../../shared/tags';
 
 // The event form of the app: proposing an event (level 5, or a supervisor),
@@ -344,6 +345,9 @@ export function EventForm({
     if (live.current.moved) return;
     pointAt(found.target);
     setSpot(found.kind === 'place' ? { kind: 'place' } : { kind: 'city', city });
+    // Found the place itself: the pin is dropped there, confirmed; it can still be dragged (owner's decision, 2026-11-22).
+    // Only the city found: they confirm it themselves.
+    setConfirmed(found.kind === 'place');
   };
   const onPause = useEffectEvent(() => {
     void lookUp();
@@ -376,6 +380,10 @@ export function EventForm({
   const kindDone = !!v.event_class && !!subtype;
   const offeredSkills = meta.skills ?? [];
   const skillIds = chosenSkills ?? suggestedSkills(subtype, offeredSkills.map((x) => x.id));
+  const fromText = skillsInText(`${v.title} ${v.description}`, offeredSkills)
+    .filter((id) => !skillIds.includes(id))
+    .slice(0, 3)
+    .flatMap((id) => offeredSkills.filter((x) => x.id === id));
   const toggleSkill = (id: string) =>
     setChosenSkills(skillIds.includes(id) ? skillIds.filter((x) => x !== id) : skillIds.length < MAX_SKILLS_PER_EVENT ? [...skillIds, id] : skillIds);
   // In a place, the pin is confirmed on the map: an address alone does not say where.
@@ -608,6 +616,19 @@ export function EventForm({
                 <Chip key={x.id} label={lang === 'ar' ? x.name_ar : x.name_en} selected={skillIds.includes(x.id)} onPress={() => toggleSkill(x.id)} />
               ))}
             </Row>
+            {/* Named in the words (shared/smart.ts skillsInText), not chosen yet: one tap adds each. */}
+            {fromText.length > 0 && (
+              <>
+                <Txt variant="caption" color={colors.inkMuted}>
+                  {s.newEvent.skillsFromText}
+                </Txt>
+                <Row>
+                  {fromText.map((x) => (
+                    <Chip key={x.id} icon="add" label={lang === 'ar' ? x.name_ar : x.name_en} selected={false} onPress={() => toggleSkill(x.id)} />
+                  ))}
+                </Row>
+              </>
+            )}
           </>
         )}
         <SectionTitle>{s.newEvent.cover}</SectionTitle>
@@ -710,6 +731,18 @@ export function EventForm({
 
       <Reveal show={reached >= 3}>
         <SectionTitle>{s.newEvent.time}</SectionTitle>
+        {/* Shown only once there is enough data (shared/smart.ts postingHint). */}
+        {!editing && meta.posting_hint && (
+          <View style={styles.tip}>
+            <Ionicons name="bulb-outline" size={18} color={colors.primary} />
+            <Txt variant="caption" style={styles.flex}>
+              {fmt(s.newEvent.postingHint, {
+                when: fmt(s.newEvent.postingWhen, { day: s.newEvent.weekdays[meta.posting_hint.weekday], part: s.newEvent.dayParts[meta.posting_hint.part] }),
+                lift: num(meta.posting_hint.lift),
+              })}
+            </Txt>
+          </View>
+        )}
         <DateTimeField label={s.newEvent.starts} value={starts} minimumDate={today} onChange={setStart} />
         <DateTimeField label={s.newEvent.ends} value={ends} minimumDate={today} onChange={(d) => set('ends_at', d.toISOString())} />
         {/* A point is a minute, whatever the event's type (rules.pointsForHours). */}
@@ -866,6 +899,7 @@ export function EventForm({
 const styles = StyleSheet.create({
   intro: { backgroundColor: colors.primarySoft, borderColor: colors.primarySoft },
   coverPreview: { borderRadius: radius.card, overflow: 'hidden' },
+  tip: { flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.sm, borderRadius: radius.card, backgroundColor: colors.primarySoft },
   status: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
   // As tall as the button it takes the place of, so the page does not move.
   confirmed: { minHeight: touch + 4, flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.sm },

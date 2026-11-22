@@ -431,6 +431,8 @@ export const skills = pgTable('skills', {
   name_en: text('name_en').notNull(),
   is_active: boolean('is_active').notNull().default(true),
   created_at: at('created_at').notNull(),
+  /** Words that name it in an event's description, one per line (shared/smart.ts). */
+  keywords: text('keywords').notNull().default(''),
 });
 
 export const user_skills = pgTable(
@@ -477,6 +479,29 @@ export const follow_notices = pgTable('follow_notices', {
   event_id: text('event_id').primaryKey().references(() => events.id),
   sent_at: at('sent_at').notNull(),
 });
+
+// "Follow this?" (shared/smart.ts): asked once per institution or supervisor, whatever the answer.
+export const follow_prompts = pgTable(
+  'follow_prompts',
+  {
+    user_id: text('user_id').notNull().references(() => users.id),
+    kind: followKind('kind').notNull(),
+    target_id: text('target_id').notNull(),
+    answered_at: at('answered_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.user_id, t.kind, t.target_id] })],
+);
+
+// "Almost full" alerts sent: once per event and person, at most one a day per person.
+export const almost_full_notices = pgTable(
+  'almost_full_notices',
+  {
+    event_id: text('event_id').notNull().references(() => events.id),
+    user_id: text('user_id').notNull().references(() => users.id),
+    sent_at: at('sent_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.event_id, t.user_id] }), index('almost_full_notices_user').on(t.user_id, t.sent_at)],
+);
 
 // Certificates of confirmed hours, as they were when made (shared/types.ts Certificate).
 export const certificates = pgTable(

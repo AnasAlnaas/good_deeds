@@ -7,7 +7,7 @@ import { Screen } from '@/components/Screen';
 import { FollowButton } from '@/components/FollowButton';
 import { fmt } from '@/i18n/format';
 import { Chip, ClassFilter, EmptyState, Field, type NextStep, QueryState, Row } from '@/components/ui';
-import { useEvents, useMeSummary, useFollows } from '@/data/queries';
+import { useEvents, useMeSummary, useFollows, usePrefetchTop } from '@/data/queries';
 import { useApp } from '@/state/app';
 import { className, type EventClassId } from '@/theme/classes';
 import type { LocationType } from '@/data/types';
@@ -55,6 +55,8 @@ export default function EventsScreen() {
       (where === 'all' || e.location_type === where) &&
       (!words || e.title.toLowerCase().includes(words) || (e.address_text ?? '').toLowerCase().includes(words)),
   );
+  // The first few shown are fetched ahead (owner's decision, 2026-11-22).
+  usePrefetchTop(list.map((e) => e.id));
   const filtered = !!kind || !!words || where !== 'all';
   const empty = filtered
     ? s.events.noMatch

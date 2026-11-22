@@ -138,6 +138,8 @@ export function createApiBackend(opts: { baseUrl: string; token: string; onUnaut
     follows: () => get('/follows'),
     follow: (kind, id) => send('PUT', `/follows/${kind}/${enc(id)}`),
     unfollow: (kind, id) => send('DELETE', `/follows/${kind}/${enc(id)}`),
+    followSuggestion: () => get('/follows/suggestion'),
+    answerFollowSuggestion: (body) => send('POST', '/follows/suggestion', body),
     institutionPublic: (id) => get(`/institutions/${enc(id)}/public`),
     setMySkills: (body) => send('PUT', '/me/skills', body),
     skillMatches: () => get('/me/skills/matches'),

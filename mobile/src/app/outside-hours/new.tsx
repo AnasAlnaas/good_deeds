@@ -8,7 +8,8 @@ import { Screen } from '@/components/Screen';
 import { Txt } from '@/components/Txt';
 import { Card, Chip, Field, QueryState, SectionTitle } from '@/components/ui';
 import type { LessonImageRef } from '@/data/api';
-import { useInstitutions } from '@/data/queries';
+import type { OutsideHours } from '../../../../shared/types';
+import { useInstitutions, useMyOutsideHours } from '@/data/queries';
 import { day, fmt } from '@/i18n/format';
 import * as dialog from '@/lib/dialog';
 import { pickLessonPicture } from '@/lib/photo';
@@ -23,15 +24,33 @@ const DAY_MS = 86_400_000;
 // hours, what was done, and (if they like) where and a photo. The rules are the
 // server's (rules.assertCanClaimOutsideHours); the form only guides.
 export default function NewOutsideHoursScreen() {
-  const { s, now, photoSource } = useApp();
+  const { s } = useApp();
   const institutions = useInstitutions();
+  const past = useMyOutsideHours();
+  if (!institutions.data || !past.data) {
+    return (
+      <Screen back title={s.outsideHours.newTitle}>
+        <QueryState query={institutions.data ? past : institutions} />
+      </Screen>
+    );
+  }
+  // Filled in from their last request, if it was for one of their institutions: what, where and how long; never the day.
+  const last = past.data[0]?.claim;
+  const usable = institutions.data.mine.some((x) => x.status === 'confirmed' && x.institution.status === 'approved' && x.institution.id === last?.institution_id);
+  return <ClaimForm institutions={institutions} last={usable ? last : undefined} />;
+}
+
+function ClaimForm({ institutions, last }: { institutions: ReturnType<typeof useInstitutions>; last?: OutsideHours }) {
+  const { s, now, photoSource } = useApp();
   const { run, busy } = useAction();
-  const [institutionId, setInstitutionId] = useState<string | null>(null);
-  const [back, setBack] = useState(0);
-  const [hours, setHours] = useState('');
-  const [minutes, setMinutes] = useState('');
-  const [description, setDescription] = useState('');
-  const [place, setPlace] = useState('');
+  const prefilled = !!last;
+  const [institutionId, setInstitutionId] = useState<string | null>(last?.institution_id ?? null);
+  // Which day: today, unless filled in from the last request; then they pick it (owner's decision, 2026-11-22).
+  const [back, setBack] = useState<number | null>(last ? null : 0);
+  const [hours, setHours] = useState(last ? String(Math.floor(last.minutes / 60)) : '');
+  const [minutes, setMinutes] = useState(last && last.minutes % 60 ? String(last.minutes % 60) : '');
+  const [description, setDescription] = useState(last?.description ?? '');
+  const [place, setPlace] = useState(last?.place ?? '');
   const [image, setImage] = useState<LessonImageRef | null>(null);
   const [photoState, setPhotoState] = useState<'idle' | 'sending' | 'too_big'>('idle');
 
@@ -46,7 +65,7 @@ export default function NewOutsideHoursScreen() {
   const mine = institutions.data.mine.filter((x) => x.status === 'confirmed' && x.institution.status === 'approved').map((x) => x.institution);
   const chosen = mine.find((i) => i.id === institutionId) ?? (mine.length === 1 ? mine[0] : undefined);
   const total = (Number(hours) || 0) * 60 + (Number(minutes) || 0);
-  const ready = !!chosen && total > 0 && description.trim().length > 0 && photoState !== 'sending';
+  const ready = !!chosen && back !== null && total > 0 && description.trim().length > 0 && photoState !== 'sending';
 
   const choosePhoto = async () => {
     setPhotoState('idle');
@@ -60,7 +79,7 @@ export default function NewOutsideHoursScreen() {
   };
 
   const send = async () => {
-    if (!chosen) return;
+    if (!chosen || back === null) return;
     const result = await run((b) =>
       b.claimOutsideHours({
         institution_id: chosen.id,
@@ -84,6 +103,11 @@ export default function NewOutsideHoursScreen() {
       <Txt variant="caption" color={colors.inkMuted}>
         {s.outsideHours.rules}
       </Txt>
+      {prefilled && (
+        <Txt variant="caption" color={colors.primary}>
+          {s.outsideHours.prefilled}
+        </Txt>
+      )}
 
       {mine.length > 1 && (
         <>

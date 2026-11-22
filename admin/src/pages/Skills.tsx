@@ -32,6 +32,13 @@ export function Skills() {
     void run(() => api.editSkill(x.id, { name_ar: ar, name_en: en }));
   };
 
+  // The words that suggest it on the event form (shared/smart.ts skillsInText).
+  const editKeywords = (x: AdminSkillRow) => {
+    const words = window.prompt(t.skills.keywordsEdit, (x.keywords ?? []).join('، '));
+    if (words === null) return;
+    void run(() => api.editSkill(x.id, { keywords: words }));
+  };
+
   return (
     <>
       <PageHeader title={t.skills.title} body={t.skills.body} />
@@ -70,6 +77,7 @@ export function Skills() {
                       {x.name_en}
                     </div>
                     {!x.is_active && <div className="muted">{t.skills.hidden}</div>}
+                    <div className="muted">{x.keywords?.length ? `${t.skills.keywords}: ${x.keywords.join('، ')}` : t.skills.noKeywords}</div>
                   </td>
                   <td>{num(x.people)}</td>
                   <td>{num(x.events)}</td>
@@ -77,6 +85,9 @@ export function Skills() {
                     <div className="actions">
                       <Button variant="secondary" disabled={busy} onClick={() => rename(x)}>
                         {t.skills.rename}
+                      </Button>
+                      <Button variant="secondary" disabled={busy} onClick={() => editKeywords(x)}>
+                        {t.skills.keywordsChange}
                       </Button>
                       <Button variant="secondary" disabled={busy} onClick={() => void run(() => api.editSkill(x.id, { is_active: !x.is_active }))}>
                         {x.is_active ? t.skills.hide : t.skills.offer}

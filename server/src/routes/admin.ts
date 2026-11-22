@@ -30,6 +30,7 @@ import type { AdminSkillRow } from '../../../shared/api';
 import { HIJRI_ADJUST_MAX, hijriMonths } from '../../../shared/hijri';
 import * as rules from '../../../shared/rules';
 import { SKILL_NAME_MAX } from '../../../shared/skills';
+import { parseKeywords, SKILL_KEYWORD_LENGTH, SKILL_KEYWORDS_MAX } from '../../../shared/smart';
 import { promotedTags } from '../../../shared/tags';
 import { type AppEvent, type Attendance } from '../../../shared/types';
 import { requireUser } from '../auth';
@@ -200,8 +201,14 @@ async function lookup(q: Database, userIds: (string | null)[], eventIds: (string
 
 // ---------- routes ----------
 
-const skillBody = z.object({ name_ar: z.string().trim().min(2).max(SKILL_NAME_MAX), name_en: z.string().max(SKILL_NAME_MAX).default('') });
-const skillEditBody = z.object({ name_ar: z.string().max(SKILL_NAME_MAX).optional(), name_en: z.string().max(SKILL_NAME_MAX).optional(), is_active: z.boolean().optional() });
+const keywordsField = z.string().max(SKILL_KEYWORDS_MAX * (SKILL_KEYWORD_LENGTH + 1));
+const skillBody = z.object({ name_ar: z.string().trim().min(2).max(SKILL_NAME_MAX), name_en: z.string().max(SKILL_NAME_MAX).default(''), keywords: keywordsField.default('') });
+const skillEditBody = z.object({
+  name_ar: z.string().max(SKILL_NAME_MAX).optional(),
+  name_en: z.string().max(SKILL_NAME_MAX).optional(),
+  is_active: z.boolean().optional(),
+  keywords: keywordsField.optional(),
+});
 
 /** The skills, offered first, with how many people and events chose each. */
 async function adminSkills(db: Database): Promise<AdminSkillRow[]> {
@@ -213,6 +220,7 @@ async function adminSkills(db: Database): Promise<AdminSkillRow[]> {
       id: r.id,
       name_ar: r.name_ar,
       name_en: r.name_en,
+      keywords: parseKeywords(r.keywords),
       is_active: r.is_active,
       people: people.filter((p) => p.id === r.id).length,
       events: events.filter((e) => e.id === r.id).length,
@@ -797,7 +805,7 @@ export const adminRoutes = new Hono<AppEnv>()
     const id = newId();
     const t = new Date(now());
     await db.transaction(async (tx) => {
-      await tx.insert(s.skills).values({ id, name_ar, name_en, is_active: true, created_at: t });
+      await tx.insert(s.skills).values({ id, name_ar, name_en, is_active: true, created_at: t, keywords: parseKeywords(body.keywords).join('\n') });
       await audit(tx, { actorId: me.id, action: 'change_skill', targetId: id, details: { name: name_ar, change: 'added' }, at: t });
     });
     return c.json<AdminSkillRow[]>(await adminSkills(db), 201);
@@ -815,11 +823,12 @@ export const adminRoutes = new Hono<AppEnv>()
       ...(body.name_ar !== undefined && body.name_ar.trim() ? { name_ar: body.name_ar.trim().replace(/\s+/g, ' ') } : {}),
       ...(body.name_en !== undefined && body.name_en.trim() ? { name_en: body.name_en.trim().replace(/\s+/g, ' ') } : {}),
       ...(body.is_active !== undefined ? { is_active: body.is_active } : {}),
+      ...(body.keywords !== undefined ? { keywords: parseKeywords(body.keywords).join('\n') } : {}),
     };
     const t = new Date(now());
     await db.transaction(async (tx) => {
       if (Object.keys(set).length) await tx.update(s.skills).set(set).where(eq(s.skills.id, id));
-      const change = body.is_active === false ? 'hidden' : body.is_active === true ? 'offered' : 'renamed';
+      const change = body.is_active === false ? 'hidden' : body.is_active === true ? 'offered' : body.keywords !== undefined && !set.name_ar && !set.name_en ? 'keywords' : 'renamed';
       await audit(tx, { actorId: me.id, action: 'change_skill', targetId: id, details: { name: set.name_ar ?? row.name_ar, change }, at: t });
     });
     return c.json<AdminSkillRow[]>(await adminSkills(db));

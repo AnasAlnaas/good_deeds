@@ -114,7 +114,7 @@ export const api = {
 
   skills: () => call<AdminSkillRow[]>('GET', '/admin/skills'),
   addSkill: (name_ar: string, name_en: string) => call<AdminSkillRow[]>('POST', '/admin/skills', { name_ar, name_en }),
-  editSkill: (id: string, edit: { name_ar?: string; name_en?: string; is_active?: boolean }) => call<AdminSkillRow[]>('PATCH', `/admin/skills/${enc(id)}`, edit),
+  editSkill: (id: string, edit: { name_ar?: string; name_en?: string; is_active?: boolean; keywords?: string }) => call<AdminSkillRow[]>('PATCH', `/admin/skills/${enc(id)}`, edit),
   hijri: () => call<AdminHijriMonth[]>('GET', '/admin/hijri'),
   setHijri: (year: number, month: number, days: number) => call<void>('PUT', `/admin/hijri/${year}/${month}`, { days }),
   hoursStats: () => call<AdminHoursStats>('GET', '/admin/stats/hours'),

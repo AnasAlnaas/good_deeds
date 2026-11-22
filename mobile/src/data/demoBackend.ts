@@ -329,6 +329,8 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
           max_waiting: rules.MAX_WAITING_PROPOSALS,
           lesson_library: libraryItems(db, me.id),
           skills: server.skillList(db),
+          // The demo never has the 50 events and 100 members the hint waits for (shared/smart.ts).
+          posting_hint: null,
           own_events: server.canCreateEvents(db, me),
           institutions: server.representedInstitutions(db, me.id).map((i) => ({
             id: i.id,
@@ -753,6 +755,17 @@ export function createDemoBackend(store: DemoStore, meId: string): Backend {
       async(() => {
         const { db, me } = change((d) => server.unfollow(d, meId, kind, id));
         return server.followsOf(db, me);
+      }),
+
+    followSuggestion: () =>
+      async(() => {
+        const { db, me } = read();
+        return { suggestion: server.followSuggestion(db, me) };
+      }),
+
+    answerFollowSuggestion: (body) =>
+      async(() => {
+        change((d, t) => server.answerFollowSuggestion(d, meId, body.kind, body.id, body.follow, t));
       }),
 
     institutionPublic: (id) =>
